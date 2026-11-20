@@ -1,18 +1,48 @@
-﻿param([string]$PackageManifest)
+﻿param([string]$PackageManifest,[switch]$WithTrafficService)
 $ErrorActionPreference='Stop'
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 if(!$PackageManifest){$PackageManifest=Join-Path $repo 'dist/package.json'}
 $package=Get-Content -LiteralPath $PackageManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+$previewPayload=@{}
+if($package.isolatedPreview){
+    $previewPayload['Pane.App.exe']=(Get-FileHash -LiteralPath (Join-Path $package.stage 'Pane.App.exe')).Hash
+    $components=@('NativeCapture')
+    if($package.ocrPreview){$components+='NativeOcr'}
+    if($WithTrafficService){$components+='TrafficService'}
+    $stageRoot=(Resolve-Path -LiteralPath $package.stage).ProviderPath
+    foreach($component in $components){
+        $files=@(Get-ChildItem -LiteralPath (Join-Path $stageRoot $component) -File -Recurse)
+        if(!$files.Count){throw "安装包缺少组件文件：$component"}
+        foreach($file in $files){
+            $relative=[IO.Path]::GetRelativePath($stageRoot,$file.FullName)
+            $previewPayload[$relative]=(Get-FileHash -LiteralPath $file.FullName).Hash
+        }
+    }
+}elseif($WithTrafficService){
+    throw '流量预览验证需要隔离预览包'
+}
 . "$repo/scripts/release-common.ps1"
 $Root=Join-Path ([IO.Path]::GetTempPath()) ('Pane-018-e2e-'+[Guid]::NewGuid().ToString('N'))
 $DataDirectory=Join-Path $Root 'data';$Isolated=$true;$helper=$null
-function Run-Installer([string]$Exe,[string[]]$Arguments,[string]$WorkingDirectory=$repo){
-    $child=Start-Process -FilePath $Exe -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
+function Run-Installer([string]$Exe,[string[]]$Arguments,[string]$WorkingDirectory=$repo,[int]$ExpectedExit=0){
+    $start=@{FilePath=$Exe;WorkingDirectory=$WorkingDirectory;WindowStyle='Hidden';PassThru=$true}
+    if($Arguments.Count){$start.ArgumentList=$Arguments}
+    $child=Start-Process @start
     $null=$child.Handle
-    try {if(!$child.WaitForExit(60000)){throw '安装进程超时'};if($child.ExitCode -ne 0){throw "安装进程失败 $($child.ExitCode)"}}finally{if(!$child.HasExited){$child.Kill();$child.WaitForExit()};$child.Dispose()}
+    try {if(!$child.WaitForExit(60000)){throw '安装进程超时'};if($child.ExitCode -ne $ExpectedExit){throw "安装进程退出码 $($child.ExitCode)，预期 $ExpectedExit：$Exe"}}finally{if(!$child.HasExited){$child.Kill();$child.WaitForExit()};$child.Dispose()}
 }
 try {
     New-Item -ItemType Directory -Path $Root | Out-Null
+    if($package.isolatedPreview){
+        Run-Installer $package.installer @() -ExpectedExit 2
+        Run-Installer $package.installer @('--auto-update','--self-test-root',('"{0}"' -f $Root)) -ExpectedExit 2
+        Run-Installer (Join-Path $package.stage 'Pane.App.exe') @('--setup') -ExpectedExit 2
+        Run-Installer (Join-Path $package.stage 'Uninstall Pane.exe') @() -ExpectedExit 2
+        Run-Installer (Join-Path $package.stage 'Pane.Maintenance.exe') @('--relocate','unused','-1') -ExpectedExit 2
+        if(!(Test-Path -LiteralPath (Join-Path $package.stage 'Pane.Maintenance.exe'))){throw '隔离拒绝时不应删除助手'}
+        if(Get-ChildItem -LiteralPath $Root -Force){throw '隔离拒绝时不应写入测试根目录'}
+        Write-Host 'PASS preview rejects non-isolated setup, direct worker, uninstall, and relay; rejects automatic update'
+    }
     Run-Installer $package.installer @('--self-test-root',('"{0}"' -f $Root))
     $extracted=[IO.File]::ReadAllText((Join-Path $Root 'installed.txt')).Trim()
     if(Test-Path -LiteralPath $extracted){throw '安装外壳未清理临时文件'}
@@ -25,6 +55,12 @@ try {
     if($registration.InstallLocation -ne $installRoot){throw '登记位置不匹配'}
     Run-Installer $package.installer @('--self-test-root',('"{0}"' -f $Root))
     if(!(Test-Path -LiteralPath "$installRoot/app.old/Pane.App.exe")){throw '升级未保留旧版'}
+    foreach($path in $previewPayload.Keys){
+        foreach($app in 'app','app.old'){
+            if((Get-FileHash -LiteralPath (Join-Path "$installRoot/$app" $path)).Hash -ne $previewPayload[$path]){throw "已安装的预览文件不一致：$app/$path"}
+        }
+    }
+    if($previewPayload.Count){Write-Host "PASS preview payload files in app and app.old: $($previewPayload.Count) ($($components -join ', '))"}
     Write-Host 'PASS custom install -> upgrade; registered custom location; app.old preserved'
     Run-Installer $exe @('--uninstall','--self-test-root',('"{0}"' -f $Root)) (Split-Path $exe -Parent)
     $helperInfo=Get-Content -LiteralPath "$Root/helper.txt" -Encoding UTF8

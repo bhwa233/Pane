@@ -18,6 +18,7 @@ public sealed class ClipboardSample : IClipboardHistory
     };
 
     readonly List<ClipEntry> entries;
+    readonly Dictionary<string, string> textDrafts = new();
 
     public ClipboardSample()
     {
@@ -64,15 +65,24 @@ public sealed class ClipboardSample : IClipboardHistory
             {
                 var p = item.Split('|');
                 entries.Add(new((id++).ToString(), ClipKind.Image, null, null, new ClipPicture(p[0]), int.Parse(p[1]), int.Parse(p[2]),
-                    "截图工具", Sources["截图工具"], now.AddMinutes(-ago++), true));   // 固定，排在最前面
+                    "截图工具", Sources["截图工具"], now.AddMinutes(-ago++), true, ContentPath: p[0]));   // 固定，排在最前面
             }
         }
     }
 
     public event EventHandler? Changed;
 
-    public IReadOnlyList<ClipEntry> Snapshot() =>
-        entries.OrderByDescending(e => e.Pinned).ThenByDescending(e => e.CopiedAt).ToList();
+    public IReadOnlyList<ClipEntry> Snapshot(bool includeArchived = false) =>
+        entries.Where(entry => includeArchived || !entry.Archived).OrderByDescending(e => e.Pinned).ThenByDescending(e => e.CopiedAt).ToList();
+
+    public string? GetTextDraft(string id) => textDrafts.GetValueOrDefault(id);
+
+    public bool SetTextDraft(string id, string? text)
+    {
+        if (text is null || entries.Find(entry => entry.Id == id)?.Text == text) textDrafts.Remove(id);
+        else textDrafts[id] = text;
+        return true;
+    }
 
     public Task PasteAsync(string id, bool plainText, nint targetWindow, CancellationToken cancellationToken)
     {
@@ -86,17 +96,81 @@ public sealed class ClipboardSample : IClipboardHistory
     {
         var i = entries.FindIndex(e => e.Id == id);
         if (i < 0) return;
-        entries[i] = entries[i] with { Pinned = pinned };
+        entries[i] = entries[i] with { Pinned = pinned, Archived = entries[i].Archived && !pinned };
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public Task<ClipMergeResult> MergeAsync(IReadOnlyList<string> ids, CancellationToken cancellationToken)
+    {
+        var (status, result) = Pane.Services.Clipboard.ClipboardMerge.Build(ids.Select(id => entries.Find(entry => entry.Id == id)).ToArray(), cancellationToken);
+        if (result is not null)
+        {
+            entries.Add(result);
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+        return Task.FromResult(status);
     }
 
     public void Delete(string id)
     {
-        if (entries.RemoveAll(e => e.Id == id) > 0) Changed?.Invoke(this, EventArgs.Empty);
+        RemoveFromHistory(entry => entry.Id == id);
+    }
+
+    public bool SetAnnotation(string id, ClipAnnotation? annotation)
+    {
+        var index = entries.FindIndex(entry => entry.Id == id);
+        if (index < 0) return false;
+        entries[index] = entries[index] with { Annotation = annotation };
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    public bool SetDetails(string id, ClipAnnotation? annotation, IReadOnlyList<string>? collections)
+    {
+        var index = entries.FindIndex(entry => entry.Id == id);
+        if (index < 0) return false;
+        var updated = entries[index] with { Annotation = annotation, Collections = collections };
+        if (updated.Archived && !updated.Collected) entries.RemoveAt(index);
+        else entries[index] = updated;
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    public bool SetFavorite(string id, bool favorite)
+    {
+        var index = entries.FindIndex(entry => entry.Id == id);
+        if (index < 0) return false;
+        var updated = entries[index] with { Favorite = favorite };
+        if (updated.Archived && !updated.Collected) entries.RemoveAt(index);
+        else entries[index] = updated;
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     public void ClearUnpinned()
     {
-        if (entries.RemoveAll(e => !e.Pinned) > 0) Changed?.Invoke(this, EventArgs.Empty);
+        RemoveFromHistory(entry => !entry.Pinned);
+    }
+
+    public ClipboardCleanupPreview PreviewCleanup() => new(Snapshot().Where(entry => !entry.Pinned && !entry.Collected).ToArray(), 0);
+
+    public int ConfirmCleanup(ClipboardCleanupPreview preview)
+    {
+        var shown = new HashSet<ClipEntry>(preview.Entries, ReferenceEqualityComparer.Instance);
+        var removed = entries.RemoveAll(entry => shown.Contains(entry) && !entry.Pinned && !entry.Collected && !entry.Archived);
+        if (removed > 0) Changed?.Invoke(this, EventArgs.Empty);
+        return removed;
+    }
+
+    void RemoveFromHistory(Predicate<ClipEntry> matches)
+    {
+        for (int index = entries.Count - 1; index >= 0; index--)
+        {
+            var entry = entries[index];
+            if (entry.Archived || !matches(entry)) continue;
+            if (entry.Collected) entries[index] = entry with { Archived = true, Pinned = false };
+            else entries.RemoveAt(index);
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 }

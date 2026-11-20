@@ -236,6 +236,7 @@ public sealed partial class SettingsView : UserControl, IPanelView
     void Render(bool resetScroll)
     {
         rerender.Stop();
+        if (current.Id != "clipboard") ResetClipboardCleanup();
         if (resetScroll) actionRowOrder = null;   // 换分区：动作行按显示顺序重新排
         // 刚拨的开关 / 分段还在播动画：推迟到播完再重建（换分区 resetScroll 不等，旧控件本来就不要了）
         if (!resetScroll && Pane.Views.Controls.MotionHold.Remaining is > 0 and var wait)
@@ -269,8 +270,8 @@ public sealed partial class SettingsView : UserControl, IPanelView
     public Size PreferredSize => new(900, 620);
     public event EventHandler<Size>? SizeRequested { add { } remove { } }
     public event EventHandler? CloseRequested;
-    public void OnShowing(PanelShowContext context) { }
+    public void OnShowing(PanelShowContext context) { if (current.Id == "clipboard") Render(); }
     public void OnShown() { }
-    public void OnHidden() { }
+    public void OnHidden() => ResetClipboardCleanup();
     public UIElement? DragRegion => Head;
 }

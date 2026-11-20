@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Pane.Contracts;
+using Pane.Services.Clipboard;
 using Windows.Foundation;
 
 namespace Pane.Views.Clipboard;
@@ -15,19 +16,24 @@ namespace Pane.Views.Clipboard;
 /// <summary>一段要显示的文字和搜索词（命中处加粗 + 中性浅底）。</summary>
 public sealed record ClipText(string Text, string Query);
 
-public sealed partial class ClipRow : INotifyPropertyChanged
+public sealed partial class ClipRow
 {
     readonly IClipRowActions actions;
 
     /// <param name="index">在可选中序列里的位置（含已固定区的展开行）。</param>
     /// <param name="number">Alt+数字的编号，1～9；0 = 不编号（已固定区的条目，见 docs/design.md「剪贴板已固定区可折叠」）。</param>
-    public ClipRow(ClipEntry entry, int index, int number, string query, IClipRowActions actions)
+    public ClipRow(ClipEntry entry, int index, int number, string query, IClipRowActions actions, bool allowFileActions = false)
     {
         Entry = entry;
         Index = index;
         Number = number;
+        FavoriteVisibility = V(allowFileActions);
+        ExportExtension = allowFileActions ? ClipboardHistory.ExportExtension(entry) : null;
         this.actions = actions;
         Body = new ClipText(entry.Text ?? string.Empty, query);
+        Annotation = new ClipText(entry.Annotation is { } annotation
+            ? string.Join("  ", new[] { annotation.Note, string.Join("  ", annotation.Tags.Select(tag => "#" + tag)) }.Where(value => value.Length > 0))
+            : "", query);
         FileLines = (entry.Files ?? []).Select(f => new ClipText(System.IO.Path.GetFileName(f), query)).ToList();
         // 有本机位图就用 Image 显示（issue 21：ImageBrush 画在背景上时，图解码好了也常常要等别的东西触发重绘才出来，看着就是空白很久）；
         // 没有路径的（演示数据）用渐变底
@@ -44,6 +50,8 @@ public sealed partial class ClipRow : INotifyPropertyChanged
     public int Index { get; }
     public int Number { get; }
     public ClipText Body { get; }
+    public ClipText Annotation { get; }
+    public Visibility AnnotationVisibility => V(Annotation.Text.Length > 0);
     public List<ClipText> FileLines { get; }
     /// <summary>缩略图框的底：只有演示数据（没有位图路径）用渐变。</summary>
     public Brush? Thumb { get; }
@@ -56,12 +64,11 @@ public sealed partial class ClipRow : INotifyPropertyChanged
     public ImageSource? SourcePicture { get; }
     public string MetaText { get; }
 
-    public string TypeGlyph => Entry.Kind switch
+    public string TypeGlyph => Entry.HasImageContent ? "image" : Entry.Kind switch
     {
         ClipKind.Code => "code",
         ClipKind.Link => "link",
         ClipKind.Color => "drop",
-        ClipKind.Image => "image",
         // 文件：复制的是图片（服务给了缩略图）用图片图标；看着都是文件夹（没有扩展名）用文件夹；其余用文档（原来一律是文件夹）
         ClipKind.Files => HasThumb ? "image" : (Entry.Files ?? []).All(f => !System.IO.Path.HasExtension(f)) ? "folder" : "doc",
         _ => "text",
@@ -84,39 +91,20 @@ public sealed partial class ClipRow : INotifyPropertyChanged
     public double ThumbWidth => ThumbFillsRow ? double.NaN : Math.Max(ThumbMinHeight, Math.Round(ThumbMaxHeight * Ratio));
     public HorizontalAlignment ThumbAlign => ThumbFillsRow ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
     public Visibility FilesVisibility => V(Entry.Kind == ClipKind.Files);
-    public Visibility PinVisibility => V(Entry.Pinned);
     public Visibility SourceVisibility => V(SourceBrush is not null);
     public Visibility SourcePictureVisibility => V(SourcePicture is not null);
     public Visibility HotkeyVisibility => V(Number > 0);
-    public Visibility SendVisibility => V(ModuleGate.On(Contracts.ModuleIds.Launcher));   // 启动器停用时没有「交给启动器」（055）
-    public Visibility WordsVisibility => V(CanSplit);   // 分词（093）：只给普通文字条目，分词能力开着时
+    public Visibility FavoriteVisibility { get; }
+    public bool Favorite => Entry.Favorite;
+    public string FavoriteTip => Favorite ? Strings.Clipboard_RemoveFavorite : Strings.Clipboard_AddFavorite;
+    public string DeleteTip => Entry.Collected ? Strings.Clipboard_RemoveFromHistory : Strings.Common_Delete;
+    public string? ExportExtension { get; }
     public bool CanSplit => Entry.Kind == ClipKind.Text && !string.IsNullOrWhiteSpace(Entry.Text) && ModuleGate.On(Contracts.ModuleIds.Words);
     public bool Pinned => Entry.Pinned;
     public string PinTip => Entry.Pinned ? Strings.Clipboard_UnpinHint : Strings.Clipboard_PinHint;
 
-    // 右下角：平时显示 Alt+数字，选中或悬停时换成操作按钮（原型 .clip-end）
-    bool selected;
-    public bool IsSelected
-    {
-        get => selected;
-        set
-        {
-            if (selected == value) return;
-            selected = value;
-            Changed(nameof(HotkeyOpacity)); Changed(nameof(ActionsOpacity)); Changed(nameof(ActionsHitTest));
-        }
-    }
-    public double HotkeyOpacity => selected ? 0 : 0.85;
-    public double ActionsOpacity => selected ? 1 : 0;
-    public bool ActionsHitTest => selected;
-
-    public void Send() => actions.Send(this);
-    public void Words() => actions.Words(this);
     public void TogglePin() => actions.TogglePin(this);
-    public void Delete() => actions.Delete(this);
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    public void ToggleFavorite() => actions.ToggleFavorite(this);
 
     // ---- 小工具 ----
 
@@ -204,10 +192,8 @@ public sealed partial class ClipRow : INotifyPropertyChanged
 /// <summary>条目上三个按钮的去处（由视图实现）。</summary>
 public interface IClipRowActions
 {
-    void Send(ClipRow row);
-    void Words(ClipRow row);
     void TogglePin(ClipRow row);
-    void Delete(ClipRow row);
+    void ToggleFavorite(ClipRow row);
 }
 
 /// <summary>
@@ -294,17 +280,17 @@ public static class ClipMatch
 /// <summary>类型筛选的小标签。</summary>
 public sealed partial class ChipItem : INotifyPropertyChanged
 {
-    public ChipItem(string key, string label) { Key = key; Label = label; }
+    public ChipItem(string key, string label, string glyph) { Key = key; Label = label; Glyph = glyph; }
     public string Key { get; }
     public string Label { get; }
+    public string Glyph { get; }
     bool selected;
     public bool IsSelected
     {
         get => selected;
-        set { if (selected == value) return; selected = value; Changed(nameof(Weight)); Changed(nameof(TextOpacity)); }
+        set { if (selected == value) return; selected = value; Changed(nameof(IconOpacity)); }
     }
-    public Windows.UI.Text.FontWeight Weight => selected ? FontWeights.SemiBold : FontWeights.Normal;
-    public double TextOpacity => selected ? 1 : 0.68;
+    public double IconOpacity => selected ? 1 : 0.68;
     public event PropertyChangedEventHandler? PropertyChanged;
     void Changed(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

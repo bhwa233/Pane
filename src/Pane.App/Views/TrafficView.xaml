@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Pane.Views.TrafficView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="using:Pane.Views.Controls"
+    xmlns:loc="using:Pane.Localization">
+    <UserControl.Resources>
+        <Style x:Key="ProcessHistoryButton" TargetType="Button" BasedOn="{StaticResource PaneIconButton}">
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="MinWidth" Value="0"/>
+        </Style>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid x:Name="Header" Padding="18,0,10,0" Background="Transparent"
+              BorderThickness="0,0,0,1" BorderBrush="{ThemeResource PaneStrokeBrush}">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <c:PaneIcon Glyph="globe" Width="16" Height="16" Foreground="{ThemeResource PaneText2Brush}"/>
+                <TextBlock Text="{x:Bind loc:Strings.Module_Traffic_Name}" VerticalAlignment="Center"
+                           FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}"
+                           Foreground="{ThemeResource PaneText1Brush}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}"
+                        Height="{StaticResource PaneControlMd}" Click="HistoryClicked"
+                        AutomationProperties.Name="{x:Bind loc:Strings.Traffic_History}" ToolTipService.ToolTip="{x:Bind loc:Strings.Traffic_History}">
+                    <c:PaneIcon Glyph="history" Width="16" Height="16"/>
+                </Button>
+                <Button x:Name="PinButton" Style="{StaticResource PaneIconButton}"
+                        Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="PinClicked">
+                    <c:PaneIcon x:Name="PinIcon" Glyph="pin" Width="16" Height="16"/>
+                </Button>
+                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}"
+                        Height="{StaticResource PaneControlMd}" Click="CloseClicked"
+                        AutomationProperties.Name="{x:Bind loc:Strings.Common_CloseWindowHint}"
+                        ToolTipService.ToolTip="{x:Bind loc:Strings.Common_CloseWindowHint}">
+                    <c:PaneIcon Glyph="close" Width="16" Height="16"/>
+                </Button>
+            </StackPanel>
+        </Grid>
+        <StackPanel Grid.Row="1" Padding="18,16" Spacing="12">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="{x:Bind loc:Strings.Traffic_InterfaceTotal}" FontFamily="{StaticResource PaneFontUi}"
+                               FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText2Brush}"
+                               VerticalAlignment="Center"/>
+                    <Button Style="{StaticResource ProcessHistoryButton}"
+                            AutomationProperties.Name="{x:Bind loc:Strings.Traffic_InterfaceDetails}"
+                            ToolTipService.ToolTip="{x:Bind loc:Strings.Traffic_InterfaceDetails}">
+                        <c:PaneIcon Glyph="info" Width="14" Height="14"/>
+                        <Button.Flyout>
+                            <Flyout x:Name="AdapterFlyout" Placement="Bottom" Opening="AdapterFlyoutOpening" Closed="AdapterFlyoutClosed">
+                                <StackPanel Width="254" Spacing="8">
+                                    <TextBlock Text="{x:Bind loc:Strings.Traffic_InterfaceDetails}" FontSize="{StaticResource PaneTextSm}"
+                                               FontWeight="SemiBold" Foreground="{ThemeResource PaneText1Brush}"/>
+                                    <TextBlock x:Name="AdapterStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"
+                                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                                    <ScrollViewer MaxHeight="224" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel x:Name="AdapterRows" Spacing="10"/>
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{x:Bind loc:Strings.Traffic_InterfaceMonitoring}" FontSize="{StaticResource PaneTextXs}"
+                               Foreground="{ThemeResource PaneText2Brush}" VerticalAlignment="Center"/>
+                    <Border x:Name="InterfaceSwitchHost" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+            <Grid ColumnSpacing="16" Padding="0,10" BorderThickness="0,1" BorderBrush="{ThemeResource PaneStrokeBrush}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{x:Bind loc:Strings.Traffic_Download}" FontSize="{StaticResource PaneTextXs}"
+                               Foreground="{ThemeResource PaneText2Brush}"/>
+                    <TextBlock x:Name="Download" FontSize="20" FontWeight="SemiBold" Text="—"
+                               Foreground="{ThemeResource PaneText1Brush}"/>
+                    <Canvas x:Name="DownloadPlot" Height="32" IsHitTestVisible="False">
+                        <Polyline x:Name="DownloadLine" Stroke="{ThemeResource PaneAccentBrush}" StrokeThickness="2" StrokeLineJoin="Round"/>
+                    </Canvas>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="4">
+                    <TextBlock Text="{x:Bind loc:Strings.Traffic_Upload}" FontSize="{StaticResource PaneTextXs}"
+                               Foreground="{ThemeResource PaneText2Brush}"/>
+                    <TextBlock x:Name="Upload" FontSize="20" FontWeight="SemiBold" Text="—"
+                               Foreground="{ThemeResource PaneText1Brush}"/>
+                    <Canvas x:Name="UploadPlot" Height="32" IsHitTestVisible="False">
+                        <Polyline x:Name="UploadLine" Stroke="{ThemeResource PaneAccentBrush}" StrokeThickness="2" StrokeLineJoin="Round"/>
+                    </Canvas>
+                </StackPanel>
+            </Grid>
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="TrendCaption" Text="{x:Bind loc:Strings.Traffic_TrendWindow}" FontSize="{StaticResource PaneTextXs}"
+                           TextTrimming="CharacterEllipsis" Foreground="{ThemeResource PaneText2Brush}"/>
+                <TextBlock x:Name="Status" Grid.Column="1" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+            </Grid>
+        </StackPanel>
+        <Grid Grid.Row="2" Padding="18,12,18,14" RowSpacing="10"
+              BorderThickness="0,1,0,0" BorderBrush="{ThemeResource PaneStrokeBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid MinHeight="24" ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="ProcessTitle" Text="{x:Bind loc:Strings.Traffic_ProcessTitle}" VerticalAlignment="Center"
+                           FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}" TextWrapping="Wrap"/>
+                <Border x:Name="ProcessModeHost" Grid.Column="1" VerticalAlignment="Center"/>
+                <Border x:Name="ProcessSwitchHost" Grid.Column="2" VerticalAlignment="Center"/>
+                <Border x:Name="TogglePrototype" Visibility="Collapsed" Background="{ThemeResource PaneFillControlBrush}"
+                        BorderBrush="{ThemeResource PaneStrokeBrush}"/>
+                <Border x:Name="AccentPrototype" Visibility="Collapsed" Background="{ThemeResource PaneAccentBrush}"/>
+            </Grid>
+            <Grid Grid.Row="1" ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="ProcessStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" VerticalAlignment="Center"
+                           FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                <CheckBox x:Name="ProcessActiveOnly" Grid.Column="1" MinWidth="0" IsEnabled="False"
+                          Content="{x:Bind loc:Strings.Traffic_RankingActiveOnly}"
+                          Checked="ProcessActiveOnlyChanged" Unchecked="ProcessActiveOnlyChanged"/>
+                <Button x:Name="ProcessRetry" Grid.Column="2" Style="{StaticResource PaneIconButton}" Visibility="Collapsed"
+                        Click="ProcessRetryClicked" AutomationProperties.Name="{x:Bind loc:Strings.Common_Retry}"
+                        ToolTipService.ToolTip="{x:Bind loc:Strings.Common_Retry}">
+                    <c:PaneIcon Glyph="refresh" Width="16" Height="16"/>
+                </Button>
+            </Grid>
+            <Grid Grid.Row="2" ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBox x:Name="ProcessFilter" PlaceholderText="{x:Bind loc:Strings.Traffic_RankingFilter}"
+                         AutomationProperties.Name="{x:Bind loc:Strings.Traffic_RankingFilter}" TextChanged="ProcessFilterChanged"/>
+                <ComboBox x:Name="ProcessSort" Grid.Column="1" SelectedIndex="0" SelectionChanged="ProcessSortChanged"
+                          AutomationProperties.Name="{x:Bind loc:Strings.Traffic_RankingSort}">
+                    <ComboBoxItem Content="{x:Bind loc:Strings.Traffic_RankingDefault}"/>
+                    <ComboBoxItem Content="{x:Bind loc:Strings.Traffic_Download}"/>
+                    <ComboBoxItem Content="{x:Bind loc:Strings.Traffic_Upload}"/>
+                </ComboBox>
+            </Grid>
+            <Grid x:Name="EndProcessConfirmation" Grid.Row="3" Visibility="Collapsed" ColumnSpacing="8" Padding="8,6"
+                  BorderThickness="1" BorderBrush="{ThemeResource PaneStrokeBrush}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock x:Name="EndProcessTarget" TextTrimming="CharacterEllipsis" FontSize="{StaticResource PaneTextXs}"
+                               Foreground="{ThemeResource PaneText1Brush}" AutomationProperties.LiveSetting="Polite"/>
+                    <TextBlock Text="{x:Bind loc:Strings.Traffic_EndProcessWarning}" TextWrapping="Wrap"
+                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                </StackPanel>
+                <Button x:Name="CancelEndProcess" Grid.Column="1" Click="CancelEndProcessClicked" Content="{x:Bind loc:Strings.Common_Cancel}"/>
+                <Button Grid.Column="2" Click="EndProcessClicked" Content="{x:Bind loc:Strings.Traffic_EndProcess}"
+                        Foreground="{ThemeResource PaneDangerBrush}"/>
+            </Grid>
+            <TextBlock x:Name="ProcessNoMatches" Grid.Row="4" Visibility="Collapsed" TextWrapping="Wrap"
+                       Text="{x:Bind loc:Strings.Traffic_RankingNoMatch}" AutomationProperties.LiveSetting="Polite"
+                       FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+            <Grid x:Name="ProcessTable" Grid.Row="4" Visibility="Collapsed" RowSpacing="6" Background="Transparent"
+                  PointerEntered="RankingPointerEntered" PointerExited="RankingPointerExited">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="92"/>
+                        <ColumnDefinition Width="92"/>
+                        <ColumnDefinition Width="24"/>
+                        <ColumnDefinition Width="24"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{x:Bind loc:Strings.Traffic_ProcessName}" FontSize="{StaticResource PaneTextXs}"
+                               Foreground="{ThemeResource PaneText2Brush}"/>
+                    <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Traffic_Download}" TextAlignment="Right"
+                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                    <TextBlock Grid.Column="2" Text="{x:Bind loc:Strings.Traffic_Upload}" TextAlignment="Right"
+                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                </Grid>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
+                    <StackPanel x:Name="ProcessRows"/>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

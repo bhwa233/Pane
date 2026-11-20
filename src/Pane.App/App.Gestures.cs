@@ -47,15 +47,26 @@ public sealed partial class App
         else if(p.Phase==TrailPhase.Move)gestures.TrailMove(p.PhysicalX,p.PhysicalY);else gestures.TrailEnd();
     }}
     static GestureHintModifier Modifier(GestureModifier m)=>m switch{GestureModifier.WheelUp=>GestureHintModifier.WheelUp,GestureModifier.WheelDown=>GestureHintModifier.WheelDown,GestureModifier.LeftClick=>GestureHintModifier.LeftClick,GestureModifier.MiddleClick=>GestureHintModifier.MiddleClick,GestureModifier.X1Click=>GestureHintModifier.X1Click,GestureModifier.X2Click=>GestureHintModifier.X2Click,_=>GestureHintModifier.None};
-    async Task ShowSuper(SuperPanelRequest request){
+    void ToggleSuperFromHotkey()
+    {
+        if (!superModule || !panels.TryGetValue("super", out var panel)) return;
+        if (panel.Shown) { panel.Hide(); return; }
+        var settings = Store.Current.SuperPanel;
+        var (target, _, fullscreen) = WindowTargets.UnderCursor();
+        if (settings.PauseInFullscreen && fullscreen ||
+            settings.DisabledPrograms.Contains(target.ExePath, StringComparer.OrdinalIgnoreCase)) return;
+        _ = ShowSuper(target.Start.X, target.Start.Y);
+    }
+    Task ShowSuper(SuperPanelRequest request) => ShowSuper(request.PhysicalX, request.PhysicalY);
+    async Task ShowSuper(int x,int y){
         if(!superModule||superView==null)return;
         selectionCancellation?.Cancel();var pending=new CancellationTokenSource();selectionCancellation=pending;
         try{var result=await selectionReader!.ReadAsync(pending.Token);if(pending.IsCancellationRequested||closing||!superModule||superView==null)return;
             superView!.SetSelection(result);if(controlsEnabled)File.AppendAllText(output+".selection-order","SetSelection\n");
             foreach(var panel in panels.Values)panel.Hide();current=panels["super"];
-            if(!ShowSuperPassive(current,request.PhysicalX,request.PhysicalY))current.Show(true,request.PhysicalX,request.PhysicalY,Environment.GetEnvironmentVariable("PANE_VERIFY")!="1");   // 079：先试不激活
+            if(!ShowSuperPassive(current,x,y))current.Show(true,x,y,Environment.GetEnvironmentVariable("PANE_VERIFY")!="1");   // 079：先试不激活
             if(controlsEnabled)File.AppendAllText(output+".selection-order","Show\n");
-        }catch(OperationCanceledException){}catch(Exception e){if(!closing&&superModule&&superView!=null){superView!.SetSelection(new(null,0,SelectionFailure.Unsupported));current=panels["super"];current.Show(true,request.PhysicalX,request.PhysicalY,Environment.GetEnvironmentVariable("PANE_VERIFY")!="1");if(controlsEnabled)File.AppendAllText(output+".selection-errors",e.GetType().Name+"\n");}}finally{if(selectionCancellation==pending)selectionCancellation=null;pending.Dispose();}
+        }catch(OperationCanceledException){}catch(Exception e){if(!closing&&superModule&&superView!=null){superView!.SetSelection(new(null,0,SelectionFailure.Unsupported));current=panels["super"];current.Show(true,x,y,Environment.GetEnvironmentVariable("PANE_VERIFY")!="1");if(controlsEnabled)File.AppendAllText(output+".selection-errors",e.GetType().Name+"\n");}}finally{if(selectionCancellation==pending)selectionCancellation=null;pending.Dispose();}
     }
     // 设置页「鼠标手势」分区用：读当前配置、保存并立即生效、从 WGestures 预览 / 导入（设计接线）
     string GesturePath=>Path.Combine(Store.DirectoryPath,"gestures.json");

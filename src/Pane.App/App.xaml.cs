@@ -59,12 +59,13 @@ public sealed partial class App : Application
             try{setupHost=new SetupHost(this);}catch(Exception e) when(previewLog!=null){File.WriteAllText(previewLog+".error",e.ToString());throw;}
             return;}
         if(controlsEnabled)Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
-        AppDomain.CurrentDomain.UnhandledException+=(_,e)=>{if(e.ExceptionObject is Exception error)ReportCrash(error);if(queue.HasThreadAccess)Shutdown();else {var done=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);if(queue.TryEnqueue(()=>{try{Shutdown();}finally{done.TrySetResult();}}))done.Task.Wait(TimeSpan.FromSeconds(8));}};
+        AppDomain.CurrentDomain.UnhandledException+=(_,e)=>{if(e.ExceptionObject is Exception error)ReportCrash(error);if(queue.HasThreadAccess)Shutdown(waitForCapture:false);else {var done=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);if(queue.TryEnqueue(()=>{try{Shutdown(waitForCapture:false);}finally{done.TrySetResult();}}))done.Task.Wait(TimeSpan.FromSeconds(8));}};
         UnhandledException+=(_,e)=>{ReportCrash(e.Exception);Shutdown();e.Handled=true;};
         try {
             GlassParameters.InitializeResources(Resources);queue.EnsureSystemDispatcherQueue();manager=WindowsXamlManager.InitializeForCurrentThread();
             string data=RuntimeMode.Current.DataDirectory;
             Store=new SettingsStore(data,GlassParameters.Defaults());Store.CorruptFile+=(_,_)=>Ack("settings-recovered");Store.Load();ApplyUiLanguage();if(!demo)Fonts=new Pane.Services.FontCatalog();ApplyUiFont();/* 设计：界面字体 */
+            if(Environment.GetEnvironmentVariable("PANE_MIGRATION_PROBE")=="1") { Glass=new GlassParameters(Store.Current.General); await StartMigrationProbe(); return; }
             var autostart=new Pane.Services.AutostartService(IsProduction,Environment.ProcessPath!,Store,CreateStartupRegistry());Autostart=autostart;autostart.Align();
             aiService=new Pane.Services.Ai.AiService(Store);AiSetup=aiService;Ai=demo?new Pane.DesignData.AiSample():aiService;aiService.SetModuleEnabled(false);
             Glass=new GlassParameters(Store.Current.General);
@@ -77,28 +78,28 @@ public sealed partial class App : Application
             await StartModules();
             hotkeysReadyMs=(DateTime.UtcNow-System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalMilliseconds;
             listener=SingleInstance.Listen(command=>queue.TryEnqueue(()=>{Command(command);Ack("forwarded");}),cancellation.Token);
-            if(IsProduction&&!demo)Updates=new Pane.Services.Updates.UpdateService(Pane.Services.Setup.SetupFiles.VersionOf(Environment.ProcessPath!)??"0.1.0",data,()=>Store.Current.Update.AutoUpdate,path=>{
-                var start=new System.Diagnostics.ProcessStartInfo(path){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=Path.GetDirectoryName(Path.GetFullPath(path))!};start.ArgumentList.Add("--auto-update");
-                using var installer=System.Diagnostics.Process.Start(start)??throw new IOException(Strings.Setup_InstallerLaunchFailed);Shutdown();
-            }, selectedSource:()=>Store.Current.Update.Source);
-            StartUpdates();/* 设计接线：软件内更新 */StartBackground();StartReleaseProbe();
+            StartUpdates();StartBackground();StartReleaseProbe();
             timer=queue.CreateTimer();timer.Interval=TimeSpan.FromMilliseconds(8);timer.Tick+=(_,_)=>{try{Tick();}finally{if(!NeedsFrames)timer.Stop();}};timer.Start();
+            StartCardPerformanceProbe();
         }catch(Exception e){ReportCrash(e);Shutdown();}
     }
     SetupHost? setupHost;
     // 显示、动画和诊断控制仍逐帧推进；完全收起后等事件重新叫醒。
-    bool VisualFrames=>panels.Values.Any(p=>p.Active)||(settings?.Active??false)||secondaries.Values.Any(p=>p.Active)||(gestures?.Active??false);
+    bool VisualFrames=>panels.Values.Any(p=>p.Active)||(settings?.Active??false)||secondaries.Values.Any(p=>p.Active)||(gestures?.Active??false)||desktopNotes.Values.Any(p=>!p.Settled)||desktopTrafficCard is {Settled:false}||desktopScreenshots.Values.Any(p=>!p.Settled);
     bool NeedsFrames=>!closing&&(!ready||controlsEnabled||pendingAck!=null||cycleIndex>=0||VisualFrames);
     void WatchFrames(GlassPanel panel)=>panel.TickRequested+=WakeFrames;
     void WakeFrames(){if(!queue.HasThreadAccess){queue.TryEnqueue(WakeFrames);return;}if(!closing&&timer is {IsRunning:false})timer.Start();}
     void Command(string command)=>Command(command,null);
     // 测试宿主可注入前台句柄；产品入口始终读取系统前台窗口。
     void Command(string command,nint? foregroundOverride){
+        if(closing)return;
         string? moduleId=command.StartsWith("show-",StringComparison.Ordinal)?command[5..]:
             command.StartsWith("hotkey-",StringComparison.Ordinal)?command[7..]:command=="pause-gestures"?Pane.Contracts.ModuleIds.Gestures:null;
         if(moduleId=="super")moduleId=Pane.Contracts.ModuleIds.SuperPanel;
         if(moduleId!=null&&Modules!=null&&Modules.Modules.Any(m=>m.Id==moduleId)&&!AllowModule(moduleId))return;
         if(command=="hotkey-words"){_ = ReadWordsSelection();return;}
+        if(command=="hotkey-screenshots"){_ = CaptureFromHotkeyAsync();return;}
+        if(command=="hotkey-super-panel"){ToggleSuperFromHotkey();return;}
         if(command.StartsWith("hotkey-",StringComparison.Ordinal)){
             string name=command[7..];command="show-"+name;
             nint foreground=foregroundOverride??Native.GetForegroundWindow();
@@ -140,6 +141,9 @@ public sealed partial class App : Application
         if(controlsEnabled&&Take("exit",out _)){Shutdown();return;}
         DrainTrail();
         foreach(var panel in panels.Values)panel.Tick();settings?.Tick();TickSecondaries();gestures?.Tick();
+        foreach(var card in desktopNotes.Values)if(!card.Settled)card.Tick();
+        if(desktopTrafficCard is {Settled:false} trafficCard)trafficCard.Tick();
+        foreach(var card in desktopScreenshots.Values)if(!card.Settled)card.Tick();
         if(!ready&&panels.Values.All(p=>p.Prepared)&&(gestures?.Panel.Prepared??true)&&wallpaperReady&&(clipboardService?.Ready.IsCompletedSuccessfully??true)){ready=true;if(!demo&&Environment.GetEnvironmentVariable("PANE_VERIFY")!="1"&&Environment.GetEnvironmentVariable("PANE_OBSERVE")!="1"&&LaunchArguments.Parse(Environment.GetCommandLineArgs().Skip(1).ToArray())==LaunchCommand.Show)Command("show-launcher");_ = NotifyPreviousCrashAsync();ShowImportResult();if(controlsEnabled)File.WriteAllText(output+".ready",$"pid={Environment.ProcessId};panels={panels.Count};prepared=1;demo={(demo?1:0)};hotkeys={shell?.RegisteredCount??0};tray={(shell?.TrayCreated==true?1:0)};theme={(Glass.Dark?"Dark":"Light")}\n"+(shell==null?"":string.Join("\n",shell.Diagnostics))+"\n"+ModuleDiagnostics());}
         if(ready)DesignOpen();
         if(!ready||!controlsEnabled)return;
@@ -159,7 +163,7 @@ public sealed partial class App : Application
         foreach(var (name,command) in showCommands)if(Take(command,out var point)){
             Command(command);if(name=="super"&&!string.IsNullOrWhiteSpace(point)){var xy=Pair(point);current!.Show(true,(int)xy.Width,(int)xy.Height,false);}pendingAck="shown-"+name;return;
         }
-        if(ModuleControls()||DiagnosticCommand())return;
+        if(ModuleControls()||DiagnosticCommand()||DesktopCardControls())return;
         if(Take("import-wgestures",out var source)){ImportGestures(source);return;}
         if(Take("hide",out _)){Command("hide");pendingAck="hidden";return;}
         if(Take("gesture",out var gesture)){DemoGesture(gesture);pendingAck="gesture-shown";return;}
@@ -183,13 +187,20 @@ public sealed partial class App : Application
         if(log.Pending() is {} crash){shell.NotifyOnce(string.Format(Strings.Common_CrashLog, crash));log.MarkNotified(crash);}
     }
     void ReportCrash(Exception exception){Environment.ExitCode=1;if(IsProduction)new CrashLog(RuntimeMode.Current.DataDirectory).Write(exception);else if(controlsEnabled)File.WriteAllText(output+".error",exception.ToString());}
-    void Shutdown(){
+    void Shutdown()=>Shutdown(waitForCapture:true);
+    void Shutdown(bool waitForCapture){
         if(closing)return;closing=true;
         NativeCrashRecovery.Current?.Stop();
         // 某个服务清理失败也继续释放其余钩子、热键与窗口。
         void Clean(Action action){try{action();}catch(Exception error){Environment.ExitCode=1;ReportCrash(error);}}
         Clean(()=>(Updates as IDisposable)?.Dispose());
         Clean(()=>timer?.Stop());cancellation.Cancel();
+        Clean(()=>cardPerformanceProbe?.Dispose());
+        Clean(()=>StopProcessTrafficAsync().GetAwaiter().GetResult());
+        Clean(StopNoteReminders);
+        Clean(ClearDesktopNotes);
+        Clean(ClearDesktopTraffic);
+        Clean(ClearDesktopScreenshots);
         Clean(()=>trailListener?.GetAwaiter().GetResult());
         Clean(()=>releaseProbe?.GetAwaiter().GetResult());Clean(()=>listener?.GetAwaiter().GetResult());
         Clean(()=>selectionCancellation?.Cancel());Clean(()=>gestureService?.DisposeAsync().AsTask().GetAwaiter().GetResult());
@@ -202,8 +213,20 @@ public sealed partial class App : Application
         Clean(()=>(FileIcons as IDisposable)?.Dispose());
         Clean(()=>(EngineIcons as IDisposable)?.Dispose());
         Clean(()=>(WebSuggestions as IDisposable)?.Dispose());Clean(()=>aiService?.Dispose());Clean(()=>launcherSearch?.Dispose());Clean(CloseEmptyIsland);Clean(()=>settings?.Dispose());foreach(var w in secondaries.Values.ToArray())Clean(w.Dispose);
+        Clean(()=>screenshotOcr?.DrainAsync().GetAwaiter().GetResult());
         foreach(var panel in panels.Values)Clean(panel.Dispose);
         Clean(()=>gestures?.Dispose());Clean(()=>background?.Close());Clean(()=>Glass?.Dispose());Clean(()=>manager?.Dispose());
-        if(controlsEnabled)Clean(()=>File.WriteAllText(output+".stopped",Environment.ExitCode!=0?"cleanup-failed":"hotkeys=0;tray=0;panels=0"));Exit();
+        if(waitForCapture&&screenshotCapture is {IsRunning:true} capture){_ = FinishAfterCaptureAsync(capture.DrainAsync());return;}
+        CompleteShutdown();
+    }
+    async Task FinishAfterCaptureAsync(Task cleanup){
+        try{await cleanup;}
+        catch(Exception error){ReportCrash(error);}
+        finally{CompleteShutdown();}
+    }
+    void CompleteShutdown(){
+        try{if(controlsEnabled)File.WriteAllText(output+".stopped",Environment.ExitCode!=0?"cleanup-failed":"hotkeys=0;tray=0;panels=0");}
+        catch(Exception error){ReportCrash(error);}
+        finally{Exit();}
     }
 }

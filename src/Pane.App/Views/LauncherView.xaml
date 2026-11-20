@@ -217,6 +217,21 @@
             </ScrollViewer>
             <!-- AI 结果卡片：代替结果列表 -->
             <c:AiCard x:Name="Card" Margin="20,16,20,12" Visibility="Collapsed"/>
+            <Grid x:Name="QuickLinkFormPanel" Margin="20,12,20,12" RowSpacing="8" Visibility="Collapsed"
+                  PreviewKeyDown="OnQuickLinkFormKeyDown">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <TextBlock x:Name="QuickLinkFormTitle" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextMd}"
+                           Foreground="{ThemeResource PaneText1Brush}" TextTrimming="CharacterEllipsis" AutomationProperties.HeadingLevel="Level1"/>
+                <ScrollViewer x:Name="QuickLinkFormScroll" Grid.Row="1" MaxHeight="220" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled" IsTabStop="False">
+                    <StackPanel x:Name="QuickLinkFields" Spacing="8"/>
+                </ScrollViewer>
+                <TextBlock x:Name="QuickLinkFormError" Grid.Row="2" FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText2Brush}"
+                           TextWrapping="Wrap" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite"/>
+                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                    <Button x:Name="QuickLinkCancel" Style="{StaticResource PaneTextButton}" Content="{x:Bind loc:Strings.Common_Cancel}" Click="OnQuickLinkCancel"/>
+                    <Button x:Name="QuickLinkOpen" Style="{StaticResource PanePrimaryButton}" Content="{x:Bind loc:Strings.Common_Open}" Click="OnQuickLinkOpen"/>
+                </StackPanel>
+            </Grid>
         </Grid>
 
         <!-- 底部提示栏：选中的那一项按 Enter / Tab / Ctrl+Enter 会做什么 -->

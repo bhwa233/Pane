@@ -4,12 +4,21 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Pane.Settings;
+using Rectangle = System.Drawing.Rectangle;
+using PixelSize = System.Drawing.Size;
 
 namespace Pane.Hosting;
 
 public sealed partial class GlassPanel
 {
     internal SettingsStore? PositionStore {get;set;}
+    internal LauncherPosition? DesktopAnchor {get;set;}
+    internal Native.Point? DesktopScreenPoint {get;set;}
+    internal LauncherPosition? DesktopPlacement => activeMonitor is { } monitor ? new(monitor.Id,anchorX,anchorY) : null;
+    internal Func<IReadOnlyList<Rectangle>>? DesktopObstacles {get;set;}
+    internal Action? DesktopWorkAreaChanged {get;set;}
+    internal Rectangle DesktopBounds => new(Origin.X,Origin.Y,(int)(Width*dpi),(int)(Height*dpi));
+    internal bool DesktopArranging {get;private set;}
     /// <summary>打开时放到这个位置（物理像素，玻璃左上角）。二级窗口用来「记住位置」。</summary>
     internal (int X,int Y)? RememberedOrigin {get;set;}
     /// <summary>当前玻璃左上角的物理像素位置，关窗口时由 App 记下。</summary>
@@ -43,6 +52,11 @@ public sealed partial class GlassPanel
     }
     Point PlaceForShow(int px,int py,bool near)
     {
+        if(desktopCard)
+        {
+            DesktopScreenPoint??=new Native.Point{X=px,Y=py};
+            return PlaceDesktopCard();
+        }
         var m=At(px,py);
         double x=0,y=0;
         bool restored=false;
@@ -69,6 +83,98 @@ public sealed partial class GlassPanel
         var p=ClampPosition(m,x,y);
         if(PositionStore!=null){anchorX=(x-m.Work.Left)/dpi;anchorY=(y-m.Work.Top)/dpi;}else SetAnchor(m,p);
         return p;
+    }
+    MonitorArea DesktopScreen() => DesktopScreenPoint is { } point ? At(point.X,point.Y) : activeMonitor??At(0,0);
+    (Point Origin, bool Clamped)? SavedDesktopTarget(MonitorArea monitor)
+    {
+        if(DesktopAnchor is not {} saved||!double.IsFinite(saved.X)||!double.IsFinite(saved.Y))return null;
+        var x=monitor.Work.Left+saved.X*monitor.Dpi;
+        var y=monitor.Work.Top+saved.Y*monitor.Dpi;
+        var origin=ClampPosition(monitor,x,y);
+        return (origin,Math.Abs(x-origin.X)>0.5||Math.Abs(y-origin.Y)>0.5);
+    }
+    PixelSize DesktopCardSize(MonitorArea monitor)=>new((int)Math.Ceiling(Width*monitor.Dpi),(int)Math.Ceiling(Height*monitor.Dpi));
+    Point PlaceDesktopCard()
+    {
+        var monitor=DesktopScreen();
+        return PlaceDesktopCard(monitor,SavedDesktopTarget(monitor),DesktopObstacles?.Invoke()??[]);
+    }
+    Point PlaceDesktopCard(MonitorArea monitor,(Point Origin, bool Clamped)? target,IReadOnlyList<Rectangle> occupied)
+    {
+        var card=DesktopCardSize(monitor);
+        dpi=monitor.Dpi;
+        if(target is {} saved)
+        {
+            var bounds=new Rectangle(new System.Drawing.Point(saved.Origin.X,saved.Origin.Y),card);
+            if(!saved.Clamped||!occupied.Any(bounds.IntersectsWith))
+            {
+                SetAnchor(monitor,saved.Origin);
+                return saved.Origin;
+            }
+        }
+
+        var work=Rectangle.FromLTRB(monitor.Work.Left,monitor.Work.Top,monitor.Work.Right,monitor.Work.Bottom);
+        var edge=(int)Math.Ceiling(8*monitor.Dpi);
+        var gap=(int)Math.Ceiling(10*monitor.Dpi);
+        var (origin,_)=DesktopCardPlacement.Find(work,card,edge,gap,occupied);
+        var point=new Point{X=origin.X,Y=origin.Y};
+        SetAnchor(monitor,point);
+        return point;
+    }
+    void RestoreDesktopPosition()
+    {
+        var point=PlaceDesktopCard();
+        Layout(point.X-(int)(48*dpi),point.Y-(int)(48*dpi));
+    }
+    internal static void RestoreDesktopCards(IEnumerable<GlassPanel> cards)=>
+        PositionDesktopCards(cards.Where(card=>card.Shown),static (panel,origin)=>
+            panel.Layout(origin.X-(int)(48*panel.dpi),origin.Y-(int)(48*panel.dpi)));
+    internal static void RevealDesktopCards(IEnumerable<GlassPanel> cards,Action<Exception> reportFailure)=>
+        PositionDesktopCards(cards,(panel,origin)=>
+        {
+            try { panel.Show(false,0,0,false,false,origin); }
+            catch(Exception error) when(error is System.ComponentModel.Win32Exception or COMException) { reportFailure(error); }
+        });
+    static void PositionDesktopCards(IEnumerable<GlassPanel> cards,Action<GlassPanel,Point> position)
+    {
+        var panels=cards.Where(card=>!card.disposing).ToArray();
+        if(panels.Length==0)return;
+        var monitor=panels[0].DesktopScreen();
+        var occupied=new List<Rectangle>(panels.Length);
+        foreach(var (panel,target) in panels.Select(panel=>(Panel:panel,Target:panel.SavedDesktopTarget(monitor)))
+            .OrderBy(entry=>entry.Target is {} saved ? saved.Clamped ? 1 : 0 : 2))
+        {
+            var origin=panel.PlaceDesktopCard(monitor,target,occupied);
+            position(panel,origin);
+            if(panel.Shown)occupied.Add(panel.DesktopBounds);
+        }
+    }
+    internal void BeginDesktopArrangement()
+    {
+        if(!desktopCard||disposing||!Shown)return;
+        DesktopArranging=true;
+        lastClick=0;
+        PlacePanelInZOrder(0);
+    }
+    internal void FinishDesktopDrag()
+    {
+        EndDrag();
+        root.ReleasePointerCaptures();
+    }
+    internal void EndDesktopArrangement(LauncherPosition? original,bool restore)
+    {
+        if(!DesktopArranging||disposing)return;
+        dragging=false;
+        root.ReleasePointerCaptures();
+        DesktopArranging=false;
+        lastClick=0;
+        if(restore)DesktopAnchor=original;
+        PlacePanelInZOrder(1);
+    }
+    internal void PlacePanelInZOrder(nint after)
+    {
+        Native.SetWindowPos(Input,after,0,0,0,0,0x13);
+        Native.SetWindowPos(Visual,Input,0,0,0,0,0x213);
     }
     // 托盘菜单：以鼠标点为一角。鼠标落在工作区外的哪一边，任务栏就在哪一边，菜单往反方向展开；
     // 右边放不下翻到左边；最后由 ClampPosition 夹进工作区（四周留 8）
@@ -106,6 +212,11 @@ public sealed partial class GlassPanel
     }
     void SavePosition()
     {
+        if(desktopCard)
+        {
+            if(DesktopArranging)DesktopAnchor=DesktopPlacement;
+            return;
+        }
         if(PositionStore is not {} store||activeMonitor is not {} m)return;
         store.Save(store.Current with {Launcher=store.Current.Launcher with {Position=new(m.Id,anchorX,anchorY)}});
     }
@@ -113,10 +224,11 @@ public sealed partial class GlassPanel
     {
         if(!Shown)throw new InvalidOperationException("拖动需要显示中的面板"); // 不翻译：异常
         int x=positionX+(int)(48*dpi)+dx,y=positionY+(int)(48*dpi)+dy;
-        MovePanel(x,y,At(x,y));SavePosition();
+        MovePanel(x,y,desktopCard?DesktopScreen():At(x,y));SavePosition();
     }
     internal void ResetPosition()
     {
+        if(desktopCard){if(DesktopArranging){DesktopAnchor=null;RestoreDesktopPosition();DesktopAnchor=DesktopPlacement;}return;}
         if(PositionStore is {} store)store.Save(store.Current with {Launcher=store.Current.Launcher with {Position=null}});
         Native.GetCursorPos(out var p);var point=PlaceForShow(p.X,p.Y,Placement==PanelPlacement.Pointer);
         // 按任务许可直接跳回，不重放出现动画和视图 OnShowing。
@@ -137,7 +249,7 @@ public sealed partial class GlassPanel
     }
     void DragPressed(object sender,PointerRoutedEventArgs e)
     {
-        if(dragging||!Settled||!CanDrag(e.OriginalSource as DependencyObject)||!e.GetCurrentPoint(root).Properties.IsLeftButtonPressed)return;
+        if(dragging||desktopCard&&!DesktopArranging||!Settled||!CanDrag(e.OriginalSource as DependencyObject)||!e.GetCurrentPoint(root).Properties.IsLeftButtonPressed)return;
         Native.GetCursorPos(out var p);long now=Environment.TickCount64;
         if(lastClick!=0&&now-lastClick<=GetDoubleClickTime()&&Math.Abs(p.X-clickX)<=GetSystemMetrics(36)&&Math.Abs(p.Y-clickY)<=GetSystemMetrics(37))
         {lastClick=0;ResetPosition();e.Handled=true;return;}
@@ -150,7 +262,7 @@ public sealed partial class GlassPanel
         if(!dragging||e.Pointer.PointerId!=dragPointer)return;
         Native.GetCursorPos(out var p);
         if(!dragMoved&&Math.Abs(p.X-pressX)<GetSystemMetrics(68)&&Math.Abs(p.Y-pressY)<GetSystemMetrics(69))return;
-        dragMoved=true;lastClick=0;var m=At(p.X,p.Y);
+        dragMoved=true;lastClick=0;var m=desktopCard?activeMonitor??DesktopScreen():At(p.X,p.Y);
         MovePanel((int)Math.Round(p.X-grabX*m.Dpi),(int)Math.Round(p.Y-grabY*m.Dpi),m);e.Handled=true;
     }
     void EndDrag()

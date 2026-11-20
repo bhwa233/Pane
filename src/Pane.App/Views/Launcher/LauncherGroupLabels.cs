@@ -13,6 +13,7 @@ internal static class LauncherGroupLabels
         LauncherGroups.Calculation => Strings.Launcher_Group_Calculation,
         LauncherGroups.Ai => Strings.Launcher_Group_Ai,
         LauncherGroups.Web => Strings.Launcher_Group_Web,
+        LauncherGroups.QuickLinks => Strings.QuickLinks_Title,
         LauncherGroups.Settings => Strings.Launcher_Group_Settings,
         LauncherGroups.Terminal => Strings.Launcher_Group_Terminal,
         LauncherGroups.Recent => Strings.Launcher_Group_Recent,

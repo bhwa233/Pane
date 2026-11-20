@@ -1,9 +1,24 @@
 namespace Pane.Settings;
 [Flags] public enum KeyModifiers { None=0, Ctrl=1, Alt=2, Shift=4, Win=8 }
 public enum ThemeMode { System, Light, Dark }
-public sealed record PaneSettings(int Version, GeneralSettings General, LauncherSettings Launcher, ClipboardSettings Clipboard) { AiSettings ai=new(); public AiSettings Ai { get=>ai; init=>ai=value??new(); } IconSettings icons=new(); public IconSettings Icons { get=>icons; init=>icons=value??new(); } SuperPanelSettings superPanel=new(); public SuperPanelSettings SuperPanel { get=>superPanel; init=>superPanel=value??new(); } UpdateSettings update=new(); public UpdateSettings Update { get=>update; init=>update=value??new(); } RenameSettings rename=new(); public RenameSettings Rename { get=>rename; init=>rename=value??new(); } FolderJumpSettings folderJump=new(); public FolderJumpSettings FolderJump { get=>folderJump; init=>folderJump=value??new(); }
+public sealed record PaneSettings(int Version, GeneralSettings General, LauncherSettings Launcher, ClipboardSettings Clipboard) { AiSettings ai=new(); public AiSettings Ai { get=>ai; init=>ai=value??new(); } IconSettings icons=new(); public IconSettings Icons { get=>icons; init=>icons=value??new(); } SuperPanelSettings superPanel=new(); public SuperPanelSettings SuperPanel { get=>superPanel; init=>superPanel=value??new(); } UpdateSettings update=new(); public UpdateSettings Update { get=>update; init=>update=value??new(); } FolderJumpSettings folderJump=new(); public FolderJumpSettings FolderJump { get=>folderJump; init=>folderJump=value??new(); }
     WordsSettings words=new(); public WordsSettings Words { get=>words; init=>words=value??new(); }
     StorageSettings storage=new(); public StorageSettings Storage { get=>storage; init=>storage=value??new(); }
+    public Dictionary<Guid,LauncherPosition?>? DesktopNotes { get; init; }
+    /// <summary>桌面便签的表面形态（galaxy surface_state 对齐）：键为便签 id；1 = 编辑面（pad），缺省或 0 = 贴纸面（tile）。</summary>
+    public Dictionary<Guid,int>? DesktopNoteSurfaces { get; init; }
+    /// <summary>桌面便签的窗口尺寸（贴纸面 / 编辑面共用）：键为便签 id，值为 [宽, 高]。</summary>
+    public Dictionary<Guid,double[]>? DesktopNoteSizes { get; init; }
+    /// <summary>桌面便签的置顶状态：键为便签 id。缺省或 false = 跟桌面（非置顶）。</summary>
+    public Dictionary<Guid,bool>? DesktopNoteTopmost { get; init; }
+    public Dictionary<Guid,DateTimeOffset>? NoteReminders { get; init; }
+    public Dictionary<Guid,Dictionary<string,DateTimeOffset>>? NoteTaskReminders { get; init; }
+    public DesktopTrafficSettings? DesktopTraffic { get; init; }
+    public bool PauseInterfaceTraffic { get; init; }
+    public Dictionary<Guid,LauncherPosition?>? DesktopScreenshots { get; init; }
+    public bool LimitScreenshotHistory { get; init; }
+    public bool RememberTranslations { get; init; }
+    public bool LookupTranslationSelection { get; init; }
     // 能力模块的启用状态（设计加，2026-11-04，055）：键是 Pane.Contracts.ModuleIds，没写的用 ModuleInfo.DefaultEnabled。
     // 旧设置文件没有这项时，按旧的总开关迁移（Clipboard / SuperPanel / FolderJump 的 Enabled），见 docs/design.md「能力模块」
     Dictionary<string,bool>? modules; public Dictionary<string,bool>? Modules { get=>modules; init=>modules=value; } }
@@ -26,18 +41,10 @@ public sealed record WordsSettings(Hotkey? Hotkey=null, bool CloseAfterCopy=true
 // 设计加（2026-11-13，Mirror酱）：Source = 更新源；CDK 不在这里（服务用 DPAPI 单独存，见 IUpdateService.MirrorCdk）
 public sealed record UpdateSettings(bool AutoUpdate=true, bool InstallOnStartup=false, string? IgnoredVersion=null,
     string? SeenVersion=null, int NewsShown=0, string? AutoInstallFailedVersion=null, Pane.Contracts.UpdateSource Source=Pane.Contracts.UpdateSource.GitHub);
-// 批量重命名（设计加，2026-10-31，040）：存下来的规则组合（预设）；LastRules = 上次执行时的规则，下次打开窗口接着用
-public sealed record RenamePreset(string Name, Pane.Contracts.RenameRule[] Rules);
-public sealed record RenameSettings
-{
-    RenamePreset[] presets=[];
-    public RenamePreset[] Presets { get=>presets; init=>presets=value??[]; }
-    Pane.Contracts.RenameRule[] lastRules=[];
-    public Pane.Contracts.RenameRule[] LastRules { get=>lastRules; init=>lastRules=value??[]; }
-}
 public enum SuperPanelButton { Middle=2, X1=4, X2=8 }
 public sealed record SuperPanelSettings(bool Enabled=true, SuperPanelButton TriggerButton=SuperPanelButton.X1, int HoldMilliseconds=400, bool PauseInFullscreen=true, bool ClipboardFallback=true)
 {
+    public Hotkey Hotkey { get; init; } = new(KeyModifiers.Ctrl | KeyModifiers.Alt, 'S');
     string[] disabledPrograms=[];
     public string[] DisabledPrograms { get=>disabledPrograms; init=>disabledPrograms=value??[]; }
     /// <summary>
@@ -65,6 +72,9 @@ public sealed record AppAliasEntry(string AppId, string Name, string[] Aliases);
 // 不在搜索中显示的条目（设计加，2026-11-13，issue 49，任务 098）：Name 是隐藏时的标题，索引里找不到时设置页用它显示
 public sealed record HiddenItemEntry(string Id, string Name);
 public sealed record SearchEngine(string Name, string Keyword, string UrlTemplate);
+public enum QuickLinkKind { Web, Program }
+public sealed record QuickLink(Guid Id, string Name, string Keyword, QuickLinkKind Kind, string Target,
+    string Arguments = "", string WorkingDirectory = "", bool Enabled = true);
 // 空启动器显示什么（设计加，2026-10-31，用户反馈要极简）：最近和固定 / 只显示固定 / 什么都不显示（只剩搜索栏）
 // RecentOnly 是 issue 47 加的，排在最后，已存的设置值不变
 public enum LauncherHome { RecentAndPinned, PinnedOnly, Nothing, RecentOnly }
@@ -86,6 +96,8 @@ public sealed record LauncherSettings(Hotkey Hotkey, LauncherPosition? Position=
     public FavoriteEntry[] Favorites { get=>favorites; init=>favorites=value??[]; }
     AppAliasEntry[] appAliases=[];
     public AppAliasEntry[] AppAliases { get=>appAliases; init=>appAliases=value??[]; }
+    QuickLink[] quickLinks=[];
+    public QuickLink[] QuickLinks { get=>quickLinks; init=>quickLinks=value??[]; }
     SearchEngine[] searchEngines=DefaultSearchEngines();
     // 设计改（2026-11-01，issue 8）：默认加上 Google。存过的列表如果和旧默认完全一样（没改过），读进来时换成新默认；改过的不动
     public SearchEngine[] SearchEngines { get=>searchEngines; init=>searchEngines=value==null||IsOldDefault(value)?DefaultSearchEngines():value; }
@@ -134,6 +146,7 @@ public enum PortableKind { Folder, Program, Learned }
 /// <param name="AddedAt">加入时间；记住的程序满 100 个时，按启动器使用记录去掉最久没用的，没用过的按这个时间。</param>
 public sealed record PortableEntry(string Path, PortableKind Kind, DateTimeOffset AddedAt);
 public sealed record LauncherPosition(string MonitorId, double X, double Y);
+public sealed record DesktopTrafficSettings(LauncherPosition? Position = null);
 // 本机专属位置；083 导出时跳过，不能随配置迁移到其他电脑。
 public sealed record StorageSettings(string? LargeFilesDirectory=null);
 public sealed record ClipboardSettings(Hotkey Hotkey,
@@ -142,8 +155,11 @@ public sealed record ClipboardSettings(Hotkey Hotkey,
     // 设计加（2026-10-31，033）：整个剪贴板功能的开关。关掉 = 不监听、不记录、不注册呼出热键、面板打不开、Win+V 替换先恢复；已有记录保留
     bool Enabled=true,long ImageLimitMegabytes=0,bool KeepHotkeyWithWinV=true)
 {
+    internal const int TextExclusionLimit=32, TextExclusionLength=120;
     string[] excludedPrograms=[];
+    string[] excludedText=[];
     public string[] ExcludedPrograms {get=>excludedPrograms;init=>excludedPrograms=value??[];}
+    public string[] ExcludedText {get=>excludedText;init=>excludedText=value??[];}
 }
 public sealed record GlassCommand(ThemeMode Theme, GlassThemeParameters Parameters);
 

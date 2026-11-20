@@ -95,9 +95,7 @@ internal sealed class FavoriteSource(ILauncherExecutor executor):EntrySource(Lau
 }
 internal sealed class CommandSource(ILauncherExecutor executor):EntrySource(LauncherGroups.Commands,4,"command:")
 {
-    static readonly SearchEntry Rename=new("rename",LauncherItemKind.Command,new PinyinTable().CreateLocalized(Strings.Launcher_CommandRename, Strings.Simplified(nameof(Strings.Launcher_CommandRename))),Strings.Launcher_CommandSubtitle,"pencil");
-    static readonly SearchName EnglishRename=new("rename","rename".Select((c,i)=>new NameToken(i,1,[c.ToString()],[c.ToString()])).ToArray());
-    protected override SearchEntry[] Entries(SourceContext c)=>[..c.Snapshot.Commands.Where(e=>e.Id!="rename").Select(LocalizeCommand),Rename];
+    protected override SearchEntry[] Entries(SourceContext c)=>[..c.Snapshot.Commands.Select(LocalizeCommand)];
     static SearchEntry LocalizeCommand(SearchEntry entry)
     {
         string title = entry.Id switch
@@ -113,7 +111,6 @@ internal sealed class CommandSource(ILauncherExecutor executor):EntrySource(Laun
         };
         return entry with { Name = entry.Name.WithDisplayName(title), Subtitle = entry.Id is "command:clipboard" or "command:settings" ? "Pane" : Strings.Launcher_CommandSubtitle };
     }
-    protected override NameMatch? Match(SearchEntry entry,string query)=>base.Match(entry,query)??(entry.Id=="rename"&&EnglishRename.Match(query) is {} alias?alias with{Spans=[]}:null);
     // TODO(design): 关机、重启由 LauncherView 在调用 ExecuteAsync 前确认（沿用 013）。
     public override Task ExecuteAsync(LauncherItem item,SourceContext c,CancellationToken token)=>executor.CommandAsync(item.Id[8..],token);
 }

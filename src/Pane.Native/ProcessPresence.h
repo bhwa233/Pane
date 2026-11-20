@@ -1,6 +1,13 @@
 #pragma once
 #include <winternl.h>
 #include <vector>
+// Private names preserve the published Windows ABI on older SDK headers.
+// Layout: Microsoft Learn NtQuerySystemInformation; enum: Microsoft's
+// win32metadata RecompiledIdlHeaders/um/winternl.h (SystemBasicProcessInformation=252).
+struct PaneBasicProcessInformation {
+ ULONG NextEntryOffset; HANDLE UniqueProcessId; HANDLE InheritedFromUniqueProcessId;
+ ULONG64 SequenceNumber; UNICODE_STRING ImageName;
+};
 using ProcessQuery=NTSTATUS(NTAPI*)(SYSTEM_INFORMATION_CLASS,PVOID,ULONG,PULONG);
 inline ProcessQuery processQuery(){
  auto address=GetProcAddress(GetModuleHandleW(L"ntdll.dll"),"NtQuerySystemInformation");ProcessQuery query=nullptr;
@@ -12,15 +19,15 @@ inline int wgesturesPresent(ProcessQuery query=processQuery()){
  if(!query)return -1;
  thread_local std::vector<BYTE> bytes(65536);ULONG needed=0;NTSTATUS status=0;
  for(int attempt=0;attempt<4;attempt++){
-  status=query(SystemBasicProcessInformation,bytes.data(),static_cast<ULONG>(bytes.size()),&needed);
+  status=query(static_cast<SYSTEM_INFORMATION_CLASS>(252),bytes.data(),static_cast<ULONG>(bytes.size()),&needed);
   if(status!=static_cast<NTSTATUS>(0xC0000004L))break;
   if(needed>32*1024*1024)return -1;
   bytes.resize(needed>bytes.size()?needed:bytes.size()*2);
  }
- if(status<0||needed>bytes.size()||needed<sizeof(SYSTEM_BASICPROCESS_INFORMATION))return -1;
+ if(status<0||needed>bytes.size()||needed<sizeof(PaneBasicProcessInformation))return -1;
  constexpr wchar_t name[]=L"WGestures.exe";
- for(size_t offset=0;offset+sizeof(SYSTEM_BASICPROCESS_INFORMATION)<=needed;){
-  auto& row=*reinterpret_cast<const SYSTEM_BASICPROCESS_INFORMATION*>(bytes.data()+offset);
+ for(size_t offset=0;offset+sizeof(PaneBasicProcessInformation)<=needed;){
+  auto& row=*reinterpret_cast<const PaneBasicProcessInformation*>(bytes.data()+offset);
   auto begin=reinterpret_cast<uintptr_t>(bytes.data()),text=reinterpret_cast<uintptr_t>(row.ImageName.Buffer);
   if(row.ImageName.Length){
    if(text<begin||text>begin+needed||row.ImageName.Length>begin+needed-text||row.ImageName.Length%sizeof(wchar_t))return -1;

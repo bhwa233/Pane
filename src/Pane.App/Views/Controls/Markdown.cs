@@ -40,12 +40,13 @@ public static partial class MarkdownRender
     /// 接在最后一段文字的末尾；最后一块不是文字（代码块、表格）就单独放一行。<paramref name="tailHost"/> 是装光标的容器，
     /// 下次重排前调用方要把它的 Child 设回 null，光标才能挂到新的段落上。
     /// </summary>
-    public static List<FrameworkElement> Build(string text, MarkdownStyle st, UIElement? tail, out InlineUIContainer? tailHost)
+    public static List<FrameworkElement> Build(string text, MarkdownStyle st, UIElement? tail, out InlineUIContainer? tailHost,
+        Action<Grid, string>? taskAction = null)
     {
         var output = new List<FrameworkElement>();
         RichTextBlock? lastText = null;
         void Add(FrameworkElement e, RichTextBlock? textBlock) { output.Add(e); lastText = textBlock; }
-        Blocks(text.Replace("\r\n", "\n").Split('\n'), st, Add);
+        Blocks(text.Replace("\r\n", "\n").Split('\n'), st, Add, taskAction);
         tailHost = null;
         if (tail is not null)
         {
@@ -70,7 +71,8 @@ public static partial class MarkdownRender
     [GeneratedRegex(@"^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$")] private static partial Regex ListPattern();
     [GeneratedRegex(@"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")] private static partial Regex TableRulePattern();
 
-    static void Blocks(string[] lines, MarkdownStyle st, Action<FrameworkElement, RichTextBlock?> add)
+    static void Blocks(string[] lines, MarkdownStyle st, Action<FrameworkElement, RichTextBlock?> add,
+        Action<Grid, string>? taskAction, int depth = 0)
     {
         var para = new List<string>();
         var listIndents = new List<int>();   // 嵌套列表：每层的缩进列
@@ -151,7 +153,7 @@ public static partial class MarkdownRender
             }
 
             // 引用：连续的 > 行，里面再按块排
-            if (trimmed.StartsWith('>'))
+            if (depth < 8 && trimmed.StartsWith('>'))
             {
                 Flush(); listIndents.Clear();
                 var inner = new List<string>();
@@ -162,7 +164,7 @@ public static partial class MarkdownRender
                 }
                 i--;
                 var panel = new StackPanel { Spacing = 6 };
-                Blocks([.. inner], st.With(st.Text2), (e, _) => panel.Children.Add(e));
+                Blocks([.. inner], st.With(st.Text2), (e, _) => panel.Children.Add(e), taskAction, depth + 1);
                 add(new Border { BorderBrush = st.Stroke, BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(12, 2, 0, 2), Child = panel }, null);
                 continue;
             }
@@ -180,7 +182,7 @@ public static partial class MarkdownRender
                 for (; i + 1 < lines.Length && lines[i + 1].Trim().Length > 0 && lines[i + 1].Length - lines[i + 1].TrimStart().Length > indent
                        && !ListPattern().IsMatch(lines[i + 1]) && !lines[i + 1].Trim().StartsWith("```", StringComparison.Ordinal); i++)
                     body.Append('\n').Append(lines[i + 1].Trim());
-                var (item, textBlock) = ListItem(marker, body.ToString(), level, st);
+                var (item, textBlock) = ListItem(marker, body.ToString(), level, st, taskAction);
                 add(item, textBlock);
                 continue;
             }
@@ -226,7 +228,7 @@ public static partial class MarkdownRender
         return r;
     }
 
-    static (FrameworkElement, RichTextBlock) ListItem(string marker, string text, int level, MarkdownStyle st)
+    static (FrameworkElement, RichTextBlock) ListItem(string marker, string text, int level, MarkdownStyle st, Action<Grid, string>? taskAction)
     {
         string bullet;
         if (char.IsAsciiDigit(marker[0])) bullet = marker[..^1] + ".";
@@ -248,6 +250,11 @@ public static partial class MarkdownRender
         var body = Paragraph(text, st);
         Grid.SetColumn(body, 1);
         grid.Children.Add(body);
+        if (bullet == "☐" && taskAction is not null)
+        {
+            var lineEnd = text.IndexOf('\n');
+            taskAction(grid, (lineEnd < 0 ? text : text[..lineEnd]).Trim());
+        }
         return (grid, body);
     }
 
@@ -289,6 +296,8 @@ public static partial class MarkdownRender
         var aligns = Cells(rule).Select(c => c.StartsWith(':') && c.EndsWith(':') ? TextAlignment.Center : c.EndsWith(':') ? TextAlignment.Right : TextAlignment.Left).ToList();
         var cells = rows.Select(Cells).ToList();
         int columns = Math.Max(aligns.Count, cells.Max(c => c.Count));
+        if ((long)columns * cells.Count > 1500)
+            return CodeBlock(string.Join("\n", rows.Take(1).Append(rule).Concat(rows.Skip(1))), "", st);
         var grid = new Grid();
         for (int c = 0; c < columns; c++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var size = Math.Round(st.Size * 0.93);
@@ -358,13 +367,15 @@ public static partial class MarkdownRender
 
     [GeneratedRegex(@"https?://[^\s<>()（）\[\]，。、；：！？""'`]+[^\s<>()（）\[\]，。、；：！？""'`.,;:!?]")] private static partial Regex UrlPattern();
 
-    static void Inline(InlineCollection into, string text, MarkdownStyle st)
+    static void Inline(InlineCollection into, string text, MarkdownStyle st, int depth = 0, bool links = true)
     {
+        if (depth >= 12) { into.Add(new Run { Text = text }); return; }
         var plain = new StringBuilder();
         void FlushPlain()
         {
             if (plain.Length == 0) return;
-            Plain(into, plain.ToString(), st);
+            if (links) Plain(into, plain.ToString(), st);
+            else into.Add(new Run { Text = plain.ToString() });
             plain.Clear();
         }
         int i = 0;
@@ -416,7 +427,7 @@ public static partial class MarkdownRender
                 {
                     FlushPlain();
                     var span = ch == '~' ? new Span { TextDecorations = Windows.UI.Text.TextDecorations.Strikethrough } : new Bold();
-                    Inline(span.Inlines, text[(i + 2)..end], st);
+                    Inline(span.Inlines, text[(i + 2)..end], st, depth + 1, links);
                     into.Add(span);
                     i = end + 2;
                     continue;
@@ -431,14 +442,14 @@ public static partial class MarkdownRender
                 {
                     FlushPlain();
                     var span = new Italic();
-                    Inline(span.Inlines, text[(i + 1)..end], st);
+                    Inline(span.Inlines, text[(i + 1)..end], st, depth + 1, links);
                     into.Add(span);
                     i = end + 1;
                     continue;
                 }
             }
             // 链接 [文字](网址)
-            if (ch == '[')
+            if (links && ch == '[')
             {
                 int close = text.IndexOf("](", i + 1, StringComparison.Ordinal);
                 int paren = close < 0 ? -1 : text.IndexOf(')', close + 2);
@@ -450,17 +461,17 @@ public static partial class MarkdownRender
                     if (WebUri(url) is { } uri)
                     {
                         var link = new Hyperlink { NavigateUri = uri, Foreground = st.Accent, UnderlineStyle = UnderlineStyle.None };
-                        Inline(link.Inlines, label, st);
+                        Inline(link.Inlines, label, st, depth + 1, links: false);
                         ToolTipService.SetToolTip(link, url);
                         into.Add(link);
                     }
-                    else Inline(into, label, st);
+                    else Inline(into, label, st, depth + 1);
                     i = paren + 1;
                     continue;
                 }
             }
             // <https://…>
-            if (ch == '<')
+            if (links && ch == '<')
             {
                 int close = text.IndexOf('>', i + 1);
                 if (close > i && WebUri(text[(i + 1)..close]) is { } uri)

@@ -1,5 +1,6 @@
 using Pane.Localization;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -12,28 +13,29 @@ namespace Pane.Views;
 /// <summary>托盘菜单每次弹出时的状态（App 填）。热键为空就不显示键帽。</summary>
 public sealed record TrayMenuState(string? UpdateVersion, IReadOnlyList<string> LauncherKeys, IReadOnlyList<string> ClipboardKeys,
     bool GesturesAvailable, bool GesturesPaused, IReadOnlyList<string> PauseKeys, bool ClipboardAvailable = true,
-    bool LauncherAvailable = true, bool RenameAvailable = false,
-    bool TimerAvailable = false, string? TimerStatus = null);   // 058：定时关机能力在运行时列出；有定时时 TimerStatus =「23:00 关机 · 还剩 42 分钟」   // 055：停用的能力不列；RenameAvailable = 批量重命名启用、但启动器和超级面板都停用了
+    bool LauncherAvailable = true,
+    bool TimerAvailable = false, string? TimerStatus = null, bool TrafficAvailable = false, bool NotesAvailable = false, bool ScreenshotsAvailable = false,
+    bool HasPinnedDesktopCards = false, bool DesktopCardsHidden = false, bool DictionaryAvailable = false);
 
 public sealed partial class TrayMenuView : UserControl, IPanelView
 {
-    /// <summary>选了哪一项：update / launcher / clipboard / rename / timer / timer-cancel / settings / pause / exit。菜单先收起，App 再执行。</summary>
+    /// <summary>选了哪一项：update / launcher / clipboard / timer / timer-cancel / settings / pause / exit。菜单先收起，App 再执行。</summary>
     public event EventHandler<string>? Invoked;
     public event EventHandler<Size>? SizeRequested;
     public event EventHandler? CloseRequested;
-    public UIElement? DragRegion => null;
+    public UIElement DragRegion => DragHandle;
     readonly List<Grid> items;
     int selected = -1;
 
     public TrayMenuView()
     {
         InitializeComponent();
-        items = Root.Children.OfType<Grid>().ToList();
+        items = Root.Children.OfType<Grid>().Where(item => item.Tag is string).ToList();
         foreach (var item in items)
         {
             item.PointerEntered += (_, _) => Select(items.IndexOf(item));
             item.PointerExited += (_, _) => { if (selected == items.IndexOf(item)) Select(-1); };
-            item.Tapped += (_, _) => Run((string)item.Tag);
+            if (item != DesktopCardsToggleItem) item.Tapped += (_, _) => Run((string)item.Tag);
         }
         KeyDown += OnKeyDown;
     }
@@ -48,8 +50,18 @@ public sealed partial class TrayMenuView : UserControl, IPanelView
         Keys(ClipboardKeys, state.ClipboardKeys);
         ClipboardItem.Visibility = state.ClipboardAvailable ? Visibility.Visible : Visibility.Collapsed;   // 剪贴板关了就不列这一项（033）
         LauncherItem.Visibility = state.LauncherAvailable ? Visibility.Visible : Visibility.Collapsed;
-        RenameItem.Visibility = state.RenameAvailable ? Visibility.Visible : Visibility.Collapsed;
         TimerItem.Visibility = state.TimerAvailable ? Visibility.Visible : Visibility.Collapsed;
+        TrafficItem.Visibility = state.TrafficAvailable ? Visibility.Visible : Visibility.Collapsed;
+        NotesItem.Visibility = state.NotesAvailable ? Visibility.Visible : Visibility.Collapsed;
+        ScreenshotsItem.Visibility = state.ScreenshotsAvailable ? Visibility.Visible : Visibility.Collapsed;
+        DictionaryItem.Visibility = state.DictionaryAvailable ? Visibility.Visible : Visibility.Collapsed;
+        var cardsAvailable = state.TrafficAvailable || state.NotesAvailable || state.ScreenshotsAvailable;
+        DesktopCardsItem.Visibility = cardsAvailable ? Visibility.Visible : Visibility.Collapsed;
+        DesktopCardsToggleItem.Visibility = cardsAvailable && (state.HasPinnedDesktopCards || state.DesktopCardsHidden)
+            ? Visibility.Visible : Visibility.Collapsed;
+        DesktopCardsToggleIcon.Glyph = state.DesktopCardsHidden ? "eye" : "eye-off";
+        DesktopCardsToggleText.Text = state.DesktopCardsHidden ? Strings.DesktopCards_Show : Strings.DesktopCards_Hide;
+        AutomationProperties.SetName(DesktopCardsToggleButton, DesktopCardsToggleText.Text);
         TimerText.Text = state.TimerStatus ?? Strings.Tray_TimerOpen;
         TimerCancelItem.Visibility = state.TimerAvailable && state.TimerStatus is not null ? Visibility.Visible : Visibility.Collapsed;
         PauseSeparator.Visibility = PauseItem.Visibility = state.GesturesAvailable ? Visibility.Visible : Visibility.Collapsed;
@@ -73,7 +85,7 @@ public sealed partial class TrayMenuView : UserControl, IPanelView
             foreach (var child in Root.Children)
             {
                 if (child.Visibility != Visibility.Visible) continue;
-                h += child switch { Grid => 34, Border => 11, _ => 26 };
+                h += child switch { Controls.MoveSurface handle => handle.Height, Grid => 34, Border => 11, _ => 26 };
             }
             return new Size(width, h);
         }
@@ -117,6 +129,8 @@ public sealed partial class TrayMenuView : UserControl, IPanelView
         CloseRequested?.Invoke(this, EventArgs.Empty);
         Invoked?.Invoke(this, id);
     }
+
+    void DesktopCardsToggleClicked(object sender, RoutedEventArgs args) => Run((string)DesktopCardsToggleItem.Tag);
 
     void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {

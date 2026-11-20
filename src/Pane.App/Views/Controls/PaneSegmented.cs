@@ -2,6 +2,7 @@
 // 选中段文字加粗、正文色，选中底色平滑滑过去（共用 SlidingHighlight）。
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.System;
@@ -11,7 +12,7 @@ namespace Pane.Views.Controls;
 public sealed partial class PaneSegmented : UserControl
 {
     readonly (string Value, string Label)[] options;
-    readonly List<Border> items = [];
+    readonly List<Button> items = [];
     readonly SlidingHighlight highlight;
     readonly TextBlock strongProto, dimProto;
     int selected;
@@ -23,7 +24,9 @@ public sealed partial class PaneSegmented : UserControl
         this.strongProto = strongProto; this.dimProto = dimProto;
         selected = Math.Max(0, Array.FindIndex(this.options, o => o.Value == value));
         IsTabStop = true;
-        var radius = ((CornerRadius)Application.Current.Resources["PaneRadiusControl"]).TopLeft;
+        var resources = Application.Current.Resources;
+        var radius = ((CornerRadius)resources["PaneRadiusControl"]).TopLeft;
+        var buttonStyle = (Style)resources["PaneSegmentButton"];
         var layer = new Canvas { IsHitTestVisible = false };
         var row = new Grid();
         // 每格至少放得下最宽那个选项加粗（选中态 SemiBold）后的宽度：各格等宽，选中项变粗时整体宽度不变，
@@ -39,10 +42,12 @@ public sealed partial class PaneSegmented : UserControl
         {
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var text = new TextBlock { Text = this.options[i].Label, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontFamily = strongProto.FontFamily, FontSize = strongProto.FontSize };
-            var item = new Border { Height = PaneTokens.ControlMd - 4, MinWidth = Math.Ceiling(widest) + 20, Padding = new Thickness(10, 0, 10, 0), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Child = text };
+            var item = new Button { Style = buttonStyle, Height = PaneTokens.ControlMd - 4, MinWidth = Math.Ceiling(widest) + 20,
+                HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(10, 0, 10, 0), Content = text };
+            AutomationProperties.SetName(item, this.options[i].Label);
             Grid.SetColumn(item, i);
             int index = i;
-            item.Tapped += (_, _) => Select(index, true);
+            item.Click += (_, _) => Select(index, true);
             items.Add(item); row.Children.Add(item);
         }
         var grid = new Grid();
@@ -65,16 +70,22 @@ public sealed partial class PaneSegmented : UserControl
         Unloaded += (_, _) => highlight.Dispose();
     }
 
-    void First(object sender, SizeChangedEventArgs e) { ((Border)sender).SizeChanged -= First; highlight.MoveTo(items[selected], false); }
+    void First(object sender, SizeChangedEventArgs e) { ((Button)sender).SizeChanged -= First; highlight.MoveTo(items[selected], false); }
 
     public string Value => options[selected].Value;
     public event EventHandler<string>? Changed;
+
+    internal void SetValue(string value)
+    {
+        int index = Array.FindIndex(options, option => option.Value == value);
+        if (index >= 0) Select(index, false);
+    }
 
     void Select(int index, bool notify)
     {
         if (!IsEnabled || index == selected) return;
         selected = index;
-        highlight.MoveTo(items[selected]);
+        highlight.MoveTo(items[selected], notify);
         UpdateText();
         if (notify) MotionHold.Hold(Pane.Hosting.GlassParameters.Token("PaneDurNormal"));   // 高亮滑动时长不乘动效速度，和 SlidingHighlight 一致
         if (notify) Changed?.Invoke(this, Value);
@@ -84,7 +95,7 @@ public sealed partial class PaneSegmented : UserControl
     {
         for (int i = 0; i < items.Count; i++)
         {
-            var t = (TextBlock)items[i].Child;
+            var t = (TextBlock)items[i].Content;
             t.Foreground = i == selected ? strongProto.Foreground : dimProto.Foreground;
             t.FontWeight = i == selected ? FontWeights.SemiBold : FontWeights.Normal;
         }

@@ -5,7 +5,12 @@ namespace Pane.Settings;
 // 导出时剔除，导入时从当前文件取回；新增本机专属设置只维护这里。
 internal static class LocalSettingsFields
 {
-    internal static readonly string[][] Paths=[["Storage"],["General","StartWithWindows"],["Launcher","Position"]];
+    internal static readonly string[][] Paths=[["Storage"],["General","StartWithWindows"],["Launcher","Position"],
+        [nameof(PaneSettings.Clipboard),nameof(ClipboardSettings.ExcludedText)],
+        [nameof(PaneSettings.DesktopNotes)],[nameof(PaneSettings.DesktopScreenshots)],[nameof(PaneSettings.DesktopTraffic)],
+        [nameof(PaneSettings.PauseInterfaceTraffic)],
+        [nameof(PaneSettings.NoteReminders)],[nameof(PaneSettings.NoteTaskReminders)],
+        [nameof(PaneSettings.LimitScreenshotHistory)],[nameof(PaneSettings.RememberTranslations)],[nameof(PaneSettings.LookupTranslationSelection)]];
     internal static void Apply(JsonObject target,JsonObject? local)
     {
         foreach(var path in Paths){

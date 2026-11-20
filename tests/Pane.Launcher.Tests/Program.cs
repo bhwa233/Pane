@@ -16,6 +16,7 @@ static partial class Program
     }
     static async Task Run(string[] args)
     {
+        if(args.Contains("--quick-links")){await QuickLinkTests();return;}
         if(args.Contains("--098")){await DirectHidden098Tests();return;}
         if(args.Contains("--089")){await Web089Tests(args.Contains("--live"));return;}
         if(args.Contains("--082")){await StorageCache082Tests();return;}
@@ -66,7 +67,6 @@ static partial class Program
         Check(!(await service.SearchAsync("剪贴板",default)).Items.Any(i=>i.Id=="command:clipboard"),"clipboard command disabled immediately");
         store.Save(store.Current with{Clipboard=store.Current.Clipboard with{Enabled=true}});
         Check((await service.SearchAsync("剪贴板",default)).Items.Any(i=>i.Id=="command:clipboard"),"clipboard command reenabled immediately");
-        foreach(var query in new[]{"批量重命名","plcmm","rename","重命名","rena","RENAME"}){var rename=(await service.SearchAsync(query,default)).Items.Single(i=>i.Id=="rename");Check(rename.Kind==LauncherItemKind.Command&&rename.Group==LauncherGroups.Commands&&rename.Icon.Glyph=="pencil","rename command "+query);int calls=fake.Calls.Count;await service.ExecuteAsync(rename,default);Check(fake.Calls.Count==calls,"rename execution stays in UI");}
         LauncherResult result;
         var clip=new ClipEntry("fixture",ClipKind.Files,null,[@"C:\fixture\one.txt",@"C:\fixture\two.txt"],null,null,null,"test",null,DateTimeOffset.UtcNow,false);
         await service.RunAsync("open",clip,default);Check(fake.Calls.TakeLast(2).SequenceEqual([@"open:C:\fixture\one.txt:False",@"open:C:\fixture\two.txt:False"]),"all attached files open through fake");
@@ -92,6 +92,7 @@ static partial class Program
         await Aliases078Tests();
         await Recent090Tests();
         await DirectHidden098Tests();
+        await QuickLinkTests();
         Console.WriteLine($"PASS launcher assertions={checks};realExecutions=0;clipboardWrites=0;browserLaunches=0");
     }
     static async Task Probe()

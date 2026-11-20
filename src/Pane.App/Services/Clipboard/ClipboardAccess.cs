@@ -20,10 +20,14 @@ internal static class ClipboardAccess
 // 只给启动器的附件读取使用；设置页仍持有完整的历史服务。
 internal sealed class LauncherClipboardHistory(IClipboardHistory history,SettingsStore settings):IClipboardHistory
 {
-    public IReadOnlyList<ClipEntry> Snapshot()=>settings.Current.Clipboard.Enabled?history.Snapshot():[];
+    public IReadOnlyList<ClipEntry> Snapshot(bool includeArchived=false)=>settings.Current.Clipboard.Enabled?history.Snapshot():[];
     public event EventHandler? Changed {add=>history.Changed+=value;remove=>history.Changed-=value;}
     public Task PasteAsync(string id,bool plainText,nint targetWindow,CancellationToken cancellationToken)=>history.PasteAsync(id,plainText,targetWindow,cancellationToken);
+    public Task<ClipMergeResult> MergeAsync(IReadOnlyList<string> ids,CancellationToken cancellationToken)=>Task.FromResult(ClipMergeResult.Unavailable);
     public void SetPinned(string id,bool pinned)=>history.SetPinned(id,pinned);
+    public bool SetFavorite(string id,bool favorite)=>false;
+    public bool SetAnnotation(string id,ClipAnnotation? annotation)=>history.SetAnnotation(id,annotation);
+    public bool SetDetails(string id,ClipAnnotation? annotation,IReadOnlyList<string>? collections)=>false;
     public void Delete(string id)=>history.Delete(id);
     public void ClearUnpinned()=>history.ClearUnpinned();
 }

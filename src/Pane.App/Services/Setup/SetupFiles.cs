@@ -98,6 +98,11 @@ internal static class SetupFiles
 
 internal sealed record SetupPaths(string Root, string Data)
 {
+#if PANE_ISOLATED_PREVIEW
+    public static bool RequiresIsolation => true;
+#else
+    public static bool RequiresIsolation => false;
+#endif
     public SetupPaths ResolveInstalled(string? isolatedRoot = null)
     {
         string? location;
@@ -128,6 +133,8 @@ internal sealed record SetupPaths(string Root, string Data)
         string temp = SetupFiles.Full(Path.GetTempPath()) + Path.DirectorySeparatorChar;
         if (!root.StartsWith(temp, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(root).StartsWith("Pane-018-", StringComparison.Ordinal))
             throw new IOException("自测根目录必须是临时目录下的 Pane-018-* 独立目录"); // 不翻译：诊断异常
+        if (RequiresIsolation && root.AsSpan(temp.Length).Contains(Path.DirectorySeparatorChar))
+            throw new IOException("预览安装的隔离根目录必须直接位于临时目录下");
         SetupFiles.Check(root);
         return new(root, Path.Combine(root, "data"));
     }

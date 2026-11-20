@@ -18,6 +18,7 @@ internal sealed partial class LauncherSearch:ILauncherItemActions,ILauncherSearc
 {
     internal Func<IPowerTimer?> PowerTimerProvider { get; set; } = () => null;
     readonly TerminalService terminal;
+    readonly QuickLinkSource quickLinks;
     public ITerminalHistory TerminalHistory=>terminal.History;
     public WebSearchHistory WebSearchHistory {get;}
     readonly SettingsStore store;readonly ILauncherIndex index;readonly ILauncherSource[] sources;readonly ILauncherExecutor executor;
@@ -48,7 +49,8 @@ internal sealed partial class LauncherSearch:ILauncherItemActions,ILauncherSearc
         WebSearchHistory=new(store);
         portablePlatform=actionPlatform??new WindowsLauncherActionPlatform();
         actions=new(portablePlatform,executor,process);
-        sources=[new DirectSource(executor),new PowerTimerSource(() => PowerTimerProvider()),new SystemSettingsSource(executor,process,environment,RecordUse),new ExtraCommandSource(executor,environment),new CalculationSource(executor),new ApplicationSource(executor,RecordUse),new FavoriteSource(executor),new FileSource(files,executor),new CommandSource(executor),new WebSource(executor)];
+        quickLinks=new(executor,process);
+        sources=[new DirectSource(executor),new PowerTimerSource(() => PowerTimerProvider()),quickLinks,new SystemSettingsSource(executor,process,environment,RecordUse),new ExtraCommandSource(executor,environment),new CalculationSource(executor),new ApplicationSource(executor,RecordUse),new FavoriteSource(executor),new FileSource(files,executor),new CommandSource(executor),new WebSource(executor)];
         var path=Path.Combine(store.DirectoryPath,"launcher-usage.json");
         try{if(File.Exists(path))uses=JsonSerializer.Deserialize(File.ReadAllText(path),LauncherJson.Default.DictionaryStringAppUse)??[];}
         catch(Exception e) when(e is IOException or JsonException or UnauthorizedAccessException){IndexError="usage:"+e.GetType().Name;}
@@ -133,7 +135,8 @@ internal sealed partial class LauncherSearch:ILauncherItemActions,ILauncherSearc
     async Task<LauncherResult> SearchCoreAsync(string query,Action<LauncherResult>? partial,CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();if(query.StartsWith('>'))return terminal.Search(query);RefreshIndex();var context=Context(query);
-        var selected=sources.Where(s=>s is not WebSource).OrderBy(s=>s.Order).ToArray();
+        var hasQuickLinks=context.Settings.QuickLinks.Length!=0;
+        var selected=sources.Where(s=>s is not WebSource&&(hasQuickLinks||s is not QuickLinkSource)).OrderBy(s=>s.Order).ToArray();
         var pending=selected.Select(s=>Task.Run(()=>SearchSource(s,context,cancellationToken),cancellationToken)).ToArray();
         if(partial!=null){
             var local=await Task.WhenAll(pending.Where((_,i)=>selected[i] is not FileSource)).ConfigureAwait(false);
@@ -160,9 +163,12 @@ internal sealed partial class LauncherSearch:ILauncherItemActions,ILauncherSearc
     }
     internal static SearchEngine DefaultEngine(LauncherSettings settings)=>settings.SearchEngines.First(e=>string.Equals(e.Keyword,settings.DefaultEngine,StringComparison.OrdinalIgnoreCase));
     internal static string BuildUrl(SearchEngine engine,string text)=>engine.UrlTemplate.Replace("{query}",Uri.EscapeDataString(text),StringComparison.Ordinal);
+    internal QuickLinkPrompt? GetQuickLinkPrompt(LauncherItem item)=>QuickLinkSource.Prompt(item,store.Current.Launcher);
+    internal Task ExecuteQuickLinkAsync(LauncherItem item,IReadOnlyDictionary<string,string> values,CancellationToken token)=>
+        quickLinks.ExecuteAsync(item,store.Current.Launcher,values,token);
     public async Task ExecuteAsync(LauncherItem item,CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();if(item.Id is "rename" or "power:panel")return;if(TerminalService.Owns(item)){await terminal.ExecuteAsync(item,false,cancellationToken);return;}var source=sources.FirstOrDefault(s=>s.Owns(item))??throw new NotSupportedException(item.Id);
+        cancellationToken.ThrowIfCancellationRequested();if(item.Id == "power:panel")return;if(TerminalService.Owns(item)){await terminal.ExecuteAsync(item,false,cancellationToken);return;}var source=sources.FirstOrDefault(s=>s.Owns(item))??throw new NotSupportedException(item.Id);
         await source.ExecuteAsync(item,Context(""),cancellationToken).ConfigureAwait(false);
         if(item.Kind==LauncherItemKind.Web&&item.Id.StartsWith("web:",StringComparison.Ordinal))WebSearchHistory.RecordUrl(store.Current.Launcher.SearchEngines,item.Id[4..]);
         if(item.Kind==LauncherItemKind.File&&item.Id.StartsWith("file:",StringComparison.Ordinal))await RememberOpenedAsync(item.Id[5..]).ConfigureAwait(false);

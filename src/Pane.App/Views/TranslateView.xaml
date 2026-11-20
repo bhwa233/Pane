@@ -35,7 +35,7 @@
                 </StackPanel>
             </Border>
             <!-- 语言：原文（自动识别）⇄ 翻译成。点「翻译成」换目标语言，⇄ 把译文换到左边接着翻 -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="4,0,0,0" VerticalAlignment="Center">
+            <StackPanel x:Name="LanguagesBar" Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="4,0,0,0" VerticalAlignment="Center">
                 <TextBlock x:Name="FromText" Text="{x:Bind loc:Strings.Translate_AutoDetect}" VerticalAlignment="Center" Margin="10,0,6,0"
                            FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText2Brush}"/>
                 <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}" CornerRadius="14" Click="OnSwap" ToolTipService.ToolTip="{x:Bind loc:Strings.Translate_SwapHint}">
@@ -49,6 +49,7 @@
                     <TextBlock x:Name="ToText" Text="{x:Bind loc:Strings.Translate_LanguageChinese}" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}"/>
                 </Button>
             </StackPanel>
+            <ContentControl x:Name="ModeHost" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center" IsTabStop="False"/>
             <Button x:Name="PinButton" Grid.Column="3" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="OnPin" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_AlwaysOnTop}">
                 <c:PaneIcon x:Name="PinIcon" Glyph="pin" Width="16" Height="16"/>
             </Button>
@@ -57,7 +58,11 @@
             </Button>
         </Grid>
 
-        <Grid Grid.Row="1">
+        <Grid x:Name="Workspace" Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="*"/>
@@ -69,7 +74,8 @@
                 </Grid.RowDefinitions>
                 <TextBox x:Name="Source" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="{x:Bind loc:Strings.Translate_InputPlaceholder}" PlaceholderForeground="{ThemeResource PaneText3Brush}" Padding="0" MinHeight="0" c:TextBleed.Bleed="4"
                          FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextLg}" SelectionHighlightColor="{StaticResource PaneAccentBrush}"
-                         IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" ScrollViewer.VerticalScrollBarVisibility="Auto" TextChanged="OnSourceChanged"/>
+                         IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         TextChanged="OnSourceChanged" SelectionChanged="OnSourceSelectionChanged"/>
                 <Grid Grid.Row="1">
                     <TextBlock x:Name="CountText" Text="{x:Bind loc:Strings.Translate_EmptyCount}" VerticalAlignment="Center" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
                     <Button Style="{StaticResource PaneTextButton}" HorizontalAlignment="Right" MinHeight="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}" CornerRadius="14" Content="{x:Bind loc:Strings.Common_Clear}" Click="OnClear"/>
@@ -81,7 +87,7 @@
                     <RowDefinition Height="28"/>
                 </Grid.RowDefinitions>
                 <ScrollViewer x:Name="OutScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <TextBlock x:Name="Out" TextWrapping="Wrap" IsTextSelectionEnabled="True" LineHeight="26.4"
+                    <TextBlock x:Name="Out" TextWrapping="Wrap" IsTextSelectionEnabled="True" LineHeight="26.4" SelectionChanged="OnResultSelectionChanged"
                                FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextLg}" Foreground="{ThemeResource PaneText1Brush}"/>
                 </ScrollViewer>
                 <Grid Grid.Row="1" ColumnSpacing="6">
@@ -89,25 +95,90 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="StateText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
+                    <TextBlock x:Name="StateText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
                     <Button x:Name="ActionButton" Grid.Column="1" Style="{StaticResource PaneTextButton}" MinHeight="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}" CornerRadius="14" Visibility="Collapsed" Click="OnAction"/>
-                    <Button Grid.Column="2" Style="{StaticResource PaneTextButton}" MinHeight="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}" CornerRadius="14" Content="{x:Bind loc:Strings.SuperPanel_CopyTranslation}" Click="OnCopy"/>
+                    <Button x:Name="LookupResultButton" Grid.Column="2" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}"
+                            IsEnabled="False" Click="OnLookupResult" AutomationProperties.Name="{x:Bind loc:Strings.Translate_LookupSelection}" ToolTipService.ToolTip="{x:Bind loc:Strings.Translate_LookupSelection}">
+                        <c:PaneIcon Glyph="search" Width="14" Height="14"/>
+                    </Button>
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="SaveNoteButton" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}"
+                                IsEnabled="False" Click="OnSaveNote" AutomationProperties.Name="{x:Bind loc:Strings.Notes_SaveFromResult}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_SaveFromResult}">
+                            <c:PaneIcon Glyph="pencil" Width="14" Height="14"/>
+                        </Button>
+                        <Button x:Name="CopyButton" Style="{StaticResource PaneTextButton}" MinHeight="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}" CornerRadius="14" Content="{x:Bind loc:Strings.SuperPanel_CopyTranslation}" Click="OnCopy"/>
+                    </StackPanel>
                 </Grid>
+            </Grid>
+            <Grid x:Name="SelectionDictionaryPanel" Grid.Row="1" Grid.ColumnSpan="2" Height="88" Padding="18,6" RowSpacing="4"
+                  Visibility="Collapsed" BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="0,1,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="{x:Bind loc:Strings.Translate_DictionarySource}" FontFamily="{StaticResource PaneFontUi}"
+                           FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                <ScrollViewer x:Name="SelectionDictionaryScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <TextBlock x:Name="SelectionDictionaryText" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.LiveSetting="Polite"
+                               FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}"/>
+                </ScrollViewer>
             </Grid>
         </Grid>
 
-        <Grid Grid.Row="2" Padding="16,0,16,0" ColumnSpacing="16" BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="0,1,0,0">
+        <Grid x:Name="HistoryPanel" Grid.Row="1" Padding="18,12" RowSpacing="8" Visibility="Collapsed">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="HistoryTitle" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}"/>
+                <CheckBox x:Name="RememberHistory" Grid.Column="1" Content="{x:Bind loc:Strings.Translate_RememberHistory}"
+                          Checked="OnRememberHistory" Unchecked="OnRememberHistory"/>
+            </Grid>
+            <ListView x:Name="HistoryList" Grid.Row="1" SelectionMode="Single" SelectionChanged="OnHistorySelection" KeyDown="OnHistoryListKeyDown"
+                      FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}"/>
+            <TextBlock x:Name="HistoryEmpty" Grid.Row="1" Margin="4,8,0,0" IsHitTestVisible="False" Text="{x:Bind loc:Strings.Translate_HistoryEmpty}"
+                       FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText2Brush}"/>
+            <Grid Grid.Row="2" ColumnSpacing="10">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="HistoryStatus" VerticalAlignment="Center" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"
+                           FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                    <Button x:Name="ClearHistoryButton" Style="{StaticResource PaneTextButton}" Content="{x:Bind loc:Strings.Common_Clear}">
+                        <Button.Flyout>
+                            <MenuFlyout><MenuFlyoutItem Text="{x:Bind loc:Strings.Translate_ClearHistoryConfirm}" Click="OnClearHistory"/></MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button x:Name="DeleteHistoryButton" Style="{StaticResource PaneTextButton}" Content="{x:Bind loc:Strings.Common_Delete}" Click="OnDeleteHistory"/>
+                    <Button x:Name="OpenHistoryItemButton" Style="{StaticResource PanePrimaryButton}" Content="{x:Bind loc:Strings.Common_Open}" Click="OnOpenHistoryItem"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <Grid Grid.Row="2" Padding="16,0,16,0" ColumnSpacing="12" BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="0,1,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="ModelText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
             <c:WrapPanel x:Name="Hints" Grid.Column="1" VerticalAlignment="Center" HorizontalSpacing="12" VerticalSpacing="0"/>
+            <CheckBox x:Name="SelectionDictionaryToggle" Grid.Column="2" MinWidth="0" MinHeight="0" VerticalAlignment="Center" Visibility="Collapsed"
+                      Content="{x:Bind loc:Strings.Translate_DictionarySelection}" Checked="OnToggleSelectionDictionary" Unchecked="OnToggleSelectionDictionary"
+                      FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}"/>
+            <Button x:Name="HistoryButton" Grid.Column="3" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}"
+                    Click="OnToggleHistory" AutomationProperties.Name="{x:Bind loc:Strings.Translate_History}" ToolTipService.ToolTip="{x:Bind loc:Strings.Translate_History}">
+                <c:PaneIcon x:Name="HistoryIcon" Glyph="history" Width="14" Height="14"/>
+            </Button>
         </Grid>
 
         <StackPanel Visibility="Collapsed">
             <TextBlock x:Name="HintLabelProto" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
+            <TextBlock x:Name="ModeStrongProto" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}"/>
+            <TextBlock x:Name="ModeDimProto" Foreground="{ThemeResource PaneText2Brush}"/>
+            <Border x:Name="ModeFillProto" Background="{ThemeResource PaneFillControlBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}"/>
             <TextBlock x:Name="IdleProto" Foreground="{ThemeResource PaneText3Brush}"/>
             <TextBlock x:Name="TextProto" Foreground="{ThemeResource PaneText1Brush}"/>
             <Border x:Name="KbdProto" Style="{StaticResource PaneKbdBorder}"><TextBlock Style="{StaticResource PaneKbdText}"/></Border>

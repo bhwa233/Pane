@@ -22,7 +22,16 @@ public sealed partial class SettingsView
 
     void RenderSuper()
     {
-        var p = app.Store.Current.SuperPanel;
+        var settings = app.Store.Current;
+        var p = settings.SuperPanel;
+        var shortcut = Hotkey(p.Hotkey, settings.Launcher.Hotkey, value => SaveSuper(current => current with { Hotkey = value }));
+        var validateShortcut = shortcut.Validate;
+        shortcut.Validate = value => value == settings.Clipboard.Hotkey || value == settings.Words.Hotkey ||
+            value == ShellHotkeyBindings.DefaultScreenshot ? Strings.Settings_Hotkey_Duplicate : validateShortcut?.Invoke(value);
+        var conflict = app.HotkeyConflicts.FirstOrDefault(item => item.Target == ModuleIds.SuperPanel);
+        var shortcutRow = conflict is null
+            ? Row(Strings.Settings_Hotkey, DevHotkey(ModuleIds.SuperPanel), shortcut)
+            : Row(Strings.Settings_Hotkey, Strings.Settings_Hotkey_ConflictDescription, Status(false, ConflictText(conflict)), shortcut);
         var trigger = Seg([("X1", Strings.Settings_Super_BackButton), ("X2", Strings.Settings_Super_ForwardButton), ("Middle", Strings.Settings_Super_MiddleButton)], p.TriggerButton.ToString(),
             v => SaveSuper(x => x with { TriggerButton = Enum.Parse<SuperPanelButton>(v) }));
         // 2026-10-29 用户要求：改滑杆，0.1～1 秒自己调（原来是 0.3 / 0.4 / 0.6 三档）。拖动时只改读数，松手才存
@@ -35,6 +44,7 @@ public sealed partial class SettingsView
         var fullscreen = Switch(p.PauseInFullscreen, v => SaveSuper(x => x with { PauseInFullscreen = v }));
         var borrow = Switch(p.ClipboardFallback, v => SaveSuper(x => x with { ClipboardFallback = v }));
         Group(Strings.Settings_Super_Basic,
+            shortcutRow,
             Row(Strings.Settings_Super_Trigger, Strings.Settings_Super_TriggerDescription, trigger),
             Row(Strings.Settings_Super_HoldDuration, Strings.Settings_Super_HoldDurationDescription, hold, holdValue),
             Row(Strings.Settings_Super_DisableFullscreen, Strings.Settings_Super_DisableFullscreenDescription, fullscreen),

@@ -13,12 +13,7 @@ internal static class AiProtocol
     {
         if(request.ActionId=="ask")return (request.Question??"")+(string.IsNullOrWhiteSpace(request.Text)?"":"\n\n---\n下面是附带的内容：\n"+request.Text); // 不翻译：协议提示词
         var action=settings.Actions.FirstOrDefault(a=>a.Id==request.ActionId)??throw new AiCredentialException(Strings.Ai_ActionUnavailable);
-        var target=request.TargetLanguage??settings.TranslateTarget;
-        if(target=="auto"){
-            int total=0,han=0;
-            foreach(var r in request.Text.EnumerateRunes())if(!Rune.IsWhiteSpace(r)){total++;if(r.Value is >=0x3400 and <=0x4dbf or >=0x4e00 and <=0x9fff or >=0xf900 and <=0xfaff or >=0x20000 and <=0x323af)han++;}
-            target=total>0&&han*2>=total?"en":"zh";
-        }
+        var target=TranslationDirection.Target(request.Text,request.TargetLanguage??settings.TranslateTarget);
         string lang=target switch {"zh"=>"中文","en"=>"英文","ja"=>"日文","ko"=>"韩文","fr"=>"法文","de"=>"德文","es"=>"西班牙文","ru"=>"俄文",_=>throw new AiCredentialException(Strings.Ai_TargetLanguageInvalid)}; // 不翻译：协议提示词
         // 单次扫描模板，避免把用户文本里的变量再次替换。
         var result=new StringBuilder();var template=action.PromptTemplate;

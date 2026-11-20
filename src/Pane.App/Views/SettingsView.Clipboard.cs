@@ -3,6 +3,8 @@ using Pane.Localization;
 using System.Reflection;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -61,27 +63,90 @@ public sealed partial class SettingsView
             SaveClipboard(x => x with { ExcludedPrograms = x.ExcludedPrograms.Any(v => string.Equals(v, name, StringComparison.OrdinalIgnoreCase)) ? x.ExcludedPrograms : [.. x.ExcludedPrograms, name] });
             Render();
         })));
+        excluded.Add(ClipboardTextExclusions(c.ExcludedText));
         Group(Strings.Settings_Clipboard_Privacy, excluded.ToArray());
         RenderClipboardData();
     }
 
+    FrameworkElement ClipboardTextExclusions(string[] current)
+    {
+        var label = Strings.Settings_Clipboard_ExcludedText;
+        var field = Field(label, double.NaN);
+        field.AcceptsReturn = true;
+        field.Height = 72;
+        field.TextWrapping = TextWrapping.Wrap;
+        field.IsSpellCheckEnabled = false;
+        field.IsTextPredictionEnabled = false;
+        field.Text = string.Join("\r\n", current);
+        AutomationProperties.SetName(field, label);
+        var status = Text("", DescProto);
+        status.TextWrapping = TextWrapping.Wrap;
+        AutomationProperties.SetLiveSetting(status, AutomationLiveSetting.Polite);
+        var save = Button(Strings.Common_Save, "check", () =>
+        {
+            var terms = field.Text.Split(['\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            try
+            {
+                SaveClipboard(options => options with { ExcludedText = terms });
+                field.Text = string.Join("\r\n", terms);
+                status.Text = Strings.Settings_Clipboard_ExcludedTextSaved;
+            }
+            catch (ArgumentException error) { status.Text = error.Message; }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { status.Text = Strings.Settings_Clipboard_ExcludedTextSaveFailed; }
+        });
+        save.HorizontalAlignment = HorizontalAlignment.Right;
+        field.TextChanged += (_, _) => status.Text = "";
+        var form = new StackPanel { Padding = new Thickness(14, 10, 14, 10), Spacing = 6 };
+        form.Children.Add(Text(label, DescProto));
+        form.Children.Add(Wrap(field));
+        form.Children.Add(status);
+        form.Children.Add(save);
+        return form;
+    }
+
     void RenderClipboardData()
     {
-        // 清空要点两次：第一次按钮变成「再点一次清空」，3 秒内不点就复原（同启动器里关机 / 重启的确认）
-        var clear = Button(clearArmed ? Strings.Settings_Clipboard_ConfirmClear : Strings.Common_Clear, "trash", () =>
+        var rows = new List<FrameworkElement>();
+        if (cleanupPreview is { } preview)
         {
-            if (!clearArmed) { clearArmed = true; Render(); _ = DisarmClear(); return; }
-            clearArmed = false;
-            app.ClipboardHistory.ClearUnpinned();
-            clearedAt = DateTime.Now;
-            Render();
-        });
-        var cleared = (DateTime.Now - clearedAt).TotalSeconds < 4;
-        var rows = new List<FrameworkElement>
+            rows.Add(Row(Strings.Settings_Clipboard_ClearHistory, Strings.Settings_Clipboard_ClearWarning));
+            var list = new StackPanel();
+            foreach (var entry in preview.Entries)
+            {
+                var (glyph, name) = entry.Kind switch
+                {
+                    ClipKind.Image => ("image", Strings.Common_Image),
+                    ClipKind.Files => ("folder", entry.Files is { Count: > 0 } files ? Path.GetFileName(files[0]) ?? Strings.Common_File : Strings.Common_File),
+                    _ => ("text", entry.Text is { Length: > 0 } text ? text[..Math.Min(text.Length, 120)].Replace('\r', ' ').Replace('\n', ' ') : Strings.Common_Text)
+                };
+                list.Children.Add(ListRow(glyph, name, entry.CopiedAt.LocalDateTime.ToString("g"), false));
+            }
+            rows.Add(new ScrollViewer { Content = list, MaxHeight = 192, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, IsTabStop = true });
+            rows.Add(Row(string.Format(Strings.Settings_Clipboard_CleanupCount, preview.Entries.Count),
+                preview.Remaining > 0 ? string.Format(Strings.Settings_Clipboard_CleanupRemaining, preview.Remaining) : null,
+                Button(Strings.Common_Cancel, null, () => { cleanupPreview = null; Render(); }),
+                Button(Strings.Settings_Clipboard_ConfirmCleanup, "trash", () =>
+                {
+                    if (!ReferenceEquals(cleanupPreview, preview)) return;
+                    cleanupPreview = null;
+                    var removed = app.ClipboardHistory.ConfirmCleanup(preview);
+                    cleanupStatus = string.Format(Strings.Settings_Clipboard_CleanupResult, removed, preview.Entries.Count - removed);
+                    Render();
+                })));
+        }
+        else
         {
-            cleared ? Row(Strings.Settings_Clipboard_ClearHistory, null, Status(true, Strings.Settings_Clipboard_Cleared), clear)
-                    : Row(Strings.Settings_Clipboard_ClearHistory, clearArmed ? Strings.Settings_Clipboard_ClearWarning : Strings.Settings_Clipboard_PinnedRemain, clear),
-        };
+            rows.Add(Row(Strings.Settings_Clipboard_ClearHistory, cleanupStatus ?? Strings.Settings_Clipboard_PinnedRemain,
+                Button(Strings.Settings_Clipboard_PreviewCleanup, null, () =>
+                {
+                    var next = app.ClipboardHistory.PreviewCleanup();
+                    cleanupPreview = next.Entries.Count > 0 ? next : null;
+                    cleanupStatus = cleanupPreview == null ? Strings.Settings_Clipboard_CleanupEmpty : null;
+                    Render();
+                })));
+        }
         // 历史存不进硬盘时（045，用户 2026-11-01 遇到：重启后历史退回早上）在这里说清楚，不要等重启丢了才发现
         if (app.ClipboardHistory.StorageProblem is { } problem)
             rows.Insert(0, Row(Strings.Settings_Clipboard_StorageFailed, Strings.Settings_Clipboard_StorageFailedDescription, Status(false, problem)));
@@ -149,15 +214,13 @@ public sealed partial class SettingsView
 
     void OnWinVChanged(object? sender, EventArgs e) => DispatcherQueue.TryEnqueue(() => { if (current.Id == "clipboard" && !winvBusy) Later(0); });
 
-    bool clearArmed;
-    DateTime clearedAt;
+    ClipboardCleanupPreview? cleanupPreview;
+    string? cleanupStatus;
 
-    async Task DisarmClear()
+    void ResetClipboardCleanup()
     {
-        await Task.Delay(3000);
-        if (!clearArmed) return;
-        clearArmed = false;
-        if (current.Id == "clipboard") Render();
+        cleanupPreview = null;
+        cleanupStatus = null;
     }
 
     // 可多选的小标签（原型 .chipc）：选中是选中底色 + 主题色描边。onlyOne：至少要留一个时，最后一个点了不响应

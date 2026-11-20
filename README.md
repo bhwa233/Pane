@@ -1,7 +1,7 @@
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/banner-dark.png">
-  <img src="docs/images/banner-light.png" alt="Pane：Windows 11 上的磨砂玻璃效率工具。启动器、剪贴板、鼠标手势、超级面板、AI、文件对话框跳转、批量重命名、定时关机" width="100%">
+  <img src="docs/images/banner-light.png" alt="Pane：Windows 11 上的磨砂玻璃效率工具。启动器、剪贴板、鼠标手势、超级面板、AI、文件对话框跳转、定时关机" width="100%">
 </picture>
 </p>
 
@@ -39,10 +39,9 @@
 | <img src="docs/images/icons/search.svg" width="22" alt=""> | [启动器](#启动器) | 搜应用和文件、算算式、跑系统命令、搜网页，对任意文字直接翻译或问 AI | `Alt+空格` |
 | <img src="docs/images/icons/clipboard.svg" width="22" alt=""> | [剪贴板](#剪贴板) | 记下复制过的文字、图片和文件，随时找回来再粘贴 | `Alt+V`，可替换 `Win+V` |
 | <img src="docs/images/icons/gesture.svg" width="22" alt=""> | [鼠标手势](#鼠标手势) | 按住右键画方向，执行快捷键、窗口操作等动作 | 按住右键拖动 |
-| <img src="docs/images/icons/pointer.svg" width="22" alt=""> | [超级面板](#超级面板) | 选中文字或文件后就地处理：翻译、总结、润色、改名…… | 选中后长按鼠标后退侧键 |
+| <img src="docs/images/icons/pointer.svg" width="22" alt=""> | [超级面板](#超级面板) | 翻译、总结、润色选中文字，或复制选中文件的路径和名称 | `Ctrl+Alt+S` 或长按鼠标后退侧键 |
 | <img src="docs/images/icons/ai.svg" width="22" alt=""> | [AI](#ai) | 翻译、提问和对文字的快捷动作；接自己的 API 或 ChatGPT 账号 | 在启动器、超级面板里用 |
 | <img src="docs/images/icons/folder.svg" width="22" alt=""> | [文件对话框跳转](#文件对话框跳转) | 「打开 / 另存为」对话框里一键跳到资源管理器开着的文件夹 | `Ctrl+G` |
-| <img src="docs/images/icons/pencil.svg" width="22" alt=""> | [批量重命名](#批量重命名) | 一次给多个文件改名：替换文字、加编号、改扩展名，先预览再执行 | 启动器「重命名」或超级面板 |
 | <img src="docs/images/icons/timer.svg" width="22" alt=""> | [定时关机](#定时关机) | 到点关机、重启或睡眠，到点前 1 分钟提醒 | 启动器里输入「30分钟后关机」 |
 
 <picture>
@@ -113,7 +112,7 @@
 
 ## 超级面板
 
-选中文字（或在资源管理器里选中文件）后，**长按**鼠标后退侧键。
+选中文字（或在资源管理器里选中文件）后，按 `Ctrl+Alt+S` 或长按鼠标后退侧键。可在「设置 → 超级面板」修改快捷键。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/super-dark.png">
@@ -121,7 +120,7 @@
 </picture>
 
 - 文字：翻译、总结、润色、解释、网页搜索、复制，结果可以直接替换回原文；可选选中外文时自动翻译。
-- 文件：批量重命名等文件动作。
+- 文件：复制路径或名称。
 - **短按**侧键照常是后退 / 前进，不影响原来的用法；全屏程序里不触发。
 
 ## AI
@@ -136,10 +135,6 @@
 ## 文件对话框跳转
 
 在任何程序的「打开 / 另存为」对话框里按 `Ctrl+G`，直接跳到资源管理器当前开着的文件夹；`Ctrl+Shift+G` 弹出菜单，从开着的和最近用过的文件夹里选。也可以设成对话框一打开就自动跳过去。
-
-## 批量重命名
-
-从启动器输入「重命名」、对复制带进来的文件用附件动作，或在超级面板里选中文件后打开。替换文字、加编号、改大小写和扩展名等规则可以叠加，改动的部分在预览里标出来，确认后才执行；常用的规则组合可以存成预设。
 
 ## 定时关机
 

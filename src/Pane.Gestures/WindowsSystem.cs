@@ -116,7 +116,7 @@ public static class WindowTargets
         var cls=new StringBuilder(256);Win.GetClassNameW(window,cls,cls.Capacity);
         return new(window,pid,path.ToString(),cls.ToString(),start,end);
     }
-    internal static (GestureTarget Target,int Dpi,bool Fullscreen) UnderCursor()
+    public static (GestureTarget Target,int Dpi,bool Fullscreen) UnderCursor()
     {
         Win.GetCursorPos(out var p);var h=Win.GetAncestor(Win.WindowFromPoint(p),2);
         // 跳过远程控制的分层鼠标穿透叠加层；不把该层当成全屏应用。

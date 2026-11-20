@@ -80,7 +80,7 @@ public enum ClipboardExport
 
 /// <param name="Settings">settings.json 和 gestures.json（去掉本机专属的项，见任务 083）</param>
 /// <param name="Usage">启动器使用次数、终端历史</param>
-public sealed record DataExportOptions(bool Settings, bool Usage, ClipboardExport Clipboard);
+public sealed record DataExportOptions(bool Settings, bool Usage, ClipboardExport Clipboard, bool Notes = false, bool Screenshots = false, bool OcrHistory = false);
 
 public sealed record DataExportResult(string Path, long Bytes);
 
@@ -88,7 +88,7 @@ public sealed record DataExportResult(string Path, long Bytes);
 /// <param name="AppVersion">导出时 Pane 的版本，例如 0.1.443。</param>
 /// <param name="ClipboardEntries">剪贴板条目数，没带剪贴板时为 0。</param>
 /// <param name="ClipboardImages">其中图片条目数。</param>
-public sealed record DataImportPreview(string AppVersion, DateTimeOffset ExportedAt, bool HasSettings, bool HasUsage, int ClipboardEntries, int ClipboardImages);
+public sealed record DataImportPreview(string AppVersion, DateTimeOffset ExportedAt, bool HasSettings, bool HasUsage, int ClipboardEntries, int ClipboardImages, int? Notes = null, int? Screenshots = null, int? OcrHistory = null);
 
 public enum DataImportMode
 {
@@ -98,8 +98,8 @@ public enum DataImportMode
     Replace,
 }
 
-/// <param name="Mode">只影响使用记录和剪贴板；设置一律用文件里的替换（本机专属的项保留）。</param>
-public sealed record DataImportOptions(bool Settings, bool Usage, bool Clipboard, DataImportMode Mode);
+/// <param name="Mode">影响使用记录、剪贴板、便签和截图历史；设置一律用文件里的替换（本机专属的项保留）。</param>
+public sealed record DataImportOptions(bool Settings, bool Usage, bool Clipboard, DataImportMode Mode, bool Notes = false, bool Screenshots = false, bool OcrHistory = false);
 
 public interface IDataTransfer
 {

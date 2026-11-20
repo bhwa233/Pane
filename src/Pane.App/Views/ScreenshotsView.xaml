@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Pane.Views.ScreenshotsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="using:Pane.Views.Controls"
+    xmlns:loc="using:Pane.Localization">
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid x:Name="Header" Padding="18,0,10,0" Background="Transparent"
+              BorderThickness="0,0,0,1" BorderBrush="{ThemeResource PaneStrokeBrush}">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <c:PaneIcon Glyph="scissors" Width="16" Height="16" Foreground="{ThemeResource PaneText2Brush}"/>
+                <TextBlock Text="{x:Bind loc:Strings.Module_Screenshots_Name}" VerticalAlignment="Center"
+                           FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}"/>
+            </StackPanel>
+            <Button HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource PaneIconButton}"
+                    Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="CloseClicked"
+                    AutomationProperties.Name="{x:Bind loc:Strings.Common_CloseWindowHint}" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_CloseWindowHint}">
+                <c:PaneIcon Glyph="close" Width="16" Height="16"/>
+            </Button>
+        </Grid>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid Padding="10,10,10,12" RowSpacing="8" BorderThickness="0,0,1,0" BorderBrush="{ThemeResource PaneStrokeBrush}">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <ContentControl x:Name="ScreenshotModeHost" HorizontalContentAlignment="Stretch"/>
+                <Grid Visibility="Collapsed">
+                    <TextBlock x:Name="ModeTextStrong" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText1Brush}" FontFamily="{StaticResource PaneFontUi}"/>
+                    <TextBlock x:Name="ModeTextDim" Foreground="{ThemeResource PaneText2Brush}"/>
+                    <Border x:Name="ModeFill" Background="{ThemeResource PaneFillControlBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}"/>
+                </Grid>
+                <StackPanel x:Name="ScreenshotTools" Grid.Row="1" Orientation="Horizontal" Spacing="4">
+                    <Button x:Name="CaptureButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="CaptureClicked"
+                            AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Capture}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_Capture}">
+                        <c:PaneIcon Glyph="scissors" Width="16" Height="16"/>
+                    </Button>
+                    <Button x:Name="ImportButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="ImportClicked"
+                            AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Import}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_Import}">
+                        <c:PaneIcon Glyph="folder" Width="16" Height="16"/>
+                    </Button>
+                    <Button x:Name="ClipboardOcrButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="ClipboardOcrClicked" Visibility="Collapsed"
+                            AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_ClipboardOcr}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_ClipboardOcr}">
+                        <c:PaneIcon Glyph="clipboard" Width="16" Height="16"/>
+                    </Button>
+                    <Button x:Name="ClearHistoryButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" IsEnabled="False"
+                            AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_ClearHistory}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_ClearHistory}">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <ToggleMenuFlyoutItem x:Name="LimitHistoryItem" Text="{x:Bind loc:Strings.Screenshots_LimitHistory}" Click="LimitHistoryClicked"/>
+                                <MenuFlyoutSeparator/>
+                                <MenuFlyoutItem x:Name="ClearHistoryItem" Text="{x:Bind loc:Strings.Screenshots_ClearHistoryConfirm}" Click="ClearHistoryClicked"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
+                        <c:PaneIcon Glyph="trash" Width="16" Height="16"/>
+                    </Button>
+                </StackPanel>
+                <ListView x:Name="History" Grid.Row="2" SelectionChanged="SelectionChanged"
+                          AutomationProperties.Name="{x:Bind loc:Strings.Module_Screenshots_Name}"/>
+                <ListView x:Name="OcrHistoryList" Grid.Row="2" SelectionChanged="OcrHistorySelectionChanged" Visibility="Collapsed"
+                          AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrHistory}"/>
+            </Grid>
+            <Grid Grid.Column="1" Padding="14,12,14,12" RowSpacing="10">
+                <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Border x:Name="PreviewFrame" BorderThickness="1" BorderBrush="{ThemeResource PaneStrokeBrush}" Padding="8">
+                    <Image x:Name="Preview" Stretch="Uniform" ImageOpened="ImageOpened" ImageFailed="ImageFailed"
+                           AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Preview}"/>
+                </Border>
+                <Grid x:Name="OcrWorkspace" Visibility="Collapsed" RowSpacing="8">
+                    <Grid.RowDefinitions><RowDefinition Height="3*"/><RowDefinition Height="2*"/></Grid.RowDefinitions>
+                    <Grid RowSpacing="4">
+                        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <Border BorderThickness="1" BorderBrush="{ThemeResource PaneStrokeBrush}" Padding="8">
+                            <ScrollViewer x:Name="OcrScroller" HorizontalScrollMode="Enabled" VerticalScrollMode="Enabled"
+                                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                          ZoomMode="Enabled" MinZoomFactor="1" MaxZoomFactor="4" BringIntoViewOnFocusChange="False"
+                                          SizeChanged="OcrViewportSizeChanged" ViewChanged="OcrImageViewChanged"
+                                          AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Preview}">
+                                <Grid x:Name="OcrSurface" Background="Transparent"
+                                      PointerPressed="OcrImagePressed" PointerMoved="OcrImageMoved" PointerReleased="OcrImageReleased"
+                                      PointerCaptureLost="OcrImageCaptureEnded" PointerCanceled="OcrImageCaptureEnded" Tapped="OcrImageTapped">
+                                    <Image x:Name="OcrPreview" HorizontalAlignment="Center" VerticalAlignment="Center" Stretch="Fill"
+                                           AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Preview}"/>
+                                    <Canvas IsHitTestVisible="False">
+                                        <Path x:Name="OcrHighlight" Stroke="{ThemeResource PaneAccentBrush}" StrokeThickness="2"/>
+                                    </Canvas>
+                                </Grid>
+                            </ScrollViewer>
+                        </Border>
+                        <StackPanel Grid.Row="1" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="4">
+                            <Button x:Name="OcrZoomOut" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="OcrZoomOutClicked" IsEnabled="False"
+                                    AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrZoomOut}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrZoomOut}">
+                                <SymbolIcon Symbol="Remove"/>
+                            </Button>
+                            <Button x:Name="OcrZoomIn" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="OcrZoomInClicked"
+                                    AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrZoomIn}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrZoomIn}">
+                                <c:PaneIcon Glyph="plus" Width="16" Height="16"/>
+                            </Button>
+                            <Button x:Name="OcrFit" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="OcrFitClicked" IsEnabled="False"
+                                    AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrFit}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrFit}">
+                                <c:PaneIcon Glyph="refresh" Width="16" Height="16"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                    <TextBox x:Name="OcrResult" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                             SelectionChanged="OcrTextSelectionChanged" SelectionHighlightColor="{StaticResource PaneAccentBrush}"
+                             AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrResult}"
+                             FontFamily="{StaticResource PaneFontUi}" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                </Grid>
+                <Grid Grid.Row="1" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="Status" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite"
+                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                    <StackPanel x:Name="ImageActions" Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                        <Button x:Name="EditButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="EditClicked"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Edit}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_Edit}">
+                            <c:PaneIcon Glyph="pencil" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="OcrButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="OcrClicked"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Ocr}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_Ocr}"
+                                Visibility="Collapsed">
+                            <c:PaneIcon Glyph="words" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="CopyButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="CopyClicked"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Copy}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_Copy}">
+                            <c:PaneIcon Glyph="copy" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="ExportButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="ExportClicked" IsEnabled="False"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Common_SaveAs}" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_SaveAs}">
+                            <c:PaneIcon Glyph="download" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="PinButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="PinClicked">
+                            <c:PaneIcon x:Name="PinIcon" Glyph="pin" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="DeleteButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" IsEnabled="False">
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <MenuFlyoutItem Text="{x:Bind loc:Strings.Screenshots_DeleteConfirm}" Click="DeleteClicked"/>
+                                </MenuFlyout>
+                            </Button.Flyout>
+                            <c:PaneIcon Glyph="trash" Width="16" Height="16"/>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel x:Name="OcrProgressActions" Grid.Column="1" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                        <ProgressRing x:Name="OcrSpinner" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <Button x:Name="CancelOcrButton" Click="CancelOcrClicked" Content="{x:Bind loc:Strings.Common_Cancel}"/>
+                    </StackPanel>
+                    <StackPanel x:Name="OcrResultActions" Grid.Column="1" Orientation="Horizontal" Spacing="4" Visibility="Collapsed">
+                        <Button x:Name="BackToImageButton" Click="BackToImageClicked" Content="{x:Bind loc:Strings.Common_Back}"/>
+                        <Button x:Name="SaveOcrButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="SaveOcrClicked"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrSave}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrSave}">
+                            <c:PaneIcon Glyph="bookmark" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="EditOcrButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="EditOcrClicked"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrEdit}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrEdit}">
+                            <c:PaneIcon Glyph="pencil" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="OcrVersionsButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Visibility="Collapsed"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrVersions}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrVersions}">
+                            <Button.Flyout><MenuFlyout x:Name="OcrVersions" Opening="OcrVersionsOpening"/></Button.Flyout>
+                            <c:PaneIcon Glyph="history" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="DeleteOcrButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Visibility="Collapsed"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrDelete}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrDelete}">
+                            <Button.Flyout><MenuFlyout><MenuFlyoutItem Text="{x:Bind loc:Strings.Screenshots_OcrDelete}" Click="DeleteOcrClicked"/></MenuFlyout></Button.Flyout>
+                            <c:PaneIcon Glyph="trash" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="OcrTextActionsButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" IsEnabled="False"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrTextActions}"
+                                ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrTextActions}">
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <MenuFlyoutItem x:Name="CopyOcrSelectionItem" Text="{x:Bind loc:Strings.Screenshots_OcrCopySelection}" Click="CopyOcrSelectionClicked" IsEnabled="False"/>
+                                    <MenuFlyoutSeparator/>
+                                    <MenuFlyoutItem Text="{x:Bind loc:Strings.Screenshots_OcrLookup}" Click="LookupOcrClicked"/>
+                                    <MenuFlyoutItem Text="{x:Bind loc:Strings.Screenshots_OcrTranslate}" Click="TranslateOcrClicked"/>
+                                    <MenuFlyoutItem Text="{x:Bind loc:Strings.Notes_SaveFromResult}" Click="SaveOcrNoteClicked"/>
+                                </MenuFlyout>
+                            </Button.Flyout>
+                            <c:PaneIcon Glyph="chev-d" Width="16" Height="16"/>
+                        </Button>
+                        <Button x:Name="CopyOcrButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="CopyOcrClicked"
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OcrCopy}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OcrCopy}">
+                            <c:PaneIcon Glyph="copy" Width="16" Height="16"/>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel x:Name="OcrEditActions" Grid.Column="1" Orientation="Horizontal" Spacing="4" Visibility="Collapsed">
+                        <Button x:Name="CancelOcrEditButton" Click="CancelOcrEditClicked" Content="{x:Bind loc:Strings.Common_Cancel}"/>
+                        <Button x:Name="CommitOcrEditButton" Click="SaveOcrClicked" Content="{x:Bind loc:Strings.Common_Save}"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

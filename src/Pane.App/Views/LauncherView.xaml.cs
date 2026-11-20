@@ -91,8 +91,6 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
     public event Action<string, string?>? OpenFiles;
     /// <summary>翻译窗口：带上要翻译的文字。</summary>
     public event Action<string>? OpenTranslate;
-    /// <summary>批量重命名（040）：文件附件给出文件；命令不带文件，宿主读呼出前那个资源管理器窗口（第二个参数）里选中的。</summary>
-    public event Action<IReadOnlyList<string>?, nint>? OpenRename;
     /// <summary>「定时关机…」（058）：打开定时窗口。</summary>
     public event Action? OpenTimer;
     /// <summary>AI 对话窗口：要直接发出的问题，或带过去的一问一答（「继续对话」）。</summary>
@@ -221,6 +219,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
     // 不能只靠 Unloaded：内容岛直接释放时它不一定来。退订常驻对象的事件、停计时器、取消任务、释放附着的合成视觉
     public void Dispose()
     {
+        ResetQuickLinkForm();
         Icons.Ready -= OnIconReady;
         if (hookedIcons is not null) { hookedIcons.Ready -= OnEngineIconReady; hookedIcons = null; }
         pending?.Cancel();
@@ -235,6 +234,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
     public void OnHidden()
     {
         hiddenAt = DateTimeOffset.Now;
+        ResetQuickLinkForm();
         pending?.Cancel();
         ShowNumbers(false);
         ExitAi();
@@ -320,7 +320,6 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
             items.Add(new("open", LauncherItemKind.Action, LauncherGroups.Files, Strings.Common_Open, System.IO.Path.GetFileName(first), new("folder")));
             items.Add(new("reveal", LauncherItemKind.Action, LauncherGroups.Files, Strings.Common_OpenContainingFolder, Strings.Launcher_Explorer, new("folder")));
             items.Add(new("copy-path", LauncherItemKind.Action, LauncherGroups.Files, Strings.Common_CopyPath, string.Format(Strings.Launcher_PathCount, (object?)(a.Files?.Count ?? 0)), new("link")));
-            if (ModuleGate.On(Contracts.ModuleIds.Rename)) items.Add(new("rename", LauncherItemKind.Action, LauncherGroups.Files, Strings.Common_Rename, string.Format(Strings.Launcher_FileCount, (object?)(a.Files?.Count ?? 0)), new("pencil")));
         }
         else if (a.Kind == ClipKind.Image)
         {
@@ -375,6 +374,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
 
     void OnTextChanged(object sender, TextChangedEventArgs e)
     {
+        if (quickLinkItem is not null) return;
         HideClearButton();
         if (aliasItem is not null) { AliasFoot(); return; }   // 编辑别名时输入框装的是别名，不搜索
         if (aiMode) ExitAi(); // 卡片打开时继续打字 = 回到列表重新搜
@@ -579,10 +579,11 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
 
     void Render(LauncherResult result, string query, bool attachmentMode, bool keepSelection = false)
     {
+        if (quickLinkItem is not null) return;
         if (menuItem is not null) { lastResult = result; return; }   // 列着操作时晚到的结果先记下，Esc 回去再画
-        // 停用的能力不出现在结果里（055）：「批量重命名」「剪贴板」这两条命令
-        if (!ModuleGate.On(Contracts.ModuleIds.Rename) || !ModuleGate.On(Contracts.ModuleIds.Clipboard))
-            result = result with { Items = result.Items.Where(i => !(i.Kind == LauncherItemKind.Command && (i.Id == "rename" && !ModuleGate.On(Contracts.ModuleIds.Rename) || i.Id == "command:clipboard" && !ModuleGate.On(Contracts.ModuleIds.Clipboard)))).ToList() };
+        // 停用的能力不出现在结果里（055）：「剪贴板」这条命令
+        if (!ModuleGate.On(Contracts.ModuleIds.Clipboard))
+            result = result with { Items = result.Items.Where(i => i.Kind != LauncherItemKind.Command || i.Id != "command:clipboard").ToList() };
         var q = query.Trim();
         var keep = keepSelection && selected >= 0 && selected < rows.Count && selected != DefaultSelection() ? rows[selected].Item.Id : null;
         shownQuery = q;
@@ -684,6 +685,12 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
                 var s = Section(Strings.Launcher_Group_Timer, LauncherSectionKind.List);
                 foreach (var item in timers) Add(s, item, LauncherCell.Command);
             }
+            var links = result.Items.Where(item => item.Group == LauncherGroups.QuickLinks).ToArray();
+            if (links.Length > 0)
+            {
+                var s = Section(Strings.QuickLinks_Title, LauncherSectionKind.List);
+                foreach (var item in links) Add(s, item, LauncherCell.Command);
+            }
             // 服务给的 AI / 网页两组不用了（动作行代替）
             foreach (var item in result.Items.Where(i => i.Kind == LauncherItemKind.Calculation).Take(1))
                 Add(Section("", LauncherSectionKind.Calc), item, LauncherCell.Calc);
@@ -747,7 +754,8 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
     void RequestHeight()
     {
         double h = noticeHeight + SearchRowHeight;
-        if (aiMode) { UpdateLayout(); h += 1 + Card.ActualHeight + Card.Margin.Top + Card.Margin.Bottom; }
+        if (quickLinkItem is not null) { UpdateLayout(); h += QuickLinkFormPanel.ActualHeight + QuickLinkFormPanel.Margin.Top + QuickLinkFormPanel.Margin.Bottom; }
+        else if (aiMode) { UpdateLayout(); h += 1 + Card.ActualHeight + Card.Margin.Top + Card.Margin.Bottom; }
         else if (rows.Count > 0) h += 1 + Math.Min(ResultsContent.ActualHeight, ResultsMaxHeight) + FootHeight;
         h = Math.Ceiling(h);
         if (Math.Abs(h - lastHeight) < 0.5 && Math.Abs(Width_ - lastWidth) < 0.5) return;
@@ -956,6 +964,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
 
     void OnInputKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (quickLinkItem is not null) { OnQuickLinkFormKeyDown(sender, e); return; }
         var ctrl = Down(VirtualKey.Control);
 
         if (aliasItem is not null)
@@ -1239,17 +1248,9 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
             OpenTimer?.Invoke();
             return;
         }
-        // 批量重命名：命令（040，Id = rename）和文件附件的动作都由界面打开重命名窗口
-        if (item.Id == "rename" && item.Kind is LauncherItemKind.Command or LauncherItemKind.Action)
-        {
-            var files = attachment is { Kind: ClipKind.Files, Files: { } f } ? f : null;
-            var window = previousWindow;
-            CloseRequested?.Invoke(this, EventArgs.Empty);
-            OpenRename?.Invoke(files, window);
-            return;
-        }
         if (NeedsConfirm(item) && !Confirmed(row)) return;
         if (item.Kind == LauncherItemKind.Ai) { RunAi(item.Id.StartsWith("ai:", StringComparison.Ordinal) ? item.Id[3..] : item.Id); return; }
+        if (TryShowQuickLinkForm(item)) return;
         try
         {
             if (attachment is { } a && item.Kind == LauncherItemKind.Action)
@@ -1264,7 +1265,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
         catch (Exception e)
         {
             // 启动器还开着：原因写在这一项的副标题上（格子写在提示栏），几秒后或换选中项时复原
-            if (App.FailureReason(e) is { } reason && index < rows.Count && ReferenceEquals(rows[index], row))
+            if ((e is LauncherActionException ? e.Message : App.FailureReason(e)) is { } reason && index < rows.Count && ReferenceEquals(rows[index], row))
                 ShowFailure(row, string.Format(Strings.Common_ActionFailed, (object?)(Verb(item)), (object?)(reason)));
             return;
         }
@@ -1272,7 +1273,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
     }
 
     // ---------------- 附加操作（050，issue 10） ----------------
-    // Ctrl+K / 右键：结果区就地换成这一项的操作列表（WinUI 版不弹独立菜单，同批量重命名的「就地展开」）。
+    // Ctrl+K / 右键：结果区就地换成这一项的操作列表（WinUI 版不弹独立菜单，就地展开）。
     // 第一行「打开」，应用第二行「固定到首页 / 取消固定」（issue 27），后面是服务给的操作，右边数字键；卸载要按两次。Esc 回到结果并选回这一项
 
     async Task OpenMenu(int index)

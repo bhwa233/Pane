@@ -5,10 +5,14 @@ using Pane.Localization;
 // Esc 只清空原文（不关窗口）；Ctrl+W 关。
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Pane.Contracts;
 using Pane.Hosting;
+using Pane.Services.Ai;
+using Pane.Services.Notes;
+using Pane.Settings;
 using Pane.Views.Controls;
 using Windows.Foundation;
 using Windows.System;
@@ -20,44 +24,91 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
 {
     static readonly (string Code, string Name)[] Langs = Languages.All;
     static string Idle => Strings.Translate_ResultPlaceholder;
+    const string TranslateMode = "translate", DictionaryMode = "dictionary";
 
     readonly IAiService ai;
     readonly ISelectionActions output;
+    readonly Func<string, string, bool> saveNote;
     readonly DispatcherQueueTimerHolder debounce;
+    readonly PaneSegmented mode;
     CancellationTokenSource? running;
-    string last = "", target = "zh";
+    string last = "", observedText = "", target = "zh";
     string? manualTarget;
-    bool topmost;
+    bool topmost, settingSource;
+    bool IsDictionary => mode.Value == DictionaryMode;
 
     /// <summary>未配置 AI 时「去设置」。</summary>
     public event EventHandler? OpenSettings;
 
-    public TranslateView(IAiService ai, ISelectionActions output)
+    public TranslateView(IAiService ai, ISelectionActions output, SettingsStore settings, Func<string, string, bool> saveNote)
     {
         this.ai = ai;
         this.output = output;
+        this.saveNote = saveNote;
+        historySettings = settings;
+        dictionaryHistory = new TranslationHistory(settings.DirectoryPath, dictionary: true);
+        translationHistory = new TranslationHistory(settings.DirectoryPath, dictionary: false);
         InitializeComponent();
         Controls.PaneCaret.Attach(Source);
-        debounce = new DispatcherQueueTimerHolder(DispatcherQueue, TimeSpan.FromMilliseconds(600), () => _ = Translate(force: false));
-        KeyHints.Fill(Hints, [(["Ctrl", "+", "Enter"], Strings.Translate_TranslateNow), (["Esc"], Strings.Common_Clear)], HintLabelProto, KbdProto);
+        debounce = new DispatcherQueueTimerHolder(DispatcherQueue, TimeSpan.FromMilliseconds(600), () => _ = RunCurrent(force: false));
+        selectionLookupDebounce = new DispatcherQueueTimerHolder(DispatcherQueue, TimeSpan.FromMilliseconds(250), () => _ = LookupSelectionAsync());
+        mode = new PaneSegmented([(TranslateMode, Strings.Common_Translate), (DictionaryMode, Strings.Translate_Dictionary)], TranslateMode,
+            ModeStrongProto, ModeDimProto, ModeFillProto.Background, ModeFillProto.BorderBrush);
+        AutomationProperties.SetName(mode, Strings.Translate_Mode);
+        mode.Changed += (_, _) =>
+        {
+            ApplyMode();
+            if (IsDictionary && !HistoryVisible) _ = Lookup(force: true);
+        };
+        ModeHost.Content = mode;
         PreviewKeyDown += OnKeyDown;
         ai.StatusChanged += OnStatusChanged;
         Unloaded += (_, _) => ai.StatusChanged -= OnStatusChanged;
-        ShowIdle();
-        UpdateModel();
+        SelectionDictionaryToggle.IsChecked = settings.Current.LookupTranslationSelection;
+        ApplyMode();
     }
 
     void OnStatusChanged(object? sender, EventArgs e) => DispatcherQueue.TryEnqueue(UpdateModel);
 
     /// <summary>打开（或复用）窗口时宿主调用：带上要翻译的文字，立即翻。</summary>
-    public void Open(string? text)
+    public void Open(string? text, bool dictionary = false)
     {
-        UpdateModel();
-        if (text is null) return;
+        if (HistoryVisible) ShowHistory(false);
+        if (text is null && IsDictionary == dictionary) { UpdateModel(); return; }
+        CancelPending();
+        mode.SetValue(dictionary ? DictionaryMode : TranslateMode);
+        if (text != null) SetSource(text);
+        ApplyMode();
+        if (text != null || dictionary) _ = RunCurrent(force: true);
+    }
+
+    void SetSource(string text)
+    {
+        settingSource = true;
+        try
+        {
+            Source.Text = text;
+            observedText = Source.Text.Trim();
+            Source.SelectionStart = Source.Text.Length;
+        }
+        finally { settingSource = false; }
+    }
+
+    void ApplyMode()
+    {
+        CancelPending();
+        ClearSelectionLookup();
+        RefreshSelectionDictionaryVisibility();
         manualTarget = null;
-        Source.Text = text;
-        Source.SelectionStart = text.Length;
-        _ = Translate(force: true);
+        last = observedText = Source.Text.Trim();
+        ResetLanguages(last);
+        LanguagesBar.Visibility = IsDictionary || HistoryVisible ? Visibility.Collapsed : Visibility.Visible;
+        Source.PlaceholderText = IsDictionary ? Strings.Translate_DictionaryInput : Strings.Translate_InputPlaceholder;
+        CopyButton.Content = IsDictionary ? Strings.Common_Copy : Strings.SuperPanel_CopyTranslation;
+        ShowIdle();
+        UpdateModel();
+        RefreshHints();
+        if (HistoryVisible) RefreshHistory();
     }
 
     // ---------------- ISecondaryView ----------------
@@ -70,11 +121,11 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
     public UIElement? DragRegion => Head;
     public void OnShowing(PanelShowContext context) { }
     public void OnShown() => Source.Focus(FocusState.Programmatic);
-    public void OnHidden() => running?.Cancel();
+    public void OnHidden() { CancelPending(); ClearSelectionLookup(); }
 
     // 永久销毁时由宿主调用（GlassPanel.Dispose，055 起能力停用、二级窗口关闭都会销毁视图）。
     // 不能只靠 Unloaded：内容岛直接释放时它不一定来。退订常驻对象的事件、停计时器、取消任务、释放附着的合成视觉
-    public void Dispose() { running?.Cancel(); debounce.Dispose(); ai.StatusChanged -= OnStatusChanged; }
+    public void Dispose() { OnHidden(); debounce.Dispose(); selectionLookupDebounce.Dispose(); ai.StatusChanged -= OnStatusChanged; }
 
     void OnClose(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
@@ -86,7 +137,8 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
         TopmostChanged?.Invoke(this, topmost);
     }
 
-    void UpdateModel() => ModelText.Text = ai.Status == AiStatus.NotConfigured || ai.TranslationModelName is null
+    void UpdateModel() => ModelText.Text = IsDictionary ? Strings.Translate_DictionarySource
+        : ai.Status == AiStatus.NotConfigured || ai.TranslationModelName is null
         ? Strings.Translate_NotConfigured
         : string.Format(Strings.Translate_ModelHint, (object?)(ai.TranslationModelName));
 
@@ -94,8 +146,21 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
 
     void OnSourceChanged(object sender, TextChangedEventArgs e)
     {
+        if (debounce is null) return;
+        if (selectionLookupOwner == Source) ClearSelectionLookup();
         CountText.Text = string.Format(Strings.Translate_CharacterCount, (object?)(Source.Text.Length));
-        if (Source.Text.Trim().Length == 0) { manualTarget = null; debounce.Stop(); _ = Translate(force: false); }
+        var text = Source.Text.Trim();
+        if (settingSource || text == observedText) return;
+        observedText = text;
+        CancelPending();
+        ShowIdle();
+        last = "";
+        if (text.Length == 0)
+        {
+            manualTarget = null;
+            ResetLanguages("");
+            if (IsDictionary && !HistoryVisible) _ = Lookup(force: true);
+        }
         else debounce.Restart();
     }
 
@@ -103,18 +168,74 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
     static string NameOf(string code) => Languages.NameOf(code);
     string AutoTarget(string text) => Languages.AutoTarget(text, ((App)Application.Current).Store.Current.Ai.TranslateTarget);
 
+    void ResetLanguages(string text)
+    {
+        if (IsDictionary) return;
+        target = manualTarget ?? AutoTarget(text);
+        FromText.Text = text.Length == 0 ? Strings.Translate_AutoDetect : string.Format(Strings.Translate_DetectedLanguage, Detect(text));
+        ToText.Text = NameOf(target);
+    }
+
+    void RefreshHints() => KeyHints.Fill(Hints,
+        [(["Ctrl", "+", "Enter"], IsDictionary ? Strings.Translate_Dictionary : Strings.Translate_TranslateNow), (["Esc"], Strings.Common_Clear)],
+        HintLabelProto, KbdProto);
+
+    Task RunCurrent(bool force) => HistoryVisible ? Task.CompletedTask : IsDictionary ? Lookup(force) : Translate(force);
+
+    void CancelPending()
+    {
+        debounce.Stop();
+        var pending = running;
+        running = null;
+        pending?.Cancel();
+        if (messageAction == MessageAction.CancelTranslation) ActionButton.Visibility = Visibility.Collapsed;
+        if (messageAction == MessageAction.InstallDictionary) ActionButton.IsEnabled = true;
+    }
+
+    async Task Lookup(bool force)
+    {
+        var text = Source.Text.Trim();
+        if (!force && text == last) return;
+        CancelPending();
+        last = text;
+        ShowIdle();
+        var dictionaryPath = OfflineDictionary.FindPath(historySettings.DirectoryPath, AppContext.BaseDirectory);
+        if (dictionaryPath == null)
+        {
+            ShowMessage(Strings.Translate_DictionaryUnavailable, MessageAction.InstallDictionary);
+            return;
+        }
+        if (text.Length == 0) return;
+
+        using var cts = running = new CancellationTokenSource();
+        try
+        {
+            var entries = await Task.Run(() => OfflineDictionary.Lookup(dictionaryPath, text, cts.Token), cts.Token);
+            if (cts != running) return;
+            if (entries.Count == 0) { Out.Text = Strings.Translate_DictionaryNoMatch; return; }
+            Out.Foreground = TextProto.Foreground;
+            Out.Text = FormatDictionaryEntries(entries);
+            SaveNoteButton.IsEnabled = !string.IsNullOrWhiteSpace(Out.Text);
+            OutScroller.ChangeView(null, 0, null, true);
+            RecordHistory(new(text));
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error) when (error is InvalidDataException or ArgumentException or DllNotFoundException or EntryPointNotFoundException)
+        {
+            if (cts == running) ShowMessage(Strings.Translate_DictionaryUnavailable, MessageAction.InstallDictionary);
+        }
+        finally { if (cts == running) running = null; }
+    }
+
     async Task Translate(bool force)
     {
         debounce.Stop();
         var text = Source.Text.Trim();
         if (!force && text == last) return;
         last = text;
-        running?.Cancel();
-        if (text.Length == 0) { FromText.Text = Strings.Translate_AutoDetect; ToText.Text = NameOf(AutoTarget("")); ShowIdle(); return; }
-
-        target = manualTarget ?? AutoTarget(text);
-        FromText.Text = string.Format(Strings.Translate_DetectedLanguage, (object?)(Detect(text)));
-        ToText.Text = NameOf(target);
+        CancelPending();
+        ResetLanguages(text);
+        if (text.Length == 0) { ShowIdle(); return; }
         ActionButton.Visibility = Visibility.Collapsed;
         if (ai.Status == AiStatus.NotConfigured)
         {
@@ -122,65 +243,148 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
             return;
         }
 
-        var cts = running = new CancellationTokenSource();
+        using var cts = running = new CancellationTokenSource();
+        SaveNoteButton.IsEnabled = false;
+        if (selectionLookupOwner == Out) ClearSelectionLookup();
         Out.Text = "";
         Out.Foreground = TextProto.Foreground;
         StateText.Text = Strings.Translate_Translating;
+        ShowAction(MessageAction.CancelTranslation);
         try
         {
             await foreach (var piece in ai.RunAsync(new AiRequest("translate", text, target, null), cts.Token))
             {
-                if (cts.IsCancellationRequested) return;
+                if (cts != running) return;
                 Out.Text += piece;
             }
-            if (cts == running) StateText.Text = "";
+            if (cts == running)
+            {
+                StateText.Text = "";
+                SaveNoteButton.IsEnabled = !string.IsNullOrWhiteSpace(Out.Text);
+                if (historySettings.Current.RememberTranslations && SaveNoteButton.IsEnabled)
+                    RecordHistory(new(text, target, Out.Text));
+            }
         }
         catch (OperationCanceledException) { }
         catch (AiSignInRequiredException e) { if (cts == running) ShowMessage(e.Message, MessageAction.Settings); }
         catch (AiCredentialException e) { if (cts == running) ShowMessage(e.Message, MessageAction.Settings); }
         catch (Exception e) { if (cts == running) ShowMessage(App.FailureReason(e) ?? Strings.Translate_Failed, MessageAction.Retry); }
+        finally
+        {
+            if (cts == running)
+            {
+                running = null;
+                if (messageAction == MessageAction.CancelTranslation)
+                {
+                    if (ActionButton.FocusState == FocusState.Keyboard) Source.Focus(FocusState.Programmatic);
+                    ActionButton.Visibility = Visibility.Collapsed;
+                }
+            }
+        }
     }
 
     void ShowIdle()
     {
-        Out.Text = Idle;
+        if (selectionLookupOwner == Out) ClearSelectionLookup();
+        SaveNoteButton.IsEnabled = false;
+        Out.Text = IsDictionary ? Strings.Translate_DictionaryPlaceholder : Idle;
         Out.Foreground = IdleProto.Foreground;
+        RefreshLookupResult();
         StateText.Text = "";
+        ActionButton.IsEnabled = true;
         ActionButton.Visibility = Visibility.Collapsed;
     }
 
-    enum MessageAction { Settings, Retry }
+    enum MessageAction { Settings, Retry, InstallDictionary, LookupDictionary, CancelTranslation }
     MessageAction messageAction;
     void ShowMessage(string message, MessageAction action)
     {
+        if (selectionLookupOwner == Out) ClearSelectionLookup();
+        SaveNoteButton.IsEnabled = false;
         Out.Text = message;
         Out.Foreground = IdleProto.Foreground;
+        RefreshLookupResult();
         StateText.Text = "";
+        ShowAction(action);
+    }
+
+    void ShowAction(MessageAction action)
+    {
         messageAction = action;
-        ActionButton.Content = action == MessageAction.Settings ? Strings.Common_GoToSettings : Strings.Common_Retry;
+        ActionButton.Content = action switch
+        {
+            MessageAction.Settings => Strings.Common_GoToSettings,
+            MessageAction.InstallDictionary => Strings.Translate_InstallDictionary,
+            MessageAction.LookupDictionary => Strings.Translate_Dictionary,
+            MessageAction.CancelTranslation => Strings.Translate_Stop,
+            _ => Strings.Common_Retry
+        };
         ActionButton.Visibility = Visibility.Visible;
     }
 
     bool HasResult => Out.Foreground == TextProto.Foreground && Out.Text.Length > 0;
 
+    void OnSaveNote(object sender, RoutedEventArgs e)
+    {
+        if (!SaveNoteButton.IsEnabled) return;
+        var title = Source.Text.Trim();
+        var newline = title.IndexOfAny(['\r', '\n']);
+        if (newline >= 0) title = title[..newline].TrimEnd();
+        if (title.Length > NoteStore.TitleLimit)
+            title = title[..(char.IsHighSurrogate(title[NoteStore.TitleLimit - 1]) ? NoteStore.TitleLimit - 1 : NoteStore.TitleLimit)];
+        try { StateText.Text = saveNote(title, Out.Text) ? Strings.Notes_ResultSaved : Strings.Notes_ResultModuleDisabled; }
+        catch (Exception error) when (NoteStore.IsStorageError(error)) { StateText.Text = Strings.Notes_ResultSaveFailed; }
+    }
+
+    void OnResultSelectionChanged(object sender, RoutedEventArgs e)
+    {
+        RefreshLookupResult();
+        if (mode != null) QueueSelectionLookup(Out, HasResult ? Out.SelectedText : null);
+    }
+
+    void RefreshLookupResult()
+    {
+        if (LookupResultButton != null)
+            LookupResultButton.IsEnabled = HasResult && Out.SelectedText?.Trim().Length is > 0 and <= 512;
+    }
+
+    void OnLookupResult(object sender, RoutedEventArgs e)
+    {
+        var selected = Out.SelectedText?.Trim() ?? "";
+        if (!HasResult || selected.Length is 0 or > 512) return;
+        Open(selected, dictionary: true);
+        Source.Focus(FocusState.Programmatic);
+    }
+
     void OnAction(object sender, RoutedEventArgs e)
     {
-        if (messageAction == MessageAction.Settings) OpenSettings?.Invoke(this, EventArgs.Empty);
-        else _ = Translate(force: true);
+        if (messageAction == MessageAction.CancelTranslation)
+        {
+            if (running == null) return;
+            CancelPending();
+            if (!HasResult) ShowIdle();
+            StateText.Text = Strings.Translate_Cancelled;
+            ShowAction(MessageAction.Retry);
+            ActionButton.Focus(FocusState.Programmatic);
+        }
+        else if (messageAction == MessageAction.Settings) OpenSettings?.Invoke(this, EventArgs.Empty);
+        else if (messageAction == MessageAction.InstallDictionary) _ = InstallDictionaryAsync();
+        else _ = RunCurrent(force: true);
     }
 
     void OnClear(object sender, RoutedEventArgs e) { Source.Text = ""; Source.Focus(FocusState.Programmatic); }
 
     void OnCopy(object sender, RoutedEventArgs e)
     {
-        if (!HasResult) { StateText.Text = Strings.Translate_NoResult; return; }
+        if (!HasResult) { StateText.Text = IsDictionary ? Strings.Translate_DictionaryNoMatch : Strings.Translate_NoResult; return; }
         _ = output.CopyAsync(Out.Text, CancellationToken.None);
-        StateText.Text = Strings.Translate_Copied;
+        StateText.Text = IsDictionary ? Strings.Translate_DictionaryCopied : Strings.Translate_Copied;
     }
 
     // 换目标语言：按列表轮换，跳过和原文相同的语言；只对这段文字生效，清空后回到自动
     void OnTarget(object sender, RoutedEventArgs e)
     {
+        if (IsDictionary) return;
         int i = Array.FindIndex(Langs, l => l.Code == target);
         var from = Detect(Source.Text);
         for (int k = 1; k <= Langs.Length; k++)
@@ -188,20 +392,18 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
             var next = Langs[(i + k) % Langs.Length];
             if (next.Name != from) { manualTarget = next.Code; break; }
         }
-        _ = Translate(force: true);
+        _ = RunCurrent(force: true);
         Source.Focus(FocusState.Programmatic);
     }
 
     // 对调：译文放到左边，目标换成原来的语言（原文是中文就回到中文）
     void OnSwap(object sender, RoutedEventArgs e)
     {
-        if (!HasResult) return;
+        if (IsDictionary || !HasResult) return;
         var from = Detect(Source.Text);
         manualTarget = Langs.FirstOrDefault(l => l.Name == from).Code;
-        var text = Out.Text;
-        Source.Text = text;
-        Source.SelectionStart = text.Length;
-        _ = Translate(force: true);
+        SetSource(Out.Text);
+        _ = RunCurrent(force: true);
         Source.Focus(FocusState.Programmatic);
     }
 
@@ -212,7 +414,8 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
         bool ctrl = Down(VirtualKey.Control);
         switch (e.Key)
         {
-            case VirtualKey.Enter when ctrl: _ = Translate(force: true); break;
+            case VirtualKey.Enter when ctrl: _ = RunCurrent(force: true); break;
+            case VirtualKey.Escape when HistoryVisible: ShowHistory(false); HistoryButton.Focus(FocusState.Programmatic); break;
             case VirtualKey.Escape: if (Source.Text.Length > 0) Source.Text = ""; Source.Focus(FocusState.Programmatic); break;   // 不关窗口
             case VirtualKey.W when ctrl: CloseRequested?.Invoke(this, EventArgs.Empty); break;
             default: return;

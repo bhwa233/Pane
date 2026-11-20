@@ -1,0 +1,39 @@
+{
+  "sources": [
+    {
+      "name": "ScreenCapture",
+      "repository": "https://github.com/xland/ScreenCapture.git",
+      "revision": "00f6d2b86670a3aa7cebee32515cf5cc6e965bd5"
+    },
+    {
+      "name": "Ling",
+      "repository": "https://github.com/xland/Ling.git",
+      "revision": "2ae45005b2863b004b4432bfe85d6e63d7ee44ca"
+    }
+  ],
+  "ocrSources": [
+    {
+      "name": "ImageReader",
+      "repository": "https://github.com/xland/ImageReader.git",
+      "revision": "896830aad60f574a39fdbd9f7967177eb149cb0b"
+    },
+    {
+      "name": "TinyOCR",
+      "repository": "https://github.com/xland/TinyOCR.git",
+      "revision": "1a8516a055328bd15c7d428f29ffdf2893b047ec"
+    },
+    {
+      "name": "opencv",
+      "repository": "https://github.com/opencv/opencv.git",
+      "revision": "0654a42e19215ef25b1d367d822f3c630447e7c7"
+    }
+  ],
+  "ocrModels": {
+    "PP-OCRv6_det_tiny.onnx": "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5",
+    "PP-OCRv6_rec_tiny.onnx": "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b"
+  },
+  "ocrDependencies": {
+    "onnxDirectory": "onnxruntime-win-x64-1.23.2",
+    "onnxArchiveSha256": "0b38df9af21834e41e73d602d90db5cb06dbd1ca618948b8f1d66d607ac9f3cd"
+  }
+}

@@ -161,6 +161,7 @@ public interface IFileSearchStatus
 /// <summary>启动器分组的稳定标识；显示标题由界面资源提供。</summary>
 public static class LauncherGroups
 {
+    public const string QuickLinks = "quick-links";
     public const string Applications = "applications";
     public const string Files = "files";
     public const string Commands = "commands";

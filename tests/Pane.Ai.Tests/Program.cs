@@ -26,6 +26,14 @@ internal static partial class Program
         Check(AiProtocol.Prompt(settings,new("translate","hi",null,null)).Contains("中文"),"auto latin");
         Check(AiProtocol.Prompt(settings,new("translate","中A",null,null)).Contains("英文"),"auto half");
         Check(AiProtocol.Prompt(settings,new("translate","𠀀",null,null)).Contains("英文"),"auto rune");
+        foreach (var (text, language) in new[] { ("東京都の新宿駅", "ja"), ("東京ｶﾅ", "ja"), ("韓國 서울", "ko") })
+        {
+            Check(TranslationDirection.Detect(text) == language, "mixed Han source is recognized as Japanese or Korean");
+            Check(AiProtocol.Prompt(settings, new("translate", text, null, null)).Contains("翻译成中文"), "mixed Han source translates to Chinese");
+        }
+        var targetJapanese = settings with { TranslateTarget = "ja" };
+        Check(AiProtocol.Prompt(targetJapanese, new("translate", "今天下雨", null, null)).Contains("翻译成日文"), "configured target overrides automatic direction");
+        Check(AiProtocol.Prompt(targetJapanese, new("translate", "今天下雨", "fr", null)).Contains("翻译成法文"), "request target overrides configured target");
         Check(AiProtocol.Prompt(settings,new("translate","   ",null,null)).Contains("中文"),"auto empty");
         foreach(var lang in new[]{"zh","en","ja","ko","fr","de","es","ru"})Check(!AiProtocol.Prompt(settings,new("translate","x",lang,null)).Contains("{lang}"),"language");
         Check(AiProtocol.Prompt(settings,new("translate","literal {lang}","ja",null)).EndsWith("literal {lang}"),"no recursive substitution");
@@ -56,8 +64,14 @@ internal static partial class Program
         server.Mode="429";await Error<AiQuotaException>(()=>Run(ai),"rate");
         server.Mode="quota";try{await Run(ai);throw new Exception("quota");}catch(AiQuotaException e){Check(e.Message.Contains("额度"),"quota message");}
         server.Mode="malformed";await Error<AiNetworkException>(()=>Run(ai),"malformed");
-        server.Mode="cancel";server.Disconnected=new();server.Connected=new();
-        using(var cancel=new CancellationTokenSource()){var task=Run(ai,cancel.Token);await server.Connected.Task.WaitAsync(TimeSpan.FromSeconds(5));cancel.Cancel();await Error<OperationCanceledException>(()=>task,"cancel");await server.Disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));Check(true,"cancel disconnected");}
+        server.Mode="cancel";server.Disconnected=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using(var cancel=new CancellationTokenSource(TimeSpan.FromSeconds(5))){
+            await using var translation=ai.RunAsync(new("translate","hello","zh",null),cancel.Token).GetAsyncEnumerator();
+            Check(await translation.MoveNextAsync()&&translation.Current=="你","translation received a partial result");
+            cancel.Cancel();
+            await Error<OperationCanceledException>(()=>translation.MoveNextAsync().AsTask(),"cancel a running translation");
+            await server.Disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
         server.Mode="cancel";server.Disconnected=new();server.Connected=new();
         var moduleRequest=Run(ai);await server.Connected.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var keyBefore=File.ReadAllBytes(Path.Combine(directory,AiService.KeyFile(store.Current.Ai.CurrentEndpoint.Id)));

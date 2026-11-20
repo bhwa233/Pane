@@ -7,7 +7,7 @@ namespace Pane.Services.Setup;
 // 应用和无资源的安装外壳共享的卸载进程边界。
 internal static class UninstallChain
 {
-    public static string LogPath => Path.Combine(Path.GetTempPath(), "Pane-uninstall.log");
+    public static string LogPath => Path.Combine(Path.GetTempPath(), SetupPaths.RequiresIsolation ? "Pane-preview-uninstall.log" : "Pane-uninstall.log");
     static string Escape(string? value) => (value ?? "-").Replace("\\", "\\\\").Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t");
     static string Limit(string? value, int length) => value == null ? "-" : value[..Math.Min(value.Length, length)];
     public static string Reason(Exception error)

@@ -9,8 +9,32 @@
     <Description Condition="'$(AssemblyName)' == 'Uninstall Pane'">Pane 卸载程序</Description>
     <AssemblyTitle Condition="'$(AssemblyName)' == 'Uninstall Pane'">Pane 卸载程序</AssemblyTitle>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(PaneIsolatedPreview)' == 'true'">
+    <DefineConstants>$(DefineConstants);PANE_ISOLATED_PREVIEW</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TrafficPayloadPath)' != ''">
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Pane.TrafficSetup</AssemblyName>
+    <AssemblyTitle>Pane Traffic Setup</AssemblyTitle><Description>Pane Traffic Setup</Description>
+  </PropertyGroup>
   <ItemGroup Condition="'$(PayloadPath)' != ''"><EmbeddedResource Include="$(PayloadPath)" LogicalName="payload.zip" /></ItemGroup>
-  <ItemGroup><Compile Include="../Pane.App/Services/Setup/SetupFiles.cs" Link="SetupFiles.cs" /></ItemGroup>
-  <ItemGroup><Compile Include="../Pane.App/Services/Setup/UninstallChain.cs" Link="UninstallChain.cs" /></ItemGroup>
-  <ItemGroup><Compile Include="../../tests/Pane.App.Probes/SetupFailureProbe.cs" Link="SetupFailureProbe.cs" /></ItemGroup>
+  <ItemGroup Condition="'$(TrafficPayloadPath)' == ''">
+    <Compile Remove="TrafficSetupEntry.cs;TrafficReleaseTrust.cs;TrafficServiceStaging.cs;TrafficServiceInstall.cs" />
+    <Compile Include="../Pane.App/Services/Setup/SetupFiles.cs" Link="SetupFiles.cs" />
+    <Compile Include="../Pane.App/Services/Setup/UninstallChain.cs" Link="UninstallChain.cs" />
+    <Compile Include="../../tests/Pane.App.Probes/SetupFailureProbe.cs" Link="SetupFailureProbe.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TrafficPayloadPath)' != ''">
+    <Compile Remove="Program.cs" />
+    <Compile Include="../Pane.Traffic/Core/DirectoryGuard.cs" Link="DirectoryGuard.cs" />
+    <Compile Include="../Pane.App/Services/Traffic/TrafficServiceIdentity.cs" Link="TrafficServiceIdentity.cs" />
+    <Compile Include="../Pane.App/Services/Traffic/TrafficPipeProtocol.cs" Link="TrafficPipeProtocol.cs" />
+    <EmbeddedResource Include="$(TrafficPayloadPath)" LogicalName="Pane.TrafficService-x64-preview.zip" />
+    <EmbeddedResource Include="$(TrafficPayloadPath).manifest.json" LogicalName="Pane.TrafficService-x64-preview.zip.manifest.json" />
+    <AssemblyMetadata Include="TrafficReleaseSignerSha256" Value="$(TrafficReleaseSignerSha256)" Condition="'$(TrafficReleaseSignerSha256)' != ''" />
+  </ItemGroup>
+  <Target Name="ValidateTrafficReleaseSigner" BeforeTargets="GenerateAssemblyInfo" Condition="'$(TrafficReleaseSignerSha256)' != ''">
+    <Error Condition="'$(TrafficPayloadPath)' == '' Or !$([System.Text.RegularExpressions.Regex]::IsMatch('$(TrafficReleaseSignerSha256)', '^[a-fA-F0-9]{64}$'))"
+           Text="TrafficReleaseSignerSha256 requires an embedded traffic payload and a 64-digit SHA-256 certificate digest." />
+  </Target>
 </Project>

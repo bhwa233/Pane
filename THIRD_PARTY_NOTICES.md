@@ -26,6 +26,27 @@ Base notices are retained as `WindowsAppSDK-Base-NOTICE.txt` to preserve the SDK
 notice chain. Upstream notice files describe their complete distributions; their
 entries do not imply that all listed build tools are in this installer.
 
+### Optional native capture preview
+
+The internal `-WithNativeCapture` package includes a separate `NativeCapture/`
+payload. Component revisions are recorded in
+[`src/Pane.Capture/sources.lock.json`](src/Pane.Capture/sources.lock.json).
+
+| Component | Origin and license | Notice in `NativeCapture/` |
+| --- | --- | --- |
+| ScreenCapture and Ling | Pinned upstream trees, MIT | `LICENSE.ScreenCapture.txt`, `LICENSE.Ling.txt` |
+| Session and editable-pin adapters | Galaxy Tools `fd8f11e`, MIT | `LICENSE.galaxy-tools.txt` |
+| Yoga | Vendored by Ling; [upstream MIT](https://github.com/facebook/yoga/blob/042f5013152eb81c1552dec945b88f7b95ca350f/LICENSE) | `LICENSE.Yoga.txt` |
+| cgif | Vendored by ScreenCapture; [upstream MIT](https://github.com/dloebl/cgif/blob/b68f18ac125085923cae83b458e019e89feebe25/LICENSE) | `LICENSE.cgif.txt` |
+| quirc | Vendored by ScreenCapture; [upstream ISC](https://github.com/dlbeer/quirc/blob/542848dd6b9b0eaa9587bbf25b9bc67bd8a71fca/LICENSE) | `LICENSE.quirc.txt` |
+| Lucide toolbar font | `lucide-static` 1.60.0, ISC / MIT; subset embedded in the executable instead of the upstream toolbar font | `LICENSE.Lucide.txt` |
+
+Native capture uses the x64 MSVC runtime statically. Microsoft toolchain notices
+are in `ThirdParty/` as listed above. The optional native build does not link
+gifski and does not ship the Ling demo font.
+
+### Installed app payload
+
 The installed payload includes WinUI and composition/input DLLs, Windows App
 Runtime / resource DLLs and metadata, WebView2Loader.dll and
 Microsoft.Web.WebView2.Core.dll, plus the statically linked .NET runtime and the

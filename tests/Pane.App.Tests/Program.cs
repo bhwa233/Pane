@@ -8,6 +8,29 @@ static class Program
  static int checks;
  static void Check(bool condition,string name){checks++;if(!condition)throw new Exception(name);}
  static async Task Main(string[] args){
+  if(args is ["--ocr-result"]){int total=OcrResultTests.Run();Console.WriteLine($"PASS OCR result assertions={total}");TestResults.Pass();return;}
+  if(args is ["--ocr-history"]){int total=OcrHistoryTests.Run();Console.WriteLine($"PASS OCR history assertions={total}");TestResults.Pass();return;}
+  if(args is ["--screenshot-export"]){int total=ScreenshotExportTests.Run();Console.WriteLine($"PASS screenshot export assertions={total}");TestResults.Pass();return;}
+  if(args is ["--note-history"]){int total=NoteHistoryTests.Run();Console.WriteLine($"PASS note history assertions={total}");TestResults.Pass();return;}
+  if(args is ["--traffic-trend"]){int total=InterfaceTrafficTrendTests.Run();Console.WriteLine($"PASS traffic trend assertions={total}");TestResults.Pass();return;}
+  if(args is ["--traffic-app-run"]){ProcessTrafficTests.Run();Console.WriteLine("PASS traffic app run");TestResults.Pass();return;}
+  if(args is ["--traffic-end-process-fixture"]){await Task.Delay(TimeSpan.FromSeconds(30));return;}
+  if(args is ["--traffic-connections"]){ProcessTrafficTests.CheckConnections();Console.WriteLine("PASS traffic connections");TestResults.Pass();return;}
+  if(args is ["--traffic-service-check"] or ["--traffic-service-capture"]){Environment.ExitCode=await TrafficServiceProbe.RunAsync(args[0]=="--traffic-service-capture");return;}
+  if(args is ["--traffic-service-status-json",var servicePid]){
+   if(!int.TryParse(servicePid,out var expectedPid)||expectedPid<=0){Console.Error.WriteLine("Supply the positive PID of the running PaneTraffic service.");Environment.ExitCode=2;return;}
+   Environment.ExitCode=await TrafficServiceProbe.RunAsync(false,expectedPid);return;
+  }
+  if(args is ["--traffic-benchmark-history",var report]){Environment.ExitCode=await TrafficBenchmarkHistory.RunAsync(report);return;}
+  if(args is ["--traffic-benchmark-history",var galaxyReport,var galaxyClient]){Environment.ExitCode=await TrafficBenchmarkHistory.RunAsync(galaxyReport,galaxyClient);return;}
+  if(args is ["--traffic-galaxy-status-json",var bridgePath,var galaxyPid]){
+   if(!int.TryParse(galaxyPid,out var expectedPid)||expectedPid<=0){Console.Error.WriteLine("Supply the positive PID of the running Galaxy traffic service.");Environment.ExitCode=2;return;}
+   Environment.ExitCode=await GalaxyTrafficBenchmarkBridge.RunStatusAsync(bridgePath,expectedPid);return;
+  }
+  if(args is ["--traffic-loopback-load"] or ["--traffic-loopback-load-json"]){Environment.ExitCode=await TrafficServiceProbe.RunLoopbackLoadAsync(args[0]=="--traffic-loopback-load-json");return;}
+  if(args.Length is 1 or 2 && args[0]=="--traffic-payload"){int total=TrafficPreviewPayloadTests.Run(args.ElementAtOrDefault(1));Console.WriteLine($"PASS traffic payload assertions={total}");TestResults.Pass();return;}
+  if(args is ["--traffic-release-trust",var signedFixture,var signerPin,var unsignedFixture]){TrafficReleaseTrustTests.Run(signedFixture,signerPin,unsignedFixture);TestResults.Pass();return;}
+  if(args is ["--desktop-card-placement"]){int total=DesktopCardPlacementTests.Run();Console.WriteLine($"PASS desktop card placement assertions={total}");TestResults.Pass();return;}
   if(args is ["--desktop-shell-probe",var probe]){SetupLaunchTests.Probe(probe);return;}
   if(args.Length==4 && args[0]=="--uninstall-child-fixture"){File.WriteAllText(args[1],JsonSerializer.Serialize(args.Skip(2).ToArray()));Environment.ExitCode=7;return;}
   if(args.Length is 3 or 4 && args[0]=="--verify-release") { await ReleaseVerification.Run(args[1],args[2],args.Length==4 && args[3]=="--fake-server");return; }
@@ -17,7 +40,7 @@ static class Program
   if(args is ["--update-e2e",var oldPackage,var newPackage,var evidence]){await UpdateEndToEnd.Run(oldPackage,newPackage,evidence);return;}
   if(args is ["--setup-only"]){
    var fixture=new PaneSettings(1,new(false,true,ThemeMode.Dark,"#FF5874C9",20,1,new(.2,.2,1,1,1,0),new(.2,.2,1,1,1,0)),new(new(KeyModifiers.Alt,32)),new(new(KeyModifiers.Ctrl,86)));
-   try {int total=SetupLaunchTests.Run();total+=await SetupTests.Run(fixture);total+=UninstallTests.Run();total+=await UpdateTests.Run();total+=await MirrorUpdateTests.Run();total+=await SetupFailureTests.Run(fixture);total+=await SetupLinkTests.Run(fixture);
+   try {int total=SetupLaunchTests.Run();total+=await SetupTests.Run(fixture);total+=TrafficPreviewPayloadTests.Run();total+=UninstallTests.Run();total+=await UpdateTests.Run();total+=await MirrorUpdateTests.Run();total+=await SetupFailureTests.Run(fixture);total+=await SetupLinkTests.Run(fixture);
    Console.WriteLine($"PASS setup suites assertions={total}");}catch(Exception error){Console.WriteLine(error);Environment.ExitCode=1;}return;
   }
   foreach(var failure in new[]{SelectionFailure.None,SelectionFailure.Empty,SelectionFailure.Unsupported,SelectionFailure.Elevated,SelectionFailure.Timeout}){
@@ -46,15 +69,20 @@ static class Program
   Check(wordsDefaults.Words==new WordsSettings()&&wordsDefaults.Modules==null,"093 old settings defaults");
   checks+=await ModuleTests.Run(settings);
   checks+=FolderJumpSettingsTests.Run(settings);
+  checks+=DesktopCardPlacementTests.Run();
+  checks+=InterfaceTrafficTrendTests.Run();
   if(args is ["--settings"]){Console.WriteLine($"PASS settings assertions={checks}; realRegistry=0; systemClipboard=0");TestResults.Pass();return;}
-  checks+=await RenameTests.Run(settings);
-  checks+=await FolderListingTests.Run();
+  checks+=NoteHistoryTests.Run();
+  checks+=OcrResultTests.Run();
+  checks+=OcrHistoryTests.Run();
+  checks+=ScreenshotExportTests.Run();
   checks+=await WinVTests.Run();
   checks+=await SelectionTests.Run();
   checks+=ReleaseTests.Run(settings);
   checks+=Autostart099Tests.Run(settings);
   checks+=SetupLaunchTests.Run();
   checks+=await SetupTests.Run(settings);
+  checks+=TrafficPreviewPayloadTests.Run();
   checks+=UninstallTests.Run();
   checks+=await UpdateTests.Run();
   checks+=await MirrorUpdateTests.Run();

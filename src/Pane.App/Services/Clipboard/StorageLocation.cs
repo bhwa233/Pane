@@ -41,6 +41,8 @@ internal static class StorageLocation
     // 与 075 一样，通过目录句柄解析 junction、符号链接和卷的真实路径。
     static string FinalPath(string path)
     {
+        if(path.Length>=260&&!path.StartsWith(@"\\?\",StringComparison.Ordinal)&&!path.StartsWith(@"\\.\",StringComparison.Ordinal))
+            path=path.StartsWith(@"\\",StringComparison.Ordinal)?@"\\?\UNC\"+path[2..]:@"\\?\"+path;
         using var handle=CreateFileW(path,0,FileShare.ReadWrite|FileShare.Delete,0,FileMode.Open,0x02000000,0);
         if(handle.IsInvalid)throw new IOException();
         var buffer=new StringBuilder(512);uint length=GetFinalPathNameByHandleW(handle,buffer,(uint)buffer.Capacity,0);

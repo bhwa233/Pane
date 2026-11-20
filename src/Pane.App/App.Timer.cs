@@ -45,10 +45,15 @@ public sealed partial class App
     void ShowReminder()
     {
         var view=new PowerReminderView(PowerTimer!);
-        var panel=new GlassPanel(Strings.Module_PowerTimer_Name,view,view,Glass){Placement=PanelPlacement.Tray,HideOnBlur=()=>false};
+        ShowReminderPanel(SecondaryId.Reminder,Strings.Module_PowerTimer_Name,view,view);
+    }
+
+    void ShowReminderPanel(SecondaryId id,string title,Microsoft.UI.Xaml.UIElement content,IPanelView view,Action? closed=null)
+    {
+        var panel=new GlassPanel(title,content,view,Glass){Placement=PanelPlacement.Tray,HideOnBlur=()=>false};
         WatchFrames(panel);
-        panel.Hidden+=(_,_)=>{if(secondaries.TryGetValue(SecondaryId.Reminder,out var p)&&p==panel)secondaries.Remove(SecondaryId.Reminder);panel.Dispose();};
-        panel.Prepare();secondaries[SecondaryId.Reminder]=panel;
+        panel.Hidden+=(_,_)=>{if(secondaries.TryGetValue(id,out var p)&&p==panel)secondaries.Remove(id);panel.Dispose();closed?.Invoke();};
+        panel.Prepare();secondaries[id]=panel;
         // 主显示器（托盘所在）工作区的右下角，离边 16
         var monitor=GlassPanel.MonitorFromPoint(new GlassPanel.Point(),1);
         var info=new GlassPanel.MonitorInfo{Size=System.Runtime.InteropServices.Marshal.SizeOf<GlassPanel.MonitorInfo>()};

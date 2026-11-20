@@ -109,7 +109,10 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
         var words=settings.Words.Hotkey;
         if(words!=null)words=Override("words",words);
         bool wordsEnabled=settings.Modules?.GetValueOrDefault("words",true)??true;
-        bool active=ShellHotkeyBindings.Rebind(registered,id=>Native.UnregisterHotKey(shellWindow,id),Register,a,b,settings.Modules?.GetValueOrDefault("clipboard",settings.Clipboard.Enabled)??settings.Clipboard.Enabled,suspended,settings.Modules?.GetValueOrDefault("launcher",true)??true,settings.Clipboard.KeepHotkeyWithWinV,ApplyWinV,words,wordsEnabled);
+        var screenshot = settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.Screenshots) == true && Pane.Services.Screenshots.NativeScreenshotCapture.Available
+            ? Override("screenshots", ShellHotkeyBindings.DefaultScreenshot) : null;
+        var super = settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.SuperPanel) == true ? Override("super-panel", settings.SuperPanel.Hotkey) : null;
+        bool active=ShellHotkeyBindings.Rebind(registered,id=>Native.UnregisterHotKey(shellWindow,id),Register,a,b,settings.Modules?.GetValueOrDefault("clipboard",settings.Clipboard.Enabled)??settings.Clipboard.Enabled,suspended,settings.Modules?.GetValueOrDefault("launcher",true)??true,settings.Clipboard.KeepHotkeyWithWinV,ApplyWinV,words,wordsEnabled,screenshot,super);
         OriginalClipboardHotkeySuppressed=active&&!settings.Clipboard.KeepHotkeyWithWinV;
         var keys=ShellHotkeyBindings.DoubleTapKeys(a,b,!OriginalClipboardHotkeySuppressed&&(settings.Modules?.GetValueOrDefault("clipboard",settings.Clipboard.Enabled)??settings.Clipboard.Enabled),suspended,settings.Modules?.GetValueOrDefault("launcher",true)??true);
         uint wordsKey=wordsEnabled&&!suspended&&words?.IsValidDoubleTap==true?words.VirtualKey:0u;
@@ -136,7 +139,10 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
         lock(diagnostics)diagnostics.Add($"{name}={key.Modifiers}+{key.VirtualKey};registered={ok};error={code}");
         if(!ok){var conflict=new HotkeyConflict(name,key,code);lock(conflicts)conflicts.Add(conflict);queue.TryEnqueue(()=>HotkeyOccupied?.Invoke(this,conflict));
             // 设计加（2026-10-30）：注册失败时提示一次，否则按了没反应也不知道为什么
-            var what=name=="launcher"?Strings.Common_Launcher:name=="words"?Strings.Module_Words_Name:Strings.Common_Clipboard;NotifyOnce(string.Format(Strings.Setup_HotkeyConflict, (object?)(Pane.Views.Controls.HotkeyBox.Text(key).Replace("Space",Strings.Common_SpaceKey)), (object?)(what), (object?)(what)));}
+            var shortcut=Pane.Views.Controls.HotkeyBox.Text(key).Replace("Space",Strings.Common_SpaceKey);
+            var what=name switch{"launcher"=>Strings.Common_Launcher,"words"=>Strings.Module_Words_Name,"super-panel"=>Strings.Common_SuperPanel,_=>Strings.Common_Clipboard};
+            NotifyOnce(name=="screenshots"?string.Format(Strings.Setup_ScreenshotHotkeyConflict,(object?)shortcut):
+                string.Format(Strings.Setup_HotkeyConflict,(object?)shortcut,(object?)what,(object?)what));}
     }
     nint WndProc(nint h,uint m,nuint w,nint l){
         // 在广播线程直接清标记，不依赖 UI 调度在系统结束会话前执行。

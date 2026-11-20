@@ -21,7 +21,7 @@ public sealed partial class FolderJumpView : UserControl, IPanelView
     public event EventHandler<string>? Jump;
     public event EventHandler<Size>? SizeRequested;
     public event EventHandler? CloseRequested;
-    public UIElement? DragRegion => null;
+    public UIElement DragRegion => DragHandle;
 
     readonly SlidingHighlight highlight;
     readonly List<(Grid Row, string Path)> rows = [];
@@ -101,7 +101,7 @@ public sealed partial class FolderJumpView : UserControl, IPanelView
         return g;
     }
 
-    public Size PreferredSize => new(Width0, height);
+    public Size PreferredSize => new(Width0, height + DragHandle.Height);
 
     void Select(int index)
     {

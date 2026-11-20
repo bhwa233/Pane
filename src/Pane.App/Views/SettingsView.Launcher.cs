@@ -192,6 +192,7 @@ public sealed partial class SettingsView
         engines.Insert(1, Row(Strings.Settings_Launcher_RememberWebSearches, webHistoryCleared ? Strings.Settings_Launcher_CommandsCleared : Strings.Settings_Launcher_RememberWebSearchesDescription,
             Switch(l.RememberWebSearches, v => SaveLauncher(x => x with { RememberWebSearches = v })), clearWeb));
         Group(Strings.Settings_Launcher_WebSearch, engines.ToArray(), Strings.Settings_Launcher_WebSearchDescription);
+        RenderQuickLinks(l);
 
         // 终端命令（037）：> 开头在终端里运行；记住最近 20 条用来补全
         var clearHistory = Button(Strings.Common_Clear, "trash", () => { app.TerminalHistory?.Clear(); terminalCleared = true; Render(); });
@@ -305,12 +306,12 @@ public sealed partial class SettingsView
     }
 
     // 程序选择框：只认 .exe 和快捷方式（系统选择框选快捷方式时一般直接给目标程序）
-    async Task<string?> PickPortableProgram()
+    async Task<string?> PickPortableProgram(bool executableOnly = false)
     {
         var owner = Microsoft.UI.Win32Interop.GetWindowFromWindowId(XamlRoot.ContentIslandEnvironment.AppWindowId);
         var open = new Windows.Storage.Pickers.FileOpenPicker();
         open.FileTypeFilter.Add(".exe");
-        open.FileTypeFilter.Add(".lnk");
+        if (!executableOnly) open.FileTypeFilter.Add(".lnk");
         WinRT.Interop.InitializeWithWindow.Initialize(open, owner);
         return (await open.PickSingleFileAsync())?.Path;
     }

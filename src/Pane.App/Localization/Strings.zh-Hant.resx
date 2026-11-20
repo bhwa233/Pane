@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -110,6 +110,45 @@
   <data name="Clipboard_QuickPaste" xml:space="preserve"><value>快速貼上</value></data>
   <data name="Clipboard_SaveImageFailed" xml:space="preserve"><value>圖片儲存失敗</value></data>
   <data name="Clipboard_SearchPlaceholder" xml:space="preserve"><value>搜尋剪貼簿</value></data>
+  <data name="Clipboard_AnnotationUnavailable" xml:space="preserve"><value>此筆記錄已不存在</value></data>
+  <data name="Clipboard_Merge" xml:space="preserve"><value>合併記錄</value></data>
+  <data name="Clipboard_MergeCount" xml:space="preserve"><value>已選 {0} 筆</value></data>
+  <data name="Clipboard_MergeInvalid" xml:space="preserve"><value>檔案項目不能與文字或圖片一起合併，且所選項目必須仍在歷史中。</value></data>
+  <data name="Clipboard_MergeMissingFile" xml:space="preserve"><value>所選檔案或資料夾已不存在或無法存取。</value></data>
+  <data name="Clipboard_MergeMissingImage" xml:space="preserve"><value>所選圖片的原圖無法使用。</value></data>
+  <data name="Clipboard_MergeStorageFull" xml:space="preserve"><value>已達圖文合併歷史的容量上限，請先刪除不需要的圖文記錄。</value></data>
+  <data name="Clipboard_MergeTooLarge" xml:space="preserve"><value>所選內容太多，無法合併。</value></data>
+  <data name="Clipboard_MergeUnavailable" xml:space="preserve"><value>暫時無法合併剪貼簿記錄。</value></data>
+  <data name="Clipboard_EditAnnotation" xml:space="preserve"><value>編輯標籤、備註和收藏</value></data>
+  <data name="Clipboard_EditTextCopy" xml:space="preserve"><value>編輯為文字副本</value></data>
+  <data name="Clipboard_SaveTextCopy" xml:space="preserve"><value>儲存副本</value></data>
+  <data name="Clipboard_TextCopySource" xml:space="preserve"><value>編輯副本</value></data>
+  <data name="Clipboard_TextCopyInvalid" xml:space="preserve"><value>請輸入修改後的正文。</value></data>
+  <data name="Clipboard_TextCopyFull" xml:space="preserve"><value>歷史容量不足，無法同時保留原始記錄和副本。</value></data>
+  <data name="Clipboard_TextCopyUnavailable" xml:space="preserve"><value>暫時無法儲存剪貼簿副本。</value></data>
+  <data name="Clipboard_DiscardTextDraft" xml:space="preserve"><value>捨棄草稿</value></data>
+  <data name="Clipboard_TextDraftUnavailable" xml:space="preserve"><value>無法儲存草稿。可以另存副本，或捨棄這次編輯。</value></data>
+  <data name="Clipboard_ExportFile" xml:space="preserve"><value>匯出為檔案…</value></data>
+  <data name="Clipboard_FileExported" xml:space="preserve"><value>已匯出檔案。</value></data>
+  <data name="Clipboard_FileExportFailed" xml:space="preserve"><value>無法匯出檔案。</value></data>
+  <data name="Clipboard_Collections" xml:space="preserve"><value>收藏群組</value></data>
+  <data name="Clipboard_AllCollections" xml:space="preserve"><value>全部收藏</value></data>
+  <data name="Clipboard_Favorites" xml:space="preserve"><value>收藏</value></data>
+  <data name="Clipboard_AddFavorite" xml:space="preserve"><value>加入收藏</value></data>
+  <data name="Clipboard_RemoveFavorite" xml:space="preserve"><value>取消收藏</value></data>
+  <data name="Clipboard_CollectionsExample" xml:space="preserve"><value>例如：工作，資料</value></data>
+  <data name="Clipboard_CollectionsInvalid" xml:space="preserve"><value>群組名稱過長、數量過多或包含無效字元。</value></data>
+  <data name="Clipboard_Gallery" xml:space="preserve"><value>圖庫</value></data>
+  <data name="Clipboard_GallerySource" xml:space="preserve"><value>匯入圖片</value></data>
+  <data name="Clipboard_GalleryImport" xml:space="preserve"><value>匯入圖片…</value></data>
+  <data name="Clipboard_GalleryImporting" xml:space="preserve"><value>正在匯入圖片…</value></data>
+  <data name="Clipboard_GalleryBatchLimit" xml:space="preserve"><value>每次最多匯入 {0} 張圖片。</value></data>
+  <data name="Clipboard_GalleryFailed" xml:space="preserve"><value>圖片未匯入。僅支援本機 PNG、JPEG 和 BMP，每張最大 32 MiB、1600 萬像素。</value></data>
+  <data name="Clipboard_GalleryResult" xml:space="preserve"><value>已加入 {0} 張，群組中已有 {1} 張，失敗 {2} 張。</value></data>
+  <data name="Clipboard_RemoveFromHistory" xml:space="preserve"><value>從歷史移除，保留收藏</value></data>
+  <data name="Clipboard_Note" xml:space="preserve"><value>備註</value></data>
+  <data name="Clipboard_Tags" xml:space="preserve"><value>標籤</value></data>
+  <data name="Clipboard_TagsExample" xml:space="preserve"><value>專案，待辦</value></data>
   <data name="Clipboard_Select" xml:space="preserve"><value>選擇</value></data>
   <data name="Clipboard_FillLauncher" xml:space="preserve"><value>填入啟動器</value></data>
   <data name="Clipboard_BackToLauncher" xml:space="preserve"><value>返回啟動器</value></data>
@@ -181,7 +220,7 @@
   <data name="Settings_Data_ClipboardNone" xml:space="preserve"><value>不包含</value></data>
   <data name="Settings_Data_ClipboardTextOnly" xml:space="preserve"><value>僅文字</value></data>
   <data name="Settings_Data_ClipboardWithImages" xml:space="preserve"><value>含圖片</value></data>
-  <data name="Settings_Data_ClipboardExportDescription" xml:space="preserve"><value>檔案類條目只記錄路徑，不會匯出</value></data>
+  <data name="Settings_Data_ClipboardExportDescription" xml:space="preserve"><value>僅文字不包含原始格式化文字；檔案路徑不匯出</value></data>
   <data name="Settings_Data_ExportToFile" xml:space="preserve"><value>匯出為檔案</value></data>
   <data name="Settings_Data_ExportToFileDescription" xml:space="preserve"><value>儲存為 .zip 檔案，可在其他電腦上匯入</value></data>
   <data name="Settings_Data_Exporting" xml:space="preserve"><value>正在匯出… {0:P0}</value></data>
@@ -202,6 +241,16 @@
   <data name="Settings_Data_Replace" xml:space="preserve"><value>覆寫</value></data>
   <data name="Settings_Data_MergeDescription" xml:space="preserve"><value>使用記錄累加，剪貼簿只新增尚未存在的條目</value></data>
   <data name="Settings_Data_ReplaceDescription" xml:space="preserve"><value>以檔案中的使用記錄和剪貼簿取代現有內容</value></data>
+  <data name="Settings_Data_ExportNotesDescription" xml:space="preserve"><value>已儲存的便箋、圖片、版本歷程與桌面卡片位置</value></data>
+  <data name="Settings_Data_ImportNotesCount" xml:space="preserve"><value>{0} 則便箋，含版本歷程與桌面卡片位置</value></data>
+  <data name="Settings_Data_ExportScreenshotsDescription" xml:space="preserve"><value>螢幕擷取原圖、目前標註與桌面卡片位置</value></data>
+  <data name="Settings_Data_ImportScreenshotsCount" xml:space="preserve"><value>{0} 張螢幕擷取，含已儲存的標註與桌面卡片位置</value></data>
+  <data name="Settings_Data_ExportOcrHistoryDescription" xml:space="preserve"><value>已封存的原圖、辨識結果與修訂</value></data>
+  <data name="Settings_Data_ImportOcrHistoryCount" xml:space="preserve"><value>{0} 筆辨識記錄，含原圖與修訂</value></data>
+  <data name="Settings_Data_MergeOcrHistory" xml:space="preserve"><value>辨識記錄只新增項目，保留本機同筆記錄</value></data>
+  <data name="Settings_Data_ReplaceOcrHistory" xml:space="preserve"><value>以檔案中的辨識記錄取代現有記錄</value></data>
+  <data name="Settings_Data_MergeWithCards" xml:space="preserve"><value>保留本機已有的便箋、螢幕擷取與卡片位置</value></data>
+  <data name="Settings_Data_ReplaceWithCards" xml:space="preserve"><value>取代所選類別的記錄及對應桌面卡片位置</value></data>
   <data name="Settings_Data_ImportStart" xml:space="preserve"><value>開始匯入</value></data>
   <data name="Settings_Data_ImportStartDescription" xml:space="preserve"><value>先備份目前資料，再重新啟動 Pane 完成匯入</value></data>
   <data name="Settings_Data_ImportRestart" xml:space="preserve"><value>匯入並重新啟動</value></data>
@@ -259,8 +308,6 @@
   <data name="Common_Regenerate" xml:space="preserve"><value>重新生成</value></data>
   <data name="Common_ReleaseWinVFailed" xml:space="preserve"><value>無法釋放 Win+V 熱鍵</value></data>
   <data name="Common_Remove" xml:space="preserve"><value>移除</value></data>
-  <data name="Common_Rename" xml:space="preserve"><value>批次重新命名</value></data>
-  <data name="Common_RenameAction" xml:space="preserve"><value>重新命名</value></data>
   <data name="Common_ResetDefaults" xml:space="preserve"><value>還原預設值</value></data>
   <data name="Common_RestartFailed" xml:space="preserve"><value>無法重新啟動 Pane</value></data>
   <data name="Common_RestartNow" xml:space="preserve"><value>立即重新啟動</value></data>
@@ -360,7 +407,6 @@
   <data name="Launcher_CommandHibernate" xml:space="preserve"><value>休眠</value></data>
   <data name="Launcher_CommandLock" xml:space="preserve"><value>鎖定</value></data>
   <data name="Launcher_CommandLogoff" xml:space="preserve"><value>登出</value></data>
-  <data name="Launcher_CommandRename" xml:space="preserve"><value>批次重新命名</value></data>
   <data name="Launcher_CommandRestart" xml:space="preserve"><value>重新啟動</value></data>
   <data name="Launcher_CommandSettings" xml:space="preserve"><value>Pane 設定</value></data>
   <data name="Launcher_CommandShutdown" xml:space="preserve"><value>關機</value></data>
@@ -615,128 +661,6 @@
   <data name="Launcher_TranslateWindow" xml:space="preserve"><value>翻譯視窗</value></data>
   <data name="Launcher_ViewInFiles" xml:space="preserve"><value>在檔案視窗中檢視</value></data>
   <data name="Launcher_WebSearch" xml:space="preserve"><value>網頁搜尋</value></data>
-  <data name="Rename_AddFiles" xml:space="preserve"><value>新增檔案</value></data>
-  <data name="Rename_AddFilesHint" xml:space="preserve"><value>新增檔案…</value></data>
-  <data name="Rename_AddFolder" xml:space="preserve"><value>新增資料夾</value></data>
-  <data name="Rename_AddFolderHint" xml:space="preserve"><value>新增資料夾裡的檔案…</value></data>
-  <data name="Rename_AddNested" xml:space="preserve"><value>同時加入子資料夾中的 {0} 個檔案</value></data>
-  <data name="Rename_FolderEmpty" xml:space="preserve"><value>「{0}」中沒有可重新命名的檔案</value></data>
-  <data name="Rename_NotFolder" xml:space="preserve"><value>所選項目不是資料夾</value></data>
-  <data name="Rename_LinkedFolder" xml:space="preserve"><value>該資料夾是連結，請選擇其指向的資料夾</value></data>
-  <data name="Rename_FolderTruncated" xml:space="preserve"><value>一次最多加入 {0} 個，已加入前 {0} 個</value></data>
-  <data name="Rename_AddRule" xml:space="preserve"><value>新增規則</value></data>
-  <data name="Rename_AddSelected" xml:space="preserve"><value>加入</value></data>
-  <data name="Rename_AfterCharacter" xml:space="preserve"><value>個字之後</value></data>
-  <data name="Rename_ApplyPresetHint" xml:space="preserve"><value>點擊套用這組規則</value></data>
-  <data name="Rename_BeforeCharacter" xml:space="preserve"><value>個字之前</value></data>
-  <data name="Rename_Beginning" xml:space="preserve"><value>開頭</value></data>
-  <data name="Rename_Cancelled" xml:space="preserve"><value>操作已取消</value></data>
-  <data name="Rename_Case" xml:space="preserve"><value>大小寫</value></data>
-  <data name="Rename_CaseDescription" xml:space="preserve"><value>全小寫、全大寫、首字母大寫</value></data>
-  <data name="Rename_CaseSensitive" xml:space="preserve"><value>區分大小寫</value></data>
-  <data name="Rename_ChangedCount" xml:space="preserve"><value>重新命名 {0} 個</value></data>
-  <data name="Rename_ChangeOrderHint" xml:space="preserve"><value>序號按此順序編排（點擊切換）</value></data>
-  <data name="Rename_ChangeTo" xml:space="preserve"><value>轉換為</value></data>
-  <data name="Rename_CharacterCount" xml:space="preserve"><value>個</value></data>
-  <data name="Rename_CharacterFromEnd" xml:space="preserve"><value>倒數第</value></data>
-  <data name="Rename_CharacterFromStart" xml:space="preserve"><value>第</value></data>
-  <data name="Rename_CharacterIndex" xml:space="preserve"><value>指定位置</value></data>
-  <data name="Rename_CompleteCount" xml:space="preserve"><value>已重新命名 {0} 個</value></data>
-  <data name="Rename_CountFromEnd" xml:space="preserve"><value>從末尾數</value></data>
-  <data name="Rename_CreatedDate" xml:space="preserve"><value>建立日期</value></data>
-  <data name="Rename_Date" xml:space="preserve"><value>日期</value></data>
-  <data name="Rename_DateDescription" xml:space="preserve"><value>插入檔案的修改或建立日期</value></data>
-  <data name="Rename_DateFormat" xml:space="preserve"><value>格式</value></data>
-  <data name="Rename_DateSeparator" xml:space="preserve"><value>分隔</value></data>
-  <data name="Rename_DateSeparatorPlaceholder" xml:space="preserve"><value>日期與名稱之間的分隔符號，例如空格</value></data>
-  <data name="Rename_Delete" xml:space="preserve"><value>刪除</value></data>
-  <data name="Rename_DeleteBackward" xml:space="preserve"><value>個字起向前刪除</value></data>
-  <data name="Rename_DeleteDescription" xml:space="preserve"><value>從指定位置起刪除若干個字元</value></data>
-  <data name="Rename_DeleteForward" xml:space="preserve"><value>個字起刪除</value></data>
-  <data name="Rename_DeleteFromEnd" xml:space="preserve"><value>從倒數第</value></data>
-  <data name="Rename_DeleteFromStart" xml:space="preserve"><value>從第</value></data>
-  <data name="Rename_DeletePreset" xml:space="preserve"><value>刪除此預設集</value></data>
-  <data name="Rename_DeleteRule" xml:space="preserve"><value>刪除此規則</value></data>
-  <data name="Rename_DisableRule" xml:space="preserve"><value>暫時停用此規則</value></data>
-  <data name="Rename_DragOrder" xml:space="preserve"><value>拖曳調整順序</value></data>
-  <data name="Rename_DropHint" xml:space="preserve"><value>在檔案總管中選取檔案後開啟，或將檔案拖到此處</value></data>
-  <data name="Rename_DropReleaseHint" xml:space="preserve"><value>放開即可加入</value></data>
-  <data name="Rename_DuplicateName" xml:space="preserve"><value>與其他檔案重名</value></data>
-  <data name="Rename_Empty" xml:space="preserve"><value>（空）</value></data>
-  <data name="Rename_EmptyFiles" xml:space="preserve"><value>尚未新增檔案</value></data>
-  <data name="Rename_EmptyName" xml:space="preserve"><value>名稱為空</value></data>
-  <data name="Rename_EmptyPresets" xml:space="preserve"><value>尚無預設集：調整好規則後點擊底部的「存為預設集」</value></data>
-  <data name="Rename_EnableRule" xml:space="preserve"><value>啟用此規則</value></data>
-  <data name="Rename_End" xml:space="preserve"><value>末尾</value></data>
-  <data name="Rename_Extension" xml:space="preserve"><value>副檔名</value></data>
-  <data name="Rename_ExtensionDescription" xml:space="preserve"><value>變更或移除副檔名</value></data>
-  <data name="Rename_ExtensionDescriptionHint" xml:space="preserve"><value>僅對檔案生效；資料夾沒有副檔名，不受影響</value></data>
-  <data name="Rename_ExtensionPlaceholder" xml:space="preserve"><value>例如 jpg；留空表示移除副檔名</value></data>
-  <data name="Rename_Failed" xml:space="preserve"><value>重新命名失敗</value></data>
-  <data name="Rename_FailedCount" xml:space="preserve"><value>{0} 個重新命名失敗（將滑鼠停留在標籤上查看原因）</value></data>
-  <data name="Rename_FileCount" xml:space="preserve"><value>{0} 個</value></data>
-  <data name="Rename_Find" xml:space="preserve"><value>尋找</value></data>
-  <data name="Rename_FindPlaceholder" xml:space="preserve"><value>要取代的文字</value></data>
-  <data name="Rename_FindSpace" xml:space="preserve"><value>尋找內容為空格</value></data>
-  <data name="Rename_Finished" xml:space="preserve"><value>已完成</value></data>
-  <data name="Rename_FolderCountSuffix" xml:space="preserve"><value> · 來自 {0} 個資料夾</value></data>
-  <data name="Rename_IncludeExtension" xml:space="preserve"><value>包括副檔名</value></data>
-  <data name="Rename_Insert" xml:space="preserve"><value>插入文字</value></data>
-  <data name="Rename_InsertDescription" xml:space="preserve"><value>在開頭、末尾或指定位置插入</value></data>
-  <data name="Rename_InsertPlaceholder" xml:space="preserve"><value>要插入的文字</value></data>
-  <data name="Rename_InvalidCharacters" xml:space="preserve"><value>包含無效字元</value></data>
-  <data name="Rename_InvalidRegex" xml:space="preserve"><value>正規表示式有誤</value></data>
-  <data name="Rename_InvalidRule" xml:space="preserve"><value>規則有誤（規則運算式或日期格式）</value></data>
-  <data name="Rename_IssuesCount" xml:space="preserve"><value>{0} 個檔案有問題，解決後才能執行</value></data>
-  <data name="Rename_LowerCase" xml:space="preserve"><value>小寫</value></data>
-  <data name="Rename_ModifiedDate" xml:space="preserve"><value>修改日期</value></data>
-  <data name="Rename_NewName" xml:space="preserve"><value>新名稱</value></data>
-  <data name="Rename_NoSelection" xml:space="preserve"><value>未選取檔案</value></data>
-  <data name="Rename_Number" xml:space="preserve"><value>序號</value></data>
-  <data name="Rename_NumberDescription" xml:space="preserve"><value>按順序編號，可補零、設定間隔</value></data>
-  <data name="Rename_NumberDigits" xml:space="preserve"><value>位數</value></data>
-  <data name="Rename_NumberPadding" xml:space="preserve"><value>位數不足時在前面補 0</value></data>
-  <data name="Rename_NumberSeparator" xml:space="preserve"><value>分隔</value></data>
-  <data name="Rename_NumberSeparatorPlaceholder" xml:space="preserve"><value>序號與名稱之間的分隔符號，例如 -</value></data>
-  <data name="Rename_NumberStart" xml:space="preserve"><value>起始</value></data>
-  <data name="Rename_NumberStep" xml:space="preserve"><value>步長</value></data>
-  <data name="Rename_OldName" xml:space="preserve"><value>原名</value></data>
-  <data name="Rename_OrderName" xml:space="preserve"><value>按名稱</value></data>
-  <data name="Rename_OrderOriginal" xml:space="preserve"><value>原順序</value></data>
-  <data name="Rename_OrderTime" xml:space="preserve"><value>按時間</value></data>
-  <data name="Rename_PathTooLong" xml:space="preserve"><value>路徑過長</value></data>
-  <data name="Rename_Position" xml:space="preserve"><value>位置</value></data>
-  <data name="Rename_PresetNamePlaceholder" xml:space="preserve"><value>為這組規則命名</value></data>
-  <data name="Rename_Presets" xml:space="preserve"><value>預設集</value></data>
-  <data name="Rename_PresetSaved" xml:space="preserve"><value>已存為預設集「{0}」</value></data>
-  <data name="Rename_PresetsHint" xml:space="preserve"><value>已儲存的規則組合</value></data>
-  <data name="Rename_Preview" xml:space="preserve"><value>預覽</value></data>
-  <data name="Rename_PreviewInvalid" xml:space="preserve"><value>預覽存在問題</value></data>
-  <data name="Rename_Regex" xml:space="preserve"><value>正則</value></data>
-  <data name="Rename_RegexHint" xml:space="preserve"><value>正規表示式有誤，修正後才能預覽</value></data>
-  <data name="Rename_RegexPlaceholder" xml:space="preserve"><value>規則運算式，例如 IMG_(\d+)</value></data>
-  <data name="Rename_RelatedRollback" xml:space="preserve"><value>關聯檔案重新命名失敗，已還原</value></data>
-  <data name="Rename_RemoveFileHint" xml:space="preserve"><value>不重新命名此檔案（移出列表）</value></data>
-  <data name="Rename_RenameCount" xml:space="preserve"><value>重新命名 {0} 個</value></data>
-  <data name="Rename_Renamed" xml:space="preserve"><value>已重新命名</value></data>
-  <data name="Rename_Replace" xml:space="preserve"><value>取代</value></data>
-  <data name="Rename_ReplaceDescription" xml:space="preserve"><value>將指定文字取代為其他內容，支援正規表示式</value></data>
-  <data name="Rename_ReplacementEmptyPlaceholder" xml:space="preserve"><value>留空表示刪除</value></data>
-  <data name="Rename_ReplacementGroupPlaceholder" xml:space="preserve"><value>可用 $1 參照群組</value></data>
-  <data name="Rename_ReplaceWith" xml:space="preserve"><value>取代為</value></data>
-  <data name="Rename_RuleLimit" xml:space="preserve"><value>最多 {0} 條規則</value></data>
-  <data name="Rename_Running" xml:space="preserve"><value>正在重新命名…</value></data>
-  <data name="Rename_SaveAsPreset" xml:space="preserve"><value>存為預設集</value></data>
-  <data name="Rename_SavePreset" xml:space="preserve"><value>儲存預設集</value></data>
-  <data name="Rename_SelectFilesFirst" xml:space="preserve"><value>請先選取要重新命名的檔案</value></data>
-  <data name="Rename_SourceMissing" xml:space="preserve"><value>檔案已不存在</value></data>
-  <data name="Rename_TargetExists" xml:space="preserve"><value>已有同名檔案</value></data>
-  <data name="Rename_Text" xml:space="preserve"><value>文字</value></data>
-  <data name="Rename_TitleCase" xml:space="preserve"><value>詞首大寫</value></data>
-  <data name="Rename_Unchanged" xml:space="preserve"><value>不變</value></data>
-  <data name="Rename_UnchangedCount" xml:space="preserve"><value>不變 {0} 個</value></data>
-  <data name="Rename_UndoFailed" xml:space="preserve"><value>{0} 個無法復原：{1}</value></data>
-  <data name="Rename_UpperCase" xml:space="preserve"><value>大寫</value></data>
   <data name="Settings_About" xml:space="preserve"><value>關於</value></data>
   <data name="Settings_About_AllComponents" xml:space="preserve"><value>全部第三方元件</value></data>
   <data name="Settings_About_Components" xml:space="preserve"><value>開源元件</value></data>
@@ -871,9 +795,14 @@
   <data name="Settings_Clipboard_Activation" xml:space="preserve"><value>叫出</value></data>
   <data name="Settings_Clipboard_AddExcludedProgram" xml:space="preserve"><value>新增排除的程式</value></data>
   <data name="Settings_Clipboard_Basic" xml:space="preserve"><value>基本</value></data>
-  <data name="Settings_Clipboard_Cleared" xml:space="preserve"><value>已清空，固定的條目已保留</value></data>
-  <data name="Settings_Clipboard_ClearHistory" xml:space="preserve"><value>清除剪貼簿歷史</value></data>
-  <data name="Settings_Clipboard_ClearWarning" xml:space="preserve"><value>未固定的記錄會全部刪除，不能復原</value></data>
+  <data name="Settings_Clipboard_ClearHistory" xml:space="preserve"><value>清理剪貼簿歷程</value></data>
+  <data name="Settings_Clipboard_ClearWarning" xml:space="preserve"><value>只刪除本次預覽中未變更的項目，刪除後無法復原</value></data>
+  <data name="Settings_Clipboard_PreviewCleanup" xml:space="preserve"><value>預覽清理</value></data>
+  <data name="Settings_Clipboard_ConfirmCleanup" xml:space="preserve"><value>刪除本批</value></data>
+  <data name="Settings_Clipboard_CleanupCount" xml:space="preserve"><value>本批 {0} 筆</value></data>
+  <data name="Settings_Clipboard_CleanupRemaining" xml:space="preserve"><value>另有 {0} 筆未列在本次預覽中</value></data>
+  <data name="Settings_Clipboard_CleanupEmpty" xml:space="preserve"><value>沒有可清理的項目</value></data>
+  <data name="Settings_Clipboard_CleanupResult" xml:space="preserve"><value>已刪除 {0} 筆，略過 {1} 筆</value></data>
   <data name="Settings_Clipboard_ConfirmClear" xml:space="preserve"><value>再點一次清空</value></data>
   <data name="Settings_Clipboard_Data" xml:space="preserve"><value>資料</value></data>
   <data name="Settings_Clipboard_Deduplicate" xml:space="preserve"><value>連續重複時只保留一條</value></data>
@@ -885,6 +814,10 @@
   <data name="Settings_Clipboard_Enable" xml:space="preserve"><value>啟用剪貼簿</value></data>
   <data name="Settings_Clipboard_EnableDescription" xml:space="preserve"><value>已在使用其他剪貼簿工具時可關閉</value></data>
   <data name="Settings_Clipboard_ExcludedProgram" xml:space="preserve"><value>不記錄從該程式複製的內容</value></data>
+  <data name="Settings_Clipboard_ExcludedText" xml:space="preserve"><value>排除關鍵字（每行一條）</value></data>
+  <data name="Settings_Clipboard_ExcludedTextInvalid" xml:space="preserve"><value>最多可儲存 {0} 條關鍵字，每條不超過 {1} 個字元。</value></data>
+  <data name="Settings_Clipboard_ExcludedTextSaveFailed" xml:space="preserve"><value>無法儲存排除關鍵字。原規則未變更。</value></data>
+  <data name="Settings_Clipboard_ExcludedTextSaved" xml:space="preserve"><value>排除關鍵字已儲存</value></data>
   <data name="Settings_Clipboard_Formats" xml:space="preserve"><value>記錄的內容類型</value></data>
   <data name="Settings_Clipboard_FormatsDescription" xml:space="preserve"><value>文字包括連結、顏色和程式碼</value></data>
   <data name="Settings_Clipboard_Invalid" xml:space="preserve"><value>剪貼簿設定無效</value></data>
@@ -897,7 +830,7 @@
   <data name="Settings_Clipboard_MovePastedFirst" xml:space="preserve"><value>貼上後移到最前</value></data>
   <data name="Settings_Clipboard_MovePastedFirstDescription" xml:space="preserve"><value>下次開啟剪貼簿時生效；面板開啟期間條目位置不變</value></data>
   <data name="Settings_Clipboard_OneFormatRequired" xml:space="preserve"><value>至少選擇一種</value></data>
-  <data name="Settings_Clipboard_PinnedRemain" xml:space="preserve"><value>已固定的條目會保留</value></data>
+  <data name="Settings_Clipboard_PinnedRemain" xml:space="preserve"><value>保留已固定、收藏及有草稿的項目</value></data>
   <data name="Settings_Clipboard_Privacy" xml:space="preserve"><value>隱私</value></data>
   <data name="Settings_Clipboard_Recording" xml:space="preserve"><value>記錄</value></data>
   <data name="Settings_Clipboard_RespectHistoryFlag" xml:space="preserve"><value>遵守「不進歷史」標記</value></data>
@@ -1242,6 +1175,23 @@
   <data name="Settings_Launcher_Terminal" xml:space="preserve"><value>終端機命令</value></data>
   <data name="Settings_Launcher_TerminalDescription" xml:space="preserve"><value>在啟動器中輸入 &gt; 加命令：按 Enter 在終端機中執行，按 Ctrl+Shift+Enter 以管理員身份執行</value></data>
   <data name="Settings_Launcher_WebSearch" xml:space="preserve"><value>網頁搜尋</value></data>
+  <data name="QuickLinks_Title" xml:space="preserve"><value>快速入口</value></data>
+  <data name="QuickLinks_Add" xml:space="preserve"><value>新增快速入口</value></data>
+  <data name="QuickLinks_Address" xml:space="preserve"><value>網址範本</value></data>
+  <data name="QuickLinks_Program" xml:space="preserve"><value>EXE 程式</value></data>
+  <data name="QuickLinks_Arguments" xml:space="preserve"><value>啟動參數（每行一個）</value></data>
+  <data name="QuickLinks_WorkingDirectory" xml:space="preserve"><value>工作目錄（選填）</value></data>
+  <data name="QuickLinks_Invalid" xml:space="preserve"><value>快速入口的名稱、關鍵字、目標或參數無效</value></data>
+  <data name="QuickLinks_QueryField" xml:space="preserve"><value>搜尋詞</value></data>
+  <data name="QuickLinks_FieldsRequired" xml:space="preserve"><value>請填寫所有參數</value></data>
+  <data name="QuickLinks_Presets" xml:space="preserve"><value>預設範本</value></data>
+  <data name="QuickLinks_UsePreset" xml:space="preserve"><value>使用</value></data>
+  <data name="QuickLinks_PresetZhihu" xml:space="preserve"><value>知乎</value></data>
+  <data name="QuickLinks_PresetMaps" xml:space="preserve"><value>高德地圖</value></data>
+  <data name="QuickLinks_PresetRepo" xml:space="preserve"><value>GitHub 儲存庫</value></data>
+  <data name="QuickLinks_PresetObsidian" xml:space="preserve"><value>Obsidian 筆記</value></data>
+  <data name="QuickLinks_Changed" xml:space="preserve"><value>此快速入口已變更，請重新開啟</value></data>
+  <data name="QuickLinks_ReservedKeyword" xml:space="preserve"><value>暫停使用：與 Pane 原有關鍵字衝突</value></data>
   <data name="Settings_Launcher_WebSearchDescription" xml:space="preserve"><value>位址中用 {query} 代表搜尋詞；在啟動器中輸入「關鍵字 空格 搜尋詞」即可用該網站搜尋</value></data>
   <data name="Settings_Launcher_WebSuggestions" xml:space="preserve"><value>搜尋建議</value></data>
   <data name="Settings_Launcher_WebSuggestionsDescription" xml:space="preserve"><value>使用關鍵字搜尋網頁時（例如「bd 天氣」）向該網站取得搜尋建議；平時輸入不連網</value></data>
@@ -1256,7 +1206,6 @@
   <data name="Settings_PanelRadius_Description" xml:space="preserve"><value>玻璃面板的圓角（自繪，帶反鋸齒）</value></data>
   <data name="Settings_PanelRadius_Large" xml:space="preserve"><value>大圓角 20px</value></data>
   <data name="Settings_PanelRadius_Small" xml:space="preserve"><value>小 8px</value></data>
-  <data name="Settings_Rename_Invalid" xml:space="preserve"><value>重新命名設定無效</value></data>
   <data name="Settings_RestartRequired" xml:space="preserve"><value>已儲存，重新啟動 Pane 後生效</value></data>
   <data name="Settings_SaveDescription" xml:space="preserve"><value>按 Esc 關閉。改動立即生效，自動儲存</value></data>
   <data name="Settings_SaveFailed" xml:space="preserve"><value>儲存失敗</value></data>
@@ -1348,6 +1297,7 @@
   <data name="Setup_FixedDiskRequired" xml:space="preserve"><value>請選擇本機的固定磁碟</value></data>
   <data name="Setup_GestureHint" xml:space="preserve"><value>按住右鍵拖曳即可畫出手勢；可透過系統匣圖示開啟設定</value></data>
   <data name="Setup_HotkeyConflict" xml:space="preserve"><value>{0} 已被其他程式佔用，{1}的熱鍵未能設定；請在 設定 → {2} 中更換</value></data>
+  <data name="Setup_ScreenshotHotkeyConflict" xml:space="preserve"><value>{0} 已被佔用，無法註冊螢幕擷取熱鍵</value></data>
   <data name="Setup_InstallComplete" xml:space="preserve"><value>安裝完成</value></data>
   <data name="Setup_InstalledHeading" xml:space="preserve"><value>安裝完成</value></data>
   <data name="Setup_InstallerLaunchFailed" xml:space="preserve"><value>無法啟動安裝程式</value></data>
@@ -1422,6 +1372,27 @@
   <data name="Translate_ConfigureHint" xml:space="preserve"><value>尚未設定 AI 服務，設定後即可翻譯</value></data>
   <data name="Translate_Copied" xml:space="preserve"><value>已複製譯文</value></data>
   <data name="Translate_DetectedLanguage" xml:space="preserve"><value>自動辨識：{0}</value></data>
+  <data name="Translate_Dictionary" xml:space="preserve"><value>查詞</value></data>
+  <data name="Translate_DictionaryCopied" xml:space="preserve"><value>已複製釋義</value></data>
+  <data name="Translate_DictionaryInput" xml:space="preserve"><value>英文單字或片語</value></data>
+  <data name="Translate_DictionaryNoMatch" xml:space="preserve"><value>找不到相符詞條</value></data>
+  <data name="Translate_DictionaryPlaceholder" xml:space="preserve"><value>尚無釋義</value></data>
+  <data name="Translate_DictionarySource" xml:space="preserve"><value>ECDICT · 離線詞典</value></data>
+  <data name="Translate_DictionarySelection" xml:space="preserve"><value>選字查詞</value></data>
+  <data name="Translate_DictionaryUnavailable" xml:space="preserve"><value>離線詞庫未安裝或無法讀取</value></data>
+  <data name="Translate_InstallDictionary" xml:space="preserve"><value>匯入詞庫</value></data>
+  <data name="Translate_InstallingDictionary" xml:space="preserve"><value>正在驗證並匯入詞庫…</value></data>
+  <data name="Translate_DictionaryInstalled" xml:space="preserve"><value>離線詞庫已匯入</value></data>
+  <data name="Translate_DictionaryInstallFailed" xml:space="preserve"><value>無法匯入詞庫。請檢查是否為有效的 Pane ECDICT 詞庫套件。</value></data>
+  <data name="Translate_History" xml:space="preserve"><value>開啟歷史</value></data>
+  <data name="Translate_CloseHistory" xml:space="preserve"><value>關閉歷史</value></data>
+  <data name="Translate_DictionaryHistory" xml:space="preserve"><value>查詞歷史</value></data>
+  <data name="Translate_TranslationHistory" xml:space="preserve"><value>翻譯歷史</value></data>
+  <data name="Translate_RememberHistory" xml:space="preserve"><value>在本機儲存翻譯歷史</value></data>
+  <data name="Translate_ClearHistoryConfirm" xml:space="preserve"><value>確認清空此歷史</value></data>
+  <data name="Translate_HistoryEmpty" xml:space="preserve"><value>沒有歷史記錄</value></data>
+  <data name="Translate_HistoryReadFailed" xml:space="preserve"><value>無法讀取歷史記錄</value></data>
+  <data name="Translate_HistorySaveFailed" xml:space="preserve"><value>未能儲存歷史記錄</value></data>
   <data name="Translate_EmptyCount" xml:space="preserve"><value>0 字</value></data>
   <data name="Translate_Failed" xml:space="preserve"><value>翻譯失敗</value></data>
   <data name="Translate_InputPlaceholder" xml:space="preserve"><value>輸入或貼上要翻譯的文字</value></data>
@@ -1434,7 +1405,9 @@
   <data name="Translate_LanguageKorean" xml:space="preserve"><value>韓文</value></data>
   <data name="Translate_LanguageRussian" xml:space="preserve"><value>俄文</value></data>
   <data name="Translate_LanguageSpanish" xml:space="preserve"><value>西班牙文</value></data>
+  <data name="Translate_LookupSelection" xml:space="preserve"><value>離線查詞：選取的結果</value></data>
   <data name="Translate_ModelHint" xml:space="preserve"><value>翻譯模型：{0}（可在 設定 → AI 中更換）</value></data>
+  <data name="Translate_Mode" xml:space="preserve"><value>翻譯或查詞</value></data>
   <data name="Translate_NoResult" xml:space="preserve"><value>暫無譯文</value></data>
   <data name="Translate_NotConfigured" xml:space="preserve"><value>尚未設定 AI 服務（設定 → AI）</value></data>
   <data name="Translate_ResultPlaceholder" xml:space="preserve"><value>譯文將顯示在此處</value></data>
@@ -1442,6 +1415,8 @@
   <data name="Translate_TargetHint" xml:space="preserve"><value>目標語言（點擊切換）</value></data>
   <data name="Translate_TranslateNow" xml:space="preserve"><value>立即翻譯</value></data>
   <data name="Translate_Translating" xml:space="preserve"><value>正在翻譯…</value></data>
+  <data name="Translate_Stop" xml:space="preserve"><value>停止翻譯</value></data>
+  <data name="Translate_Cancelled" xml:space="preserve"><value>已停止翻譯</value></data>
   <data name="Tray_Exit" xml:space="preserve"><value>結束 Pane</value></data>
   <data name="Tray_OpenClipboard" xml:space="preserve"><value>開啟剪貼簿</value></data>
   <data name="Tray_OpenLauncher" xml:space="preserve"><value>開啟啟動器</value></data>
@@ -1506,16 +1481,11 @@
   <data name="Module_SuperPanel_Description" xml:space="preserve"><value>選取文字或檔案後長按滑鼠側鍵，就地處理；短按側鍵照常後退 / 前進</value></data>
   <data name="Module_Ai_Description" xml:space="preserve"><value>翻譯、提問和對文字的快捷動作；使用前需在 AI 設定中設定服務</value></data>
   <data name="Module_FolderJump_Description" xml:space="preserve"><value>在「開啟 / 另存為」對話方塊中一鍵跳轉到檔案總管中已開啟的資料夾</value></data>
-  <data name="Module_Rename_Description" xml:space="preserve"><value>批次重新命名檔案：取代文字、加入編號、變更副檔名，先預覽再執行</value></data>
   <data name="Module_Launcher_WithAi" xml:space="preserve"><value>與 AI 搭配使用：直接翻譯、問 AI</value></data>
   <data name="Module_Launcher_WithClipboard" xml:space="preserve"><value>與剪貼簿搭配使用：複製後叫出自動帶入</value></data>
   <data name="Module_Clipboard_WithAi" xml:space="preserve"><value>與 AI 搭配使用：翻譯、摘要某一條</value></data>
   <data name="Module_Clipboard_WithLauncher" xml:space="preserve"><value>與啟動器搭配使用：將一條記錄交給啟動器處理</value></data>
   <data name="Module_Super_WithAi" xml:space="preserve"><value>與 AI 搭配使用：翻譯、摘要、潤飾選取的文字</value></data>
-  <data name="Module_Super_WithRename" xml:space="preserve"><value>與批次重新命名搭配使用：為選取的檔案重新命名</value></data>
-  <data name="Module_Rename_FromLauncher" xml:space="preserve"><value>從啟動器開啟：輸入「重新命名」，或對檔案附件使用</value></data>
-  <data name="Module_Rename_FromSuper" xml:space="preserve"><value>從超級面板開啟：選取檔案後長按側鍵</value></data>
-  <data name="Module_Rename_FromTray" xml:space="preserve"><value>也可以從通知區域選單開啟</value></data>
   <data name="Module_PartnerOff" xml:space="preserve"><value>（{0}未啟用）</value></data>
   <data name="Module_NotEnabled" xml:space="preserve"><value>{0} 未啟用</value></data>
   <data name="Module_DependencyNotRunning" xml:space="preserve"><value>依賴的能力未執行</value></data>
@@ -1525,7 +1495,6 @@
   <data name="Module_ClipboardRestoresWinV" xml:space="preserve"><value>目前由 Pane 取代 Win+V。停用剪貼簿時會先恢復系統的 Win+V，剪貼簿歷史會保留</value></data>
   <data name="Module_DisableAndRestore" xml:space="preserve"><value>停用並恢復 Win+V</value></data>
   <data name="Module_Enable" xml:space="preserve"><value>啟用{0}</value></data>
-  <data name="Tray_OpenRename" xml:space="preserve"><value>批次重新命名</value></data>
   <data name="PowerTimer_Shutdown" xml:space="preserve"><value>關機</value></data>
   <data name="PowerTimer_Restart" xml:space="preserve"><value>重新啟動</value></data>
   <data name="PowerTimer_Sleep" xml:space="preserve"><value>睡眠</value></data>
@@ -1574,7 +1543,7 @@
   <data name="Settings_Words_Description" xml:space="preserve"><value>拆開文字的呼出方式與視窗行為</value></data>
   <data name="Settings_Words_HotkeyDescription" xml:space="preserve"><value>在任何程式中選取文字後按下，拆開選取的文字</value></data>
   <data name="Settings_Words_FromClipboard" xml:space="preserve"><value>從剪貼簿開啟</value></data>
-  <data name="Settings_Words_FromClipboardDescription" xml:space="preserve"><value>在文字項目上按 Ctrl+B，或點擊項目右側的分詞按鈕</value></data>
+  <data name="Settings_Words_FromClipboardDescription" xml:space="preserve"><value>在文字項目的右鍵選單中選擇「分詞」</value></data>
   <data name="Settings_Words_Window" xml:space="preserve"><value>視窗</value></data>
   <data name="Settings_Words_CloseAfterCopy" xml:space="preserve"><value>複製後關閉視窗</value></data>
   <data name="Settings_Words_CloseAfterCopyDescription" xml:space="preserve"><value>複製的內容會照常記入剪貼簿歷史</value></data>
@@ -1664,4 +1633,275 @@
   <data name="Launcher_DirectOpenUrl" xml:space="preserve"><value>開啟網址</value></data>
   <data name="Launcher_DirectOpenFolder" xml:space="preserve"><value>開啟資料夾</value></data>
   <data name="Launcher_DirectOpenFile" xml:space="preserve"><value>開啟檔案</value></data>
+  <data name="Module_Traffic_Name" xml:space="preserve"><value>流量監控</value></data>
+  <data name="Module_Traffic_Description" xml:space="preserve"><value>檢視網路介面總速率和目前使用者的處理程序流量</value></data>
+  <data name="Traffic_InterfaceTotal" xml:space="preserve"><value>實體網卡總速率</value></data>
+  <data name="Traffic_TrendWindow" xml:space="preserve"><value>最近 60 秒</value></data>
+  <data name="Traffic_TrendPeak" xml:space="preserve"><value>最近 60 秒 · 峰值 {0}</value></data>
+  <data name="Traffic_DesktopCard" xml:space="preserve"><value>桌面流量卡</value></data>
+  <data name="Traffic_DesktopRanks" xml:space="preserve"><value>處理程序流量排行</value></data>
+  <data name="Traffic_DesktopShowRanks" xml:space="preserve"><value>查看處理程序流量排行</value></data>
+  <data name="Traffic_DesktopShowInterface" xml:space="preserve"><value>返回網路介面速率</value></data>
+  <data name="Traffic_OpenPanel" xml:space="preserve"><value>開啟流量監控</value></data>
+  <data name="Traffic_Download" xml:space="preserve"><value>下載</value></data>
+  <data name="Traffic_Upload" xml:space="preserve"><value>上傳</value></data>
+  <data name="Traffic_Sampling" xml:space="preserve"><value>正在取樣…</value></data>
+  <data name="Traffic_Live" xml:space="preserve"><value>即時</value></data>
+  <data name="Traffic_InterfaceUnavailable" xml:space="preserve"><value>沒有可讀取的網路介面</value></data>
+  <data name="Traffic_InterfaceMonitoring" xml:space="preserve"><value>網路介面取樣</value></data>
+  <data name="Traffic_InterfacePaused" xml:space="preserve"><value>網路介面取樣已暫停</value></data>
+  <data name="Traffic_InterfaceDetails" xml:space="preserve"><value>作用中的實體網卡</value></data>
+  <data name="Traffic_InterfaceReading" xml:space="preserve"><value>正在讀取網卡…</value></data>
+  <data name="Traffic_InterfaceIndex" xml:space="preserve"><value>索引 {0}</value></data>
+  <data name="Traffic_InterfaceNoAddress" xml:space="preserve"><value>沒有可用的 IP 位址</value></data>
+  <data name="Traffic_ProcessTitle" xml:space="preserve"><value>目前使用者的處理程序流量</value></data>
+  <data name="Traffic_ProcessName" xml:space="preserve"><value>處理程序</value></data>
+  <data name="Traffic_RankingFilter" xml:space="preserve"><value>篩選排行：名稱或 PID</value></data>
+  <data name="Traffic_RankingSort" xml:space="preserve"><value>處理程序排行排序</value></data>
+  <data name="Traffic_RankingActiveOnly" xml:space="preserve"><value>只看有流量</value></data>
+  <data name="Traffic_RankingGroupName" xml:space="preserve"><value>{0}（{1} 個處理程序）</value></data>
+  <data name="Traffic_RankingPickHistory" xml:space="preserve"><value>選擇 {0} 的處理程序歷史</value></data>
+  <data name="Traffic_RankingPickConnections" xml:space="preserve"><value>選擇 {0} 的處理程序連線</value></data>
+  <data name="Traffic_RankingMoreProcesses" xml:space="preserve"><value>另有 {0} 個處理程序</value></data>
+  <data name="Traffic_EndProcess" xml:space="preserve"><value>結束處理程序</value></data>
+  <data name="Traffic_EndProcessTarget" xml:space="preserve"><value>結束 PID {0}：{1}？</value></data>
+  <data name="Traffic_EndProcessWarning" xml:space="preserve"><value>未儲存的資料可能遺失。</value></data>
+  <data name="Traffic_EndProcessFailed" xml:space="preserve"><value>目標已結束、受到保護，或目前帳號無權結束該處理程序。</value></data>
+  <data name="Traffic_RankingDefault" xml:space="preserve"><value>預設排行</value></data>
+  <data name="Traffic_RankingNoMatch" xml:space="preserve"><value>目前排行沒有相符的處理程序</value></data>
+  <data name="Traffic_ProcessDisplayMode" xml:space="preserve"><value>處理程序流量顯示方式</value></data>
+  <data name="Traffic_AppRun" xml:space="preserve"><value>應用程式累計</value></data>
+  <data name="Traffic_AppRunGap" xml:space="preserve"><value>僅統計已觀測到的流量</value></data>
+  <data name="Traffic_ProcessConnecting" xml:space="preserve"><value>正在檢查流量服務…</value></data>
+  <data name="Traffic_ProcessNotInstalled" xml:space="preserve"><value>尚未安裝 Pane 流量服務</value></data>
+  <data name="Traffic_ProcessDisabled" xml:space="preserve"><value>處理程序收集已關閉</value></data>
+  <data name="Traffic_ProcessUnavailable" xml:space="preserve"><value>處理程序收集無法使用</value></data>
+  <data name="Traffic_ProcessAccessDenied" xml:space="preserve"><value>無權存取處理程序流量服務</value></data>
+  <data name="Traffic_ProcessPermissionDenied" xml:space="preserve"><value>處理程序收集權限不足</value></data>
+  <data name="Traffic_ProcessSettingWriteFailed" xml:space="preserve"><value>無法儲存收集設定，開關狀態未變更。</value></data>
+  <data name="Traffic_ProcessPartial" xml:space="preserve"><value>處理程序資料不完整</value></data>
+  <data name="Traffic_ProcessEmpty" xml:space="preserve"><value>沒有可顯示的處理程序</value></data>
+  <data name="Traffic_History" xml:space="preserve"><value>流量歷程</value></data>
+  <data name="Traffic_HistoryRange" xml:space="preserve"><value>查詢時間範圍</value></data>
+  <data name="Traffic_HistoryFilter" xml:space="preserve"><value>處理程序：{0} (PID {1})</value></data>
+  <data name="Traffic_HistoryOpenProcess" xml:space="preserve"><value>查看 {0} (PID {1}) 的流量歷程</value></data>
+  <data name="Traffic_Connections" xml:space="preserve"><value>處理程序連線</value></data>
+  <data name="Traffic_ConnectionsOpenProcess" xml:space="preserve"><value>查看 {0} (PID {1}) 的連線</value></data>
+  <data name="Traffic_ConnectionsRefresh" xml:space="preserve"><value>重新整理連線</value></data>
+  <data name="Traffic_ConnectionsProtocol" xml:space="preserve"><value>連線通訊協定</value></data>
+  <data name="Traffic_ConnectionsProcessGone" xml:space="preserve"><value>處理程序已結束或目前無法查看</value></data>
+  <data name="Traffic_ConnectionsEmpty" xml:space="preserve"><value>此處理程序目前沒有使用此通訊協定的連線或接聽連接埠</value></data>
+  <data name="Traffic_ConnectionsLimited" xml:space="preserve"><value>僅顯示前 {0} 項</value></data>
+  <data name="Traffic_ConnectionsCount" xml:space="preserve"><value>{0} 項</value></data>
+  <data name="Traffic_ConnectionsUnavailable" xml:space="preserve"><value>暫時無法讀取連線</value></data>
+  <data name="Traffic_ConnectionsUdpLocal" xml:space="preserve"><value>本機 UDP 連接埠</value></data>
+  <data name="Traffic_ConnectionsListen" xml:space="preserve"><value>接聽</value></data>
+  <data name="Traffic_ConnectionsEstablished" xml:space="preserve"><value>已連線</value></data>
+  <data name="Traffic_ConnectionsUnknown" xml:space="preserve"><value>狀態不明</value></data>
+  <data name="Traffic_HistoryAllProcesses" xml:space="preserve"><value>顯示所有處理程序的流量歷程</value></data>
+  <data name="Traffic_HistoryQuarterHour" xml:space="preserve"><value>最近 15 分鐘</value></data>
+  <data name="Traffic_HistoryHour" xml:space="preserve"><value>最近 1 小時</value></data>
+  <data name="Traffic_HistoryDay" xml:space="preserve"><value>最近 24 小時</value></data>
+  <data name="Traffic_HistoryWeek" xml:space="preserve"><value>最近 7 天</value></data>
+  <data name="Traffic_HistoryByTime" xml:space="preserve"><value>按時段</value></data>
+  <data name="Traffic_HistoryByApplication" xml:space="preserve"><value>按應用程式</value></data>
+  <data name="Traffic_HistoryGrouping" xml:space="preserve"><value>流量歷程分組方式</value></data>
+  <data name="Traffic_HistoryApplication" xml:space="preserve"><value>應用程式</value></data>
+  <data name="Traffic_HistoryApplicationKeyword" xml:space="preserve"><value>應用程式名稱或路徑</value></data>
+  <data name="Traffic_HistoryApplicationSort" xml:space="preserve"><value>應用程式流量排序</value></data>
+  <data name="Traffic_HistorySortTotal" xml:space="preserve"><value>總流量</value></data>
+  <data name="Traffic_HistorySortName" xml:space="preserve"><value>應用程式名稱</value></data>
+  <data name="Traffic_HistoryApplyOptions" xml:space="preserve"><value>套用篩選和排序</value></data>
+  <data name="Traffic_HistoryOptionsPending" xml:space="preserve"><value>查詢條件尚未套用</value></data>
+  <data name="Traffic_HistoryOptionsUnsupported" xml:space="preserve"><value>目前的 Pane 流量服務不支援應用程式篩選或排序</value></data>
+  <data name="Traffic_HistoryNoMatchingApplications" xml:space="preserve"><value>沒有相符的應用程式</value></data>
+  <data name="Traffic_HistoryAllApplicationTotals" xml:space="preserve"><value>所選時段全部應用程式 · 下載 {0} · 上傳 {1}</value></data>
+  <data name="Traffic_HistorySummaryUnsupported" xml:space="preserve"><value>目前的 Pane 流量服務不支援應用程式彙總</value></data>
+  <data name="Traffic_HistoryToday" xml:space="preserve"><value>今天</value></data>
+  <data name="Traffic_HistoryYesterday" xml:space="preserve"><value>昨天</value></data>
+  <data name="Traffic_HistoryMonth" xml:space="preserve"><value>本月</value></data>
+  <data name="Traffic_HistoryCustom" xml:space="preserve"><value>自選日期</value></data>
+  <data name="Traffic_HistoryStartDate" xml:space="preserve"><value>開始日期</value></data>
+  <data name="Traffic_HistoryEndDate" xml:space="preserve"><value>結束日期</value></data>
+  <data name="Traffic_HistoryQueryDates" xml:space="preserve"><value>查詢</value></data>
+  <data name="Traffic_HistoryDatesPending" xml:space="preserve"><value>此日期範圍尚未查詢</value></data>
+  <data name="Traffic_HistoryInvalidDates" xml:space="preserve"><value>請選擇有效的起訖日期，最早可查到 729 天前</value></data>
+  <data name="Traffic_HistoryPartialBuckets" xml:space="preserve"><value>歷程以完整時段儲存，總量可能包含日期邊界以外的流量</value></data>
+  <data name="Traffic_HistoryRefresh" xml:space="preserve"><value>重新整理流量歷程</value></data>
+  <data name="Traffic_HistoryTime" xml:space="preserve"><value>統計時段起點</value></data>
+  <data name="Traffic_HistoryNext" xml:space="preserve"><value>下一頁</value></data>
+  <data name="Traffic_HistoryLoading" xml:space="preserve"><value>正在查詢流量歷程…</value></data>
+  <data name="Traffic_HistoryExpired" xml:space="preserve"><value>查詢已過期，請重新整理</value></data>
+  <data name="Traffic_HistoryNarrow" xml:space="preserve"><value>查詢範圍過大，請縮短時間範圍</value></data>
+  <data name="Traffic_HistoryUnavailable" xml:space="preserve"><value>暫時無法讀取流量歷程</value></data>
+  <data name="Traffic_HistoryNoCoverage" xml:space="preserve"><value>此時段沒有已確認的收集資料</value></data>
+  <data name="Traffic_HistoryEmpty" xml:space="preserve"><value>此時段沒有處理程序流量記錄</value></data>
+  <data name="Traffic_HistoryThrough" xml:space="preserve"><value>記錄截至 {0:g}</value></data>
+  <data name="Traffic_HistoryGaps" xml:space="preserve"><value>記錄截至 {0:g}，期間資料不完整</value></data>
+  <data name="Traffic_HistoryPage" xml:space="preserve"><value>第 {0} 頁 · {1}</value></data>
+  <data name="Traffic_HistoryRecordedTotals" xml:space="preserve"><value>所選時段已記錄 · 下載 {0} · 上傳 {1}</value></data>
+  <data name="Traffic_HistoryClear" xml:space="preserve"><value>清除流量歷程</value></data>
+  <data name="Traffic_HistoryClearWarning" xml:space="preserve"><value>永久刪除目前帳號的全部分時流量記錄，不限於所選時段。收集設定不變。</value></data>
+  <data name="Traffic_HistoryClearConfirm" xml:space="preserve"><value>確認清除</value></data>
+  <data name="Traffic_HistoryClearing" xml:space="preserve"><value>正在清除流量歷程…</value></data>
+  <data name="Traffic_HistoryCleared" xml:space="preserve"><value>已清除流量歷程</value></data>
+  <data name="Traffic_HistoryClearUnconfirmed" xml:space="preserve"><value>無法確認是否已清除</value></data>
+  <data name="Module_Notes_Name" xml:space="preserve"><value>便箋</value></data>
+  <data name="Module_Notes_Description" xml:space="preserve"><value>在本機編輯、儲存和搜尋便箋</value></data>
+  <data name="Notes_New" xml:space="preserve"><value>新增便箋</value></data>
+  <data name="Notes_Title" xml:space="preserve"><value>標題</value></data>
+  <data name="Notes_Category" xml:space="preserve"><value>分類</value></data>
+  <data name="Notes_CategoryFilter" xml:space="preserve"><value>依分類篩選便箋</value></data>
+  <data name="Notes_AllCategories" xml:space="preserve"><value>所有分類</value></data>
+  <data name="Notes_Uncategorized" xml:space="preserve"><value>未分類</value></data>
+  <data name="Notes_CategoryRename" xml:space="preserve"><value>重新命名分類</value></data>
+  <data name="Notes_CategoryRenameTitle" xml:space="preserve"><value>重新命名分類</value></data>
+  <data name="Notes_CategoryDelete" xml:space="preserve"><value>刪除分類</value></data>
+  <data name="Notes_CategoryDeleteConfirm" xml:space="preserve"><value>確認刪除（分類內便箋歸為未分類）</value></data>
+  <data name="Notes_MoveToCategory" xml:space="preserve"><value>移動到分類</value></data>
+  <data name="Notes_NewCategoryAction" xml:space="preserve"><value>新增分類…</value></data>
+  <data name="Notes_CategoryNamePlaceholder" xml:space="preserve"><value>分類名稱</value></data>
+  <data name="Notes_CategoryNameRequired" xml:space="preserve"><value>分類名稱不能為空</value></data>
+  <data name="Notes_CategoryUpdatedCount" xml:space="preserve"><value>已更新 {0} 條便箋</value></data>
+  <data name="Notes_NoteGroupCount" xml:space="preserve"><value>該分類下有 {0} 條便箋</value></data>
+  <data name="Notes_DeleteRowConfirm" xml:space="preserve"><value>確認刪除（移到回收站）</value></data>
+  <data name="Notes_MarkdownMode" xml:space="preserve"><value>Markdown 編輯</value></data>
+  <data name="Notes_TextMode" xml:space="preserve"><value>純文字</value></data>
+  <data name="Notes_FormatBold" xml:space="preserve"><value>粗體</value></data>
+  <data name="Notes_FormatItalic" xml:space="preserve"><value>斜體</value></data>
+  <data name="Notes_FormatHeading" xml:space="preserve"><value>標題（點擊逐級加深）</value></data>
+  <data name="Notes_FormatHr" xml:space="preserve"><value>分隔線</value></data>
+  <data name="Notes_FormatList" xml:space="preserve"><value>無序清單</value></data>
+  <data name="Notes_FormatOrderedList" xml:space="preserve"><value>有序清單</value></data>
+  <data name="Notes_FormatCode" xml:space="preserve"><value>程式碼</value></data>
+  <data name="Notes_FormatQuote" xml:space="preserve"><value>引用</value></data>
+  <data name="Notes_ViewModeEdit" xml:space="preserve"><value>編輯</value></data>
+  <data name="Notes_ViewModeSplit" xml:space="preserve"><value>分欄</value></data>
+  <data name="Notes_Undo" xml:space="preserve"><value>復原</value></data>
+  <data name="Notes_Redo" xml:space="preserve"><value>重做</value></data>
+  <data name="Notes_RestoreChanged" xml:space="preserve"><value>預覽後版本檔案有變化，未恢復；請重新選擇</value></data>
+  <data name="Notes_SwitchToPad" xml:space="preserve"><value>切換到編輯</value></data>
+  <data name="Notes_CollapsePad" xml:space="preserve"><value>收合為貼紙</value></data>
+  <data name="Notes_Topmost" xml:space="preserve"><value>置頂</value></data>
+  <data name="Notes_UnTopmost" xml:space="preserve"><value>取消置頂</value></data>
+  <data name="Notes_DeleteCard" xml:space="preserve"><value>刪除便箋</value></data>
+  <data name="Notes_ResizeCard" xml:space="preserve"><value>拖曳調整卡片大小</value></data>
+  <data name="Notes_CharCount" xml:space="preserve"><value>{0} 字</value></data>
+  <data name="Notes_Body" xml:space="preserve"><value>內文</value></data>
+  <data name="Notes_Delete" xml:space="preserve"><value>刪除目前的便箋</value></data>
+  <data name="Notes_RecycleBin" xml:space="preserve"><value>便箋資源回收筒</value></data>
+  <data name="Notes_RecycleEmpty" xml:space="preserve"><value>資源回收筒是空的</value></data>
+  <data name="Notes_Recycled" xml:space="preserve"><value>已移到資源回收筒</value></data>
+  <data name="Notes_RecycleRestored" xml:space="preserve"><value>已還原便箋</value></data>
+  <data name="Notes_RecycleRestoreFailed" xml:space="preserve"><value>無法還原便箋</value></data>
+  <data name="Notes_RecyclePurge" xml:space="preserve"><value>永久刪除</value></data>
+  <data name="Notes_RecyclePurgeConfirm" xml:space="preserve"><value>確認永久刪除便箋及歷程記錄</value></data>
+  <data name="Notes_Untitled" xml:space="preserve"><value>未命名便箋</value></data>
+  <data name="Notes_Empty" xml:space="preserve"><value>目前沒有便箋</value></data>
+  <data name="Notes_NoResults" xml:space="preserve"><value>沒有相符的便箋</value></data>
+  <data name="Notes_Saved" xml:space="preserve"><value>已儲存</value></data>
+  <data name="Notes_SaveFromResult" xml:space="preserve"><value>儲存為便箋</value></data>
+  <data name="Notes_ResultSaved" xml:space="preserve"><value>已儲存為便箋</value></data>
+  <data name="Notes_ResultModuleDisabled" xml:space="preserve"><value>便箋未啟用</value></data>
+  <data name="Notes_ResultSaveFailed" xml:space="preserve"><value>未能儲存為便箋</value></data>
+  <data name="Notes_SaveFailed" xml:space="preserve"><value>儲存失敗，草稿仍保留</value></data>
+  <data name="Notes_DeleteFailed" xml:space="preserve"><value>無法刪除便箋</value></data>
+  <data name="Notes_LoadFailed" xml:space="preserve"><value>無法開啟便箋資料夾</value></data>
+  <data name="Notes_Unreadable" xml:space="preserve"><value>{0} 份便箋無法讀取，原始檔案未變更</value></data>
+  <data name="Notes_PinDesktop" xml:space="preserve"><value>釘選到桌面</value></data>
+  <data name="DesktopCards_Title" xml:space="preserve"><value>桌面卡片</value></data>
+  <data name="DesktopCards_Hide" xml:space="preserve"><value>隱藏桌面卡片</value></data>
+  <data name="DesktopCards_Show" xml:space="preserve"><value>顯示桌面卡片</value></data>
+  <data name="DesktopCards_Arrange" xml:space="preserve"><value>編輯版面</value></data>
+  <data name="DesktopCards_Empty" xml:space="preserve"><value>尚無釘選的卡片</value></data>
+  <data name="Module_Screenshots_Name" xml:space="preserve"><value>螢幕擷取記錄</value></data>
+  <data name="Module_Screenshots_Description" xml:space="preserve"><value>預覽和釘選螢幕擷取</value></data>
+  <data name="Screenshots_Capture" xml:space="preserve"><value>螢幕擷取</value></data>
+  <data name="Screenshots_CaptureUnavailable" xml:space="preserve"><value>尚未安裝螢幕擷取工具</value></data>
+  <data name="Screenshots_Import" xml:space="preserve"><value>匯入 PNG</value></data>
+  <data name="Screenshots_Preview" xml:space="preserve"><value>螢幕擷取預覽</value></data>
+  <data name="Screenshots_Copy" xml:space="preserve"><value>複製圖片</value></data>
+  <data name="Screenshots_Exported" xml:space="preserve"><value>已另存為 PNG</value></data>
+  <data name="Screenshots_Edit" xml:space="preserve"><value>編輯標註</value></data>
+  <data name="Screenshots_Empty" xml:space="preserve"><value>尚無螢幕擷取</value></data>
+  <data name="Screenshots_LoadFailed" xml:space="preserve"><value>無法讀取或儲存螢幕擷取</value></data>
+  <data name="Screenshots_DeleteConfirm" xml:space="preserve"><value>永久刪除這張螢幕擷取</value></data>
+  <data name="Screenshots_DeleteFailed" xml:space="preserve"><value>無法刪除螢幕擷取</value></data>
+  <data name="Screenshots_ClearHistory" xml:space="preserve"><value>清理螢幕擷取記錄</value></data>
+  <data name="Screenshots_LimitHistory" xml:space="preserve"><value>新增後僅保留最近 50 張未釘選的螢幕擷取</value></data>
+  <data name="Screenshots_ClearHistoryConfirm" xml:space="preserve"><value>永久刪除所有未釘選的螢幕擷取</value></data>
+  <data name="Screenshots_ClearHistoryFailed" xml:space="preserve"><value>部分螢幕擷取未能刪除</value></data>
+  <data name="Screenshots_ClearHistoryDone" xml:space="preserve"><value>已清理未釘選的螢幕擷取</value></data>
+  <data name="Screenshots_UnpinToDelete" xml:space="preserve"><value>取消釘選後可刪除</value></data>
+  <data name="Screenshots_DesktopCard" xml:space="preserve"><value>螢幕擷取貼圖</value></data>
+  <data name="Screenshots_OpenHistory" xml:space="preserve"><value>在螢幕擷取記錄中開啟</value></data>
+  <data name="Screenshots_PinLimit" xml:space="preserve"><value>最多釘選 8 張螢幕擷取</value></data>
+  <data name="Notes_UnpinDesktop" xml:space="preserve"><value>取消桌面釘選</value></data>
+  <data name="Notes_DesktopCard" xml:space="preserve"><value>桌面便箋</value></data>
+  <data name="Notes_OpenEditor" xml:space="preserve"><value>編輯便箋</value></data>
+  <data name="Notes_PinLimit" xml:space="preserve"><value>最多釘選 8 張便箋</value></data>
+  <data name="Notes_LayoutSaveFailed" xml:space="preserve"><value>無法儲存桌面配置</value></data>
+  <data name="Notes_History" xml:space="preserve"><value>版本記錄</value></data>
+  <data name="Notes_HistoryEmpty" xml:space="preserve"><value>尚無歷史版本</value></data>
+  <data name="Notes_HistoryFailed" xml:space="preserve"><value>無法讀取歷史版本</value></data>
+  <data name="Notes_RestoreFailed" xml:space="preserve"><value>無法還原版本，目前的便箋未變更</value></data>
+  <data name="Notes_Restored" xml:space="preserve"><value>已還原歷史版本</value></data>
+  <data name="Notes_Preview" xml:space="preserve"><value>Markdown 預覽</value></data>
+  <data name="Notes_PreviewTooLong" xml:space="preserve"><value>便箋過長，無法預覽</value></data>
+  <data name="Notes_FileActions" xml:space="preserve"><value>便箋檔案</value></data>
+  <data name="Notes_ImportFile" xml:space="preserve"><value>從檔案匯入</value></data>
+  <data name="Notes_ExportFile" xml:space="preserve"><value>另存內文為檔案</value></data>
+  <data name="Notes_TextFile" xml:space="preserve"><value>純文字</value></data>
+  <data name="Notes_ImportedFile" xml:space="preserve"><value>已匯入為新便箋</value></data>
+  <data name="Notes_ExportedFile" xml:space="preserve"><value>已另存內文</value></data>
+  <data name="Notes_ImportFileFailed" xml:space="preserve"><value>無法匯入，請選擇大小適中的 UTF-8 文字檔</value></data>
+  <data name="Notes_Images" xml:space="preserve"><value>便箋圖片</value></data>
+  <data name="Notes_ImportImage" xml:space="preserve"><value>新增 PNG 圖片…</value></data>
+  <data name="Notes_PasteImage" xml:space="preserve"><value>貼上圖片</value></data>
+  <data name="Notes_RemoveImage" xml:space="preserve"><value>移除圖片</value></data>
+  <data name="Notes_ImageUnavailable" xml:space="preserve"><value>圖片無法使用</value></data>
+  <data name="Notes_ImageLimit" xml:space="preserve"><value>每則便箋最多新增 4 張圖片</value></data>
+  <data name="Notes_ImageFailed" xml:space="preserve"><value>無法新增圖片，請檢查格式、大小及儲存權限</value></data>
+  <data name="Notes_ExportFileFailed" xml:space="preserve"><value>無法另存便箋內文</value></data>
+  <data name="Screenshots_Ocr" xml:space="preserve"><value>圖片取字</value></data>
+  <data name="Screenshots_ClipboardOcr" xml:space="preserve"><value>剪貼簿圖片取字</value></data>
+  <data name="Screenshots_ClipboardNoImage" xml:space="preserve"><value>剪貼簿中沒有圖片</value></data>
+  <data name="Screenshots_OcrResult" xml:space="preserve"><value>辨識結果</value></data>
+  <data name="Screenshots_OcrCopy" xml:space="preserve"><value>複製全部辨識文字</value></data>
+  <data name="Screenshots_OcrCopySelection" xml:space="preserve"><value>複製選取文字</value></data>
+  <data name="Screenshots_OcrTextActions" xml:space="preserve"><value>辨識文字操作</value></data>
+  <data name="Screenshots_OcrLookup" xml:space="preserve"><value>離線查詞</value></data>
+  <data name="Screenshots_OcrTranslate" xml:space="preserve"><value>AI 翻譯</value></data>
+  <data name="Screenshots_OcrWorking" xml:space="preserve"><value>正在辨識…</value></data>
+  <data name="Screenshots_OcrEmpty" xml:space="preserve"><value>未辨識到文字</value></data>
+  <data name="Screenshots_OcrFailed" xml:space="preserve"><value>無法辨識這張圖片</value></data>
+  <data name="Screenshots_WindowsOcrLanguageMissing" xml:space="preserve"><value>請在 Windows 設定中安裝所需的文字辨識語言套件。</value></data>
+  <data name="Screenshots_OcrHistory" xml:space="preserve"><value>辨識記錄</value></data>
+  <data name="Screenshots_OcrHistoryEmpty" xml:space="preserve"><value>暫無辨識記錄</value></data>
+  <data name="Screenshots_OcrSave" xml:space="preserve"><value>儲存辨識記錄</value></data>
+  <data name="Screenshots_OcrSaved" xml:space="preserve"><value>辨識記錄已儲存</value></data>
+  <data name="Screenshots_OcrEdit" xml:space="preserve"><value>修訂辨識文字</value></data>
+  <data name="Screenshots_OcrVersions" xml:space="preserve"><value>還原辨識版本</value></data>
+  <data name="Screenshots_OcrOriginal" xml:space="preserve"><value>原始辨識文字</value></data>
+  <data name="Screenshots_OcrZoomIn" xml:space="preserve"><value>放大原圖</value></data>
+  <data name="Screenshots_OcrZoomOut" xml:space="preserve"><value>縮小原圖</value></data>
+  <data name="Screenshots_OcrFit" xml:space="preserve"><value>配合視窗</value></data>
+  <data name="Screenshots_OcrDelete" xml:space="preserve"><value>刪除辨識記錄</value></data>
+  <data name="Notes_Reminder" xml:space="preserve"><value>便箋提醒</value></data>
+  <data name="Notes_TaskReminder" xml:space="preserve"><value>工作提醒</value></data>
+  <data name="Notes_TaskReminderFor" xml:space="preserve"><value>工作提醒：{0}</value></data>
+  <data name="Notes_TaskReminders" xml:space="preserve"><value>已設定的工作提醒</value></data>
+  <data name="Notes_ReminderAt" xml:space="preserve"><value>提醒時間：{0:g}</value></data>
+  <data name="Notes_ReminderTenMinutes" xml:space="preserve"><value>10 分鐘後</value></data>
+  <data name="Notes_ReminderFifteenMinutes" xml:space="preserve"><value>15 分鐘後</value></data>
+  <data name="Notes_ReminderThirtyMinutes" xml:space="preserve"><value>30 分鐘後</value></data>
+  <data name="Notes_ReminderOneHour" xml:space="preserve"><value>1 小時後</value></data>
+  <data name="Notes_ReminderThreeHours" xml:space="preserve"><value>3 小時後</value></data>
+  <data name="Notes_ReminderNextEvening" xml:space="preserve"><value>下一個 18:00</value></data>
+  <data name="Notes_ReminderTomorrowMorning" xml:space="preserve"><value>明天 9:00</value></data>
+  <data name="Notes_ReminderCustom" xml:space="preserve"><value>自訂…</value></data>
+  <data name="Notes_ReminderMinutes" xml:space="preserve"><value>提醒延遲（分鐘）</value></data>
+  <data name="Notes_ReminderInvalidMinutes" xml:space="preserve"><value>請輸入 1 到 {0} 之間的整數。</value></data>
+  <data name="Notes_ReminderCancel" xml:space="preserve"><value>取消提醒</value></data>
+  <data name="Notes_ReminderCancelled" xml:space="preserve"><value>已取消提醒</value></data>
 </root>

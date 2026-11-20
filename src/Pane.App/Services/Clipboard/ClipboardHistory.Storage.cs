@@ -17,7 +17,7 @@ internal sealed partial class ClipboardHistory
         long megabytes=settings.Current.Clipboard.ImageLimitMegabytes;
         if(megabytes<=0)return;
         long limit=megabytes>long.MaxValue/(1024*1024)?long.MaxValue:megabytes*1024*1024;
-        var images=entries.Where(e=>e.Entry.Kind==ClipKind.Image&&!e.Entry.Pinned).OrderBy(e=>e.Entry.CopiedAt)
+        var images=entries.Where(e=>e.Entry.Kind==ClipKind.Image&&!e.Entry.Pinned&&!e.Entry.Collected).OrderBy(e=>e.Entry.CopiedAt)
             .Select(e=>(Clip:e,Bytes:FileBytes(e.Entry.ContentPath)+FileBytes(e.Entry.Thumbnail?.Path))).ToArray();
         long total=images.Sum(e=>e.Bytes);
         foreach(var item in images){if(total<=limit)break;entries.Remove(item.Clip);total-=item.Bytes;}

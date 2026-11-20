@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Pane.Views.TrafficConnectionsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="using:Pane.Views.Controls"
+    xmlns:loc="using:Pane.Localization">
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid x:Name="Header" Padding="18,0,10,0" Background="Transparent"
+              BorderThickness="0,0,0,1" BorderBrush="{ThemeResource PaneStrokeBrush}">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <c:PaneIcon Glyph="link" Width="16" Height="16" Foreground="{ThemeResource PaneText2Brush}"/>
+                <TextBlock Text="{x:Bind loc:Strings.Traffic_Connections}" FontSize="{StaticResource PaneTextSm}"
+                           Foreground="{ThemeResource PaneText1Brush}"/>
+            </StackPanel>
+            <Button HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource PaneIconButton}"
+                    Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="CloseClicked" IsTabStop="True"
+                    AutomationProperties.Name="{x:Bind loc:Strings.Common_CloseWindowHint}" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_CloseWindowHint}">
+                <c:PaneIcon Glyph="close" Width="16" Height="16"/>
+            </Button>
+        </Grid>
+        <Grid Grid.Row="1" Padding="18,12" RowSpacing="8">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="ProcessName" VerticalAlignment="Center" MaxLines="1" TextTrimming="CharacterEllipsis"
+                           FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}"/>
+                <Border x:Name="KindHost" Grid.Column="1" VerticalAlignment="Center"/>
+                <Button x:Name="RefreshButton" Grid.Column="2" Style="{StaticResource PaneIconButton}" Click="RefreshClicked" IsTabStop="True"
+                        AutomationProperties.Name="{x:Bind loc:Strings.Traffic_ConnectionsRefresh}" ToolTipService.ToolTip="{x:Bind loc:Strings.Traffic_ConnectionsRefresh}">
+                    <c:PaneIcon Glyph="refresh" Width="16" Height="16"/>
+                </Button>
+            </Grid>
+            <TextBlock x:Name="Status" Grid.Row="1" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"
+                       FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+            <ListView x:Name="Endpoints" Grid.Row="2" SelectionMode="None"
+                      AutomationProperties.Name="{x:Bind loc:Strings.Traffic_Connections}"/>
+        </Grid>
+        <StackPanel Visibility="Collapsed">
+            <Border x:Name="ModeFill" Background="{ThemeResource PaneFillControlBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}"/>
+            <TextBlock x:Name="ModeStrong" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText1Brush}"/>
+            <TextBlock x:Name="ModeDim" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

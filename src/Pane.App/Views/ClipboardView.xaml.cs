@@ -2,18 +2,19 @@ using Pane.Localization;
 // 剪贴板视图逻辑（设计负责人）。交互照原型 app.js「剪贴板」：
 // 搜索 + 类型筛选；已固定区在前、多于 3 条时收起（docs/design.md「剪贴板已固定区可折叠」）；Enter 粘贴、Shift+Enter 纯文本、Alt+1~9 快速粘贴、Ctrl+P 固定、Esc 分步；
 // 默认不激活打开（「剪贴板不抢焦点」，059）：按键由宿主转来（HandleKey），打字 / 点搜索框时切到激活方式；
-// 悬停 / 选中时右下角换成「交给启动器 / 固定 / 删除」按钮；删除带淡出右移。
 using System.Numerics;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Pane.Contracts;
 using Pane.DesignData;
 using Pane.Hosting;
+using Pane.Services.Clipboard;
 using Pane.Views.Clipboard;
 using Pane.Views.Controls;
 using Windows.Foundation;
@@ -24,12 +25,20 @@ namespace Pane.Views;
 
 public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowActions
 {
-    static readonly (string key, string label)[] Filters = [("all", Strings.Common_All), ("text", Strings.Common_Text), ("image", Strings.Common_Image), ("files", Strings.Common_File), ("pinned", Strings.Clipboard_Pinned)];
+    static readonly (string key, string label, string glyph)[] Filters =
+    [
+        ("all", Strings.Common_All, "clipboard"),
+        ("favorites", Strings.Clipboard_Favorites, "bookmark"),
+        ("text", Strings.Common_Text, "text"),
+        ("image", Strings.Common_Image, "image"),
+        ("files", Strings.Common_File, "folder"),
+        ("pinned", Strings.Clipboard_Pinned, "pin"),
+    ];
 
     readonly IClipboardHistory history;
     readonly SlidingHighlight highlight;
     readonly SlidingHighlight chipHighlight;
-    readonly List<ChipItem> chips = Filters.Select(f => new ChipItem(f.key, f.label)).ToList();
+    readonly List<ChipItem> chips = Filters.Select(f => new ChipItem(f.key, f.label, f.glyph)).ToList();
 
     // 一次只建一批行（含缩略图），往下滚或用方向键走到底时再补一批；历史可能有几千条
     const int Batch = 40;
@@ -38,6 +47,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     List<ClipRow> rows = [];
     List<ClipEntry> matched = [];   // 显示顺序：已固定区露出的条目 + 时间线（不含展开行）
     string query = string.Empty;
+    string? collection;
     // 已固定区：多于 PinPeek 条时收起，下面一行展开行；展开只在这次面板开着时有效，每次呼出复位
     const int PinPeek = 3;
     bool pinsOpen;
@@ -64,7 +74,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         Scroller.ViewChanged += (_, _) => { if (NearBottom()) AppendMore(); };
         Sections.PointerMoved += OnListPointerMoved;
         Sections.Tapped += OnListTapped;
-        Chips.Tapped += OnChipTapped;
+        Sections.RightTapped += OnListRightTapped;
         // 提示条（062）：「重启更新」「查看」交给宿主（查看会打开设置，剪贴板收起）；「忽略」「×」只收起这一条
         Notice.Primary += (_, n) => { CloseRequested?.Invoke(this, EventArgs.Empty); ((App)Application.Current).NoticePrimary(n); };
         Notice.Dismiss += (_, n) => { ((App)Application.Current).NoticeDismiss(n); Notice.Show(null); };
@@ -78,7 +88,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     public Size PreferredSize => new(372, 640);
     public event EventHandler<Size>? SizeRequested { add { } remove { } } // 固定尺寸，不请求改尺寸
     public event EventHandler? CloseRequested;
-    public UIElement? DragRegion => null;
+    public UIElement DragRegion => SearchRow;
 
     public void OnShowing(PanelShowContext context)
     {
@@ -88,6 +98,9 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         else Notice.Show(null);
         activate = context.Activate;
         previousWindow = context.PreviousForegroundWindow;
+        CollectionsButton.Visibility = ForLauncher ? Visibility.Collapsed : Visibility.Visible;
+        collection = null;
+        SetFileStatus(null);
         filter = "all";
         pinsOpen = Environment.GetEnvironmentVariable("PANE_DESIGN_PINS_OPEN") == "1"; // 设计预览：展开已固定区
         // 设计预览：PANE_DESIGN_QUERY / PANE_DESIGN_FILTER 预先填入，不按键盘就能截图
@@ -112,6 +125,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     {
         // 收起后放掉行和缩略图，常驻只留服务里的文本和元数据
         visible = false;
+        fileOperation?.Cancel();
         highlight.Hide();
         Sections.ItemsSource = null;
         sections = [];
@@ -138,7 +152,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         var keepMore = keepSelection && more is not null && selected == more.Index;
         var count = keepSelection ? Math.Max(Batch, rows.Count) : Batch;
         query = q;
-        var all = history.Snapshot();
+        var all = history.Snapshot(includeArchived: collection is not null || filter == "favorites");
         if (!keepSelection) frozen = [];
         List<ClipEntry> found;
         if (frozen.Count == 0) found = all.Where(e => Matches(e, q, ignorePin: false)).ToList();
@@ -168,7 +182,9 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         Append(Math.Min(count, matched.Count));
         Sections.ItemsSource = sections;
         Empty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var c in chips) c.IsSelected = c.Key == filter;
+        foreach (var c in chips) c.IsSelected = collection is null && c.Key == filter;
+        CollectionsIcon.IsFilled = collection is not null;
+        ToolTipService.SetToolTip(CollectionsButton, collection is { Length: > 0 } ? collection : Strings.Clipboard_Collections);
         if (!keepSelection) Scroller.ChangeView(null, 0, null, true);
         highlight.Hide();
         selected = -1;
@@ -185,16 +201,18 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
 
     bool Matches(ClipEntry e, string q, bool ignorePin)
     {
+        if (collection is not null && (!e.Collected || (collection.Length > 0 && !e.Collections!.Contains(collection, ClipboardCollections.NameComparer)))) return false;
         switch (filter)
         {
             case "pinned" when !e.Pinned && !ignorePin: return false;
+            case "favorites" when !e.Favorite: return false;
             case "text" when e.Kind is not (ClipKind.Text or ClipKind.Code or ClipKind.Link or ClipKind.Color): return false;
-            case "image" when e.Kind != ClipKind.Image: return false;
+            case "image" when !e.HasImageContent: return false;
             case "files" when e.Kind != ClipKind.Files: return false;
         }
         if (q.Length == 0) return true;
         var hay = (e.Files is { } f ? string.Join(" ", f.Select(System.IO.Path.GetFileName)) : e.Text ?? "") + " " + e.Source;
-        return hay.Contains(q, StringComparison.OrdinalIgnoreCase);
+        return hay.Contains(q, StringComparison.OrdinalIgnoreCase) || e.Annotation?.Matches(q) == true;
     }
 
     // 冻结期间沿用条目第一次出现时的分组
@@ -207,7 +225,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         {
             // 编号只给时间线：Alt+1 是时间线第一条（「已固定」筛选下从第一条起）
             var n = i - lineStart;
-            var row = new ClipRow(matched[i], IndexOf(i), n is >= 0 and < 9 ? n + 1 : 0, query, this);
+            var row = new ClipRow(matched[i], IndexOf(i), n is >= 0 and < 9 ? n + 1 : 0, query, this, !ForLauncher);
             rows.Add(row);
             var group = GroupOf(row.Entry);
             if (sections.Count == 0 || i == 0 || GroupOf(rows[i - 1].Entry) != group)
@@ -241,6 +259,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
 
     void MoveChipHighlight()
     {
+        if (collection is not null) { chipHighlight.Hide(); return; }
         var chip = chips.First(c => c.Key == filter);
         if (Chips.ContainerFromItem(chip) is FrameworkElement el) chipHighlight.MoveTo(el);
     }
@@ -264,8 +283,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     void SetSelected(int index, bool value)
     {
         if (index < 0) return;
-        if (RowAt(index) is { } row) row.IsSelected = value;
-        else if (more is not null && index == more.Index) more.IsSelected = value;
+        if (more is not null && index == more.Index) more.IsSelected = value;
     }
 
     FrameworkElement? ElementAt(int index)
@@ -310,7 +328,6 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         var ctrl = Down(VirtualKey.Control);
         var shift = Down(VirtualKey.Shift);
         var alt = Down(VirtualKey.Menu);
-
         PanelKeyPress? press =
             alt && e.Key >= VirtualKey.Number1 && e.Key <= VirtualKey.Number9 ? new(PanelKey.Quick, e.Key - VirtualKey.Number1 + 1) :
             e.Key switch
@@ -319,7 +336,6 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
                 VirtualKey.Up => new(PanelKey.Up),
                 VirtualKey.Enter => new(shift ? PanelKey.ShiftEnter : PanelKey.Enter),
                 VirtualKey.P when ctrl => new(PanelKey.Pin),
-                VirtualKey.B when ctrl => new(PanelKey.Words),
                 VirtualKey.Tab => new(PanelKey.Send),
                 VirtualKey.Escape => new(PanelKey.Escape),
                 _ => null,
@@ -353,9 +369,9 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
                 break;
             case PanelKey.Pin: if (SelectedRow is { } p) TogglePin(p); break;
             case PanelKey.Send: if (SelectedRow is { } t && ModuleGate.On(Contracts.ModuleIds.Launcher)) Send(t); break;
-            case PanelKey.Words: if (SelectedRow is { CanSplit: true } w) Words(w); break;
             case PanelKey.Escape:
                 if (Input.Text.Length > 0) Input.Text = string.Empty;
+                else if (collection is not null) { collection = null; Render(keepSelection: false); }
                 else CloseRequested?.Invoke(this, EventArgs.Empty);
                 break;
         }
@@ -394,18 +410,74 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         else if (MoreFrom(e.OriginalSource) is not null) ToggleMore();
     }
 
-    void OnChipTapped(object sender, TappedRoutedEventArgs e)
+    void OnChipClicked(object sender, RoutedEventArgs e)
     {
-        for (var d = e.OriginalSource as DependencyObject; d is not null; d = VisualTreeHelper.GetParent(d))
+        if (sender is not Button { DataContext: ChipItem chip } button) return;
+        collection = null;
+        filter = chip.Key;
+        Render(keepSelection: false);
+        if (!Passive && button.FocusState != FocusState.Keyboard) Input.Focus(FocusState.Programmatic);
+    }
+
+    void OnListRightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (RowFrom(e.OriginalSource) is not { } row || ContainerOf(row) is not { } container) return;
+        e.Handled = true;
+        Select(row.Index, scroll: false);
+        if (Passive) EngageRequested?.Invoke(this, EventArgs.Empty);
+
+        var menu = new MenuFlyout();
+        void Add(string label, Action action)
         {
-            if (d is FrameworkElement { DataContext: ChipItem chip })
-            {
-                filter = chip.Key;
-                Render(keepSelection: false);
-                if (!Passive) Input.Focus(FocusState.Programmatic);   // 不激活方式下点筛选不去抢焦点（059）
-                return;
-            }
+            var item = new MenuFlyoutItem { Text = label };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
         }
+
+        if (ForLauncher) Add(Strings.Clipboard_FillLauncher, () => Send(row));
+        else
+        {
+            Add(Strings.Common_Paste, () => _ = Paste(row, plainText: false));
+            if (row.Entry.Kind is not (ClipKind.Image or ClipKind.Files))
+                Add(Strings.Clipboard_PlainText, () => _ = Paste(row, plainText: true));
+            if (ModuleGate.On(ModuleIds.Launcher)) Add(Strings.Clipboard_SendToLauncher, () => Send(row));
+        }
+        if (row.CanSplit) Add(Strings.Words_Open, () => Words(row));
+        if (row.ExportExtension is not null) Add(Strings.Clipboard_ExportFile, () => ExportFile(row));
+        if (!row.Entry.Archived)
+        {
+            menu.Items.Add(new MenuFlyoutSeparator());
+            Add(row.DeleteTip, () => Delete(row));
+        }
+
+        menu.ShowAt(container, new FlyoutShowOptions { Position = e.GetPosition(container) });
+    }
+
+    void OnCollectionsOpening(object sender, object args)
+    {
+        if (sender is not MenuFlyout menu) return;
+        if (Passive) EngageRequested?.Invoke(this, EventArgs.Empty);
+        menu.Items.Clear();
+        var import = new MenuFlyoutItem { Text = Strings.Clipboard_GalleryImport, IsEnabled = fileOperation is null };
+        import.Click += OnGalleryImport;
+        menu.Items.Add(import);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        void Add(string value, string label)
+        {
+            var item = new ToggleMenuFlyoutItem { Text = label, IsChecked = ClipboardCollections.NameComparer.Equals(value, collection) };
+            item.Click += (_, _) =>
+            {
+                collection = value;
+                filter = "all";
+                Render(keepSelection: false);
+                if (!Passive) FocusSearch();
+            };
+            menu.Items.Add(item);
+        }
+        Add("", Strings.Clipboard_AllCollections);
+        foreach (var group in history.Snapshot(includeArchived: true).SelectMany(entry => entry.Collections ?? [])
+            .Distinct(ClipboardCollections.NameComparer).OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
+            Add(group, group);
     }
 
     static ClipMoreRow? MoreFrom(object source)
@@ -427,9 +499,10 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
 
     // ---------------- 动作 ----------------
 
-    async Task Paste(bool plainText)
+    Task Paste(bool plainText) => SelectedRow is { } row ? Paste(row, plainText) : Task.CompletedTask;
+
+    async Task Paste(ClipRow row, bool plainText)
     {
-        if (SelectedRow is not { } row) return;
         var entry = row.Entry;
         // 图片没有文字可贴，Shift+Enter 按普通粘贴处理（不让按键落空）
         if (entry.Kind == ClipKind.Image) plainText = false;
@@ -450,7 +523,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     /// <summary>「交给启动器」：宿主收到后把条目交给启动器（LauncherView.AttachNext）并切到启动器。</summary>
     public event EventHandler<ClipEntry>? SendToLauncher;
 
-    public void Send(ClipRow row)
+    void Send(ClipRow row)
     {
         if (ForLauncher) { UseInLauncher?.Invoke(this, row.Entry); return; }   // 启动器本来就开着，不重新呼出（会重置输入）
         SendToLauncher?.Invoke(this, row.Entry);
@@ -458,11 +531,13 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
 
     /// <summary>「分词」（093）：宿主收到后打开分词窗口拆这条文字（剪贴板收起）。</summary>
     public event EventHandler<ClipEntry>? OpenWords;
-    public void Words(ClipRow row) => OpenWords?.Invoke(this, row.Entry);
+    void Words(ClipRow row) => OpenWords?.Invoke(this, row.Entry);
 
     public void TogglePin(ClipRow row) => history.SetPinned(row.Entry.Id, !row.Entry.Pinned);
 
-    public void Delete(ClipRow row)
+    public void ToggleFavorite(ClipRow row) => history.SetFavorite(row.Entry.Id, !row.Entry.Favorite);
+
+    void Delete(ClipRow row)
     {
         // 原型：淡出 + 右移 24px，--dur-fast，然后从历史里删掉
         if (ContainerOf(row) is not { } el) { history.Delete(row.Entry.Id); return; }
@@ -488,12 +563,12 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     // ---------------- 底部快捷键提示 ----------------
 
     // 启动器停用时不列「Tab 交给启动器」（055）；启动器状态变了下次呼出时重建
-    bool footSend, footLauncher, footWords;
+    bool footSend, footLauncher;
     void BuildFoot()
     {
-        bool send = ModuleGate.On(Contracts.ModuleIds.Launcher), words = ModuleGate.On(Contracts.ModuleIds.Words);
-        if (Foot.Children.Count > 0 && send == footSend && words == footWords && ForLauncher == footLauncher) return;
-        footSend = send; footWords = words;
+        bool send = ModuleGate.On(Contracts.ModuleIds.Launcher);
+        if (Foot.Children.Count > 0 && send == footSend && ForLauncher == footLauncher) return;
+        footSend = send;
         footLauncher = ForLauncher;
         Foot.Children.Clear();
         if (ForLauncher)
@@ -505,7 +580,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         [
             (["↑", "↓"], Strings.Clipboard_Select), (["Enter"], Strings.Common_Paste), (["Shift", "+", "Enter"], Strings.Clipboard_PlainText),
             (["Alt", "+", "1~9"], Strings.Clipboard_QuickPaste), .. send ? new[] { (new[] { "Tab" }, Strings.Clipboard_SendToLauncher) } : [],
-            .. words ? new[] { (new[] { "Ctrl", "+", "B" }, Strings.Words_Open) } : [], (["Ctrl", "+", "P"], Strings.Clipboard_Pin),
+            (["Ctrl", "+", "P"], Strings.Clipboard_Pin),
         ], HintLabelProto, KbdProto);
     }
 

@@ -10,7 +10,7 @@ namespace Pane.Services.Clipboard;
 
 internal sealed record ClipboardContent(string? Text=null, string[]? Files=null, byte[]? Png=null,
     string Program="", string Source="", string? Icon=null, bool Exclude=false,
-    int? History=null, int? Cloud=null, bool Own=false);
+    int? History=null, int? Cloud=null, bool Own=false, ClipRichText? RichText=null);
 internal interface IClipboardSource : IDisposable
 {
     event Action<ClipboardContent>? Captured;
@@ -24,9 +24,14 @@ internal interface IClipboardWriter
 internal interface IClipboardImages
 {
     (int Width,int Height) Save(byte[] png,string full,string thumbnail);
+    (int Width,int Height) SaveGallery(byte[] bytes,string full,string thumbnail,uint maxPixels)=>throw new NotSupportedException();
     (int Width,int Height)? Thumbnail(string path,string thumbnail)=>null;
 }
-internal sealed record StoredClip(ClipEntry Entry,string Fingerprint);
+internal sealed record StoredClip(ClipEntry Entry,string Fingerprint)
+{
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public string? TextDraft {get;init;}
+}
 [JsonSerializable(typeof(StoredClip[]))]
 internal partial class ClipboardJson:JsonSerializerContext { }
 
@@ -51,7 +56,8 @@ internal static partial class ClipboardClassifier
     }
     public static bool Allowed(ClipboardContent c,ClipboardSettings s)=>!c.Own&&
         !(s.HonorExcludeMarker&&(c.Exclude||c.History==0||c.Cloud==0))&&
-        !s.ExcludedPrograms.Contains(c.Program,StringComparer.OrdinalIgnoreCase);
+        !s.ExcludedPrograms.Contains(c.Program,StringComparer.OrdinalIgnoreCase)&&
+        (c.Text is not { Length:>0 } text||!s.ExcludedText.Any(term=>text.Contains(term,StringComparison.OrdinalIgnoreCase)));
 }
 
 internal sealed partial class ClipboardHistory:IClipboardHistory,IDisposable
@@ -89,7 +95,7 @@ internal sealed partial class ClipboardHistory:IClipboardHistory,IDisposable
                 lock(settings.StorageSync){
                 Directory.CreateDirectory(directory);
                 StoredClip[] loaded;
-                lock(sync){loaded=this.storage.Load(index);entries.AddRange(loaded);imageDirectory=StorageLocation.Resolve(settings).Path;Trim();if(entries.Count!=loaded.Length)Schedule();}
+                lock(sync){loaded=this.storage.Load(index);entries.AddRange(loaded);imageDirectory=StorageLocation.Resolve(settings).Path;if(Trim())Schedule();}
                 log.Write("loaded",count:loaded.Length);
                 try{Cleanup(loaded,true);}catch(Exception e){log.Write("cleanup-failed",e,"startup-cleanup");}
                 source.Captured+=Capture;settings.Changed+=SettingsChanged;SettingsChanged(this,EventArgs.Empty);
@@ -106,28 +112,29 @@ internal sealed partial class ClipboardHistory:IClipboardHistory,IDisposable
         lock(lifecycle){
             bool enabled=settings.Current.Clipboard.Enabled;
             if(enabled!=listening){if(enabled)source.Start();else source.Stop();listening=enabled;}
-            if(enabled)lock(sync){int count=entries.Count;Trim();if(entries.Count!=count)Schedule();}
+            if(enabled)lock(sync){if(Trim())Schedule();}
         }
         Changed?.Invoke(this,EventArgs.Empty);
     }
-    public IReadOnlyList<ClipEntry> Snapshot(){lock(sync)return entries.Select(e=>e.Entry).OrderByDescending(e=>e.Pinned).ThenByDescending(e=>e.CopiedAt).ToArray();}
+    public IReadOnlyList<ClipEntry> Snapshot(bool includeArchived=false){lock(sync)return entries.Select(e=>e.Entry).Where(e=>includeArchived||!e.Archived).OrderByDescending(e=>e.Pinned).ThenByDescending(e=>e.CopiedAt).ToArray();}
     internal void Capture(ClipboardContent content)
     {
         var s=settings.Current.Clipboard;if(!s.Enabled||!ClipboardClassifier.Allowed(content,s))return;
-        ClipKind kind;string fingerprint;
+        ClipKind kind;string fingerprint;ClipRichText? richText=null;
         if(content.Files is {Length:>0}){if(!s.RecordFiles)return;kind=ClipKind.Files;fingerprint="f:"+Hash(Encoding.UTF8.GetBytes(string.Join('\0',content.Files)));}
         else if(content.Png is {Length:>0}){if(!s.RecordImages)return;kind=ClipKind.Image;fingerprint="i:"+Hash(content.Png);}
-        else if(!string.IsNullOrEmpty(content.Text)){if(!s.RecordText)return;kind=ClipboardClassifier.Classify(content.Text);fingerprint="t:"+Hash(Encoding.UTF8.GetBytes(content.Text));}
+        else if(!string.IsNullOrEmpty(content.Text)){if(!s.RecordText)return;kind=ClipboardClassifier.Classify(content.Text);richText=ClipboardTextFormats.Normalize(content.RichText);fingerprint=ClipboardTextFormats.Fingerprint(content.Text,richText);}
         else return;
         lock(sync){
             if(stopping||!settings.Current.Clipboard.Enabled)return;
-            var now=DateTimeOffset.UtcNow;var latest=entries.MaxBy(e=>e.Entry.CopiedAt);
-            if(s.Dedupe&&latest?.Fingerprint==fingerprint){entries[entries.IndexOf(latest)]=latest with{Entry=latest.Entry with{CopiedAt=now}};}
+            var now=DateTimeOffset.UtcNow;var latest=entries.Where(clip=>!clip.Entry.Archived).MaxBy(clip=>clip.Entry.CopiedAt);
+            var matching=s.Dedupe?(latest?.Fingerprint==fingerprint?latest:entries.Find(clip=>clip.Entry.Archived&&clip.Fingerprint==fingerprint)):null;
+            if(matching!=null){entries[entries.IndexOf(matching)]=matching with{Entry=matching.Entry with{CopiedAt=now,Archived=false}};Trim();}
             else {
                 string id=Guid.NewGuid().ToString("N");string? full=null,thumb=null;int? width=null,height=null;
                 if(kind==ClipKind.Image){Directory.CreateDirectory(imageDirectory);full=Path.Combine(imageDirectory,id+".png");thumb=Path.Combine(imageDirectory,id+".thumb.png");var size=images.Save(content.Png!,full,thumb);width=size.Width;height=size.Height;}
                 entries.Add(new(new(id,kind,kind==ClipKind.Image?null:content.Text,kind==ClipKind.Files?content.Files?.ToArray():null,
-                    thumb==null?null:new(thumb),width,height,content.Source,content.Icon==null?null:new("app",content.Icon),now,false,full),fingerprint));
+                    thumb==null?null:new(thumb),width,height,content.Source,content.Icon==null?null:new("app",content.Icon),now,false,full,RichText:richText),fingerprint));
                 Trim();
                 if(kind==ClipKind.Files){
                     string thumbnail=Path.Combine(imageDirectory,id+".thumb.png");
@@ -141,12 +148,65 @@ internal sealed partial class ClipboardHistory:IClipboardHistory,IDisposable
         Changed?.Invoke(this,EventArgs.Empty);
     }
     static string Hash(byte[] bytes)=>Convert.ToHexString(SHA256.HashData(bytes));
-    void Trim(){var remove=entries.Where(e=>!e.Entry.Pinned).OrderByDescending(e=>e.Entry.CopiedAt).Skip(settings.Current.Clipboard.Limit).ToHashSet();entries.RemoveAll(remove.Contains);TrimImages();}
+    bool Trim(){bool changed=ClipboardCollections.TrimHistory(entries,settings.Current.Clipboard.Limit);int count=entries.Count;TrimImages();return ClipboardTextFormats.Trim(entries)||entries.Count!=count||changed;}
     void Schedule(){dirty=true;signal.Set();}
-    public void SetPinned(string id,bool pinned)=>Change(id,e=>e with{Pinned=pinned});
-    void Change(string id,Func<ClipEntry,ClipEntry> update){lock(sync){int i=entries.FindIndex(e=>e.Entry.Id==id);if(i<0)return;entries[i]=entries[i] with{Entry=update(entries[i].Entry)};Trim();Schedule();}Changed?.Invoke(this,EventArgs.Empty);}
-    public void Delete(string id){lock(sync){entries.RemoveAll(e=>e.Entry.Id==id);Schedule();}Changed?.Invoke(this,EventArgs.Empty);}
-    public void ClearUnpinned(){lock(sync){entries.RemoveAll(e=>!e.Entry.Pinned);Schedule();}Changed?.Invoke(this,EventArgs.Empty);}
+    public void SetPinned(string id,bool pinned)=>Change(id,e=>e with{Pinned=pinned,Archived=e.Archived&&!pinned});
+    public bool SetFavorite(string id,bool favorite)=>Change(id,e=>e with{Favorite=favorite});
+    public bool SetAnnotation(string id,ClipAnnotation? annotation)=>Change(id,e=>e with{Annotation=annotation},trim:false);
+    public bool SetDetails(string id,ClipAnnotation? annotation,IReadOnlyList<string>? collections)
+    {
+        if(!ClipboardCollections.Valid(collections))return false;
+        return Change(id,e=>e with{Annotation=annotation,Collections=collections is {Count:>0}?Array.AsReadOnly(collections.ToArray()):null});
+    }
+    bool Change(string id,Func<ClipEntry,ClipEntry> update,bool trim=true)
+    {
+        lock(sync){
+            int index=entries.FindIndex(clip=>clip.Entry.Id==id);if(stopping||index<0)return false;
+            var clip=entries[index];
+            var updated=update(clip.Entry);
+            if(updated.Archived&&!updated.Collected)entries.RemoveAt(index);
+            else entries[index]=clip with{Entry=updated};
+            if(trim)Trim();
+            Schedule();
+        }
+        Changed?.Invoke(this,EventArgs.Empty);return true;
+    }
+    public void Delete(string id)=>RemoveFromHistory(entry=>entry.Id==id);
+    public void ClearUnpinned()=>RemoveFromHistory(entry=>!entry.Pinned);
+
+    static bool CanClean(StoredClip clip) => !clip.Entry.Pinned && !clip.Entry.Archived && !clip.Entry.Collected && clip.TextDraft is null;
+
+    public ClipboardCleanupPreview PreviewCleanup()
+    {
+        const int batchLimit = 50;
+        lock (sync)
+        {
+            var candidates = entries.Where(CanClean).OrderByDescending(clip => clip.Entry.CopiedAt).ToArray();
+            return new(Array.AsReadOnly(candidates.Take(batchLimit).Select(clip => clip.Entry).ToArray()),
+                Math.Max(0, candidates.Length - batchLimit));
+        }
+    }
+
+    public int ConfirmCleanup(ClipboardCleanupPreview preview)
+    {
+        var shown = new HashSet<ClipEntry>(preview.Entries, ReferenceEqualityComparer.Instance);
+        int removed;
+        lock (sync)
+        {
+            if (stopping) return 0;
+            removed = entries.RemoveAll(clip => shown.Contains(clip.Entry) && CanClean(clip));
+            if (removed == 0) return 0;
+            Schedule();
+        }
+        NotifyChanged();
+        return removed;
+    }
+
+    void RemoveFromHistory(Predicate<ClipEntry> matches)
+    {
+        lock(sync){if(stopping||!ClipboardCollections.LeaveHistory(entries,matches))return;Schedule();}
+        Changed?.Invoke(this,EventArgs.Empty);
+    }
     public async Task PasteAsync(string id,bool plainText,nint targetWindow,CancellationToken cancellationToken)
     {
         await Ready.ConfigureAwait(false);ClipEntry entry;lock(sync)entry=entries.First(e=>e.Entry.Id==id).Entry;

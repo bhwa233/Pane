@@ -23,7 +23,7 @@ static partial class Program
         StoredClip[] ReadClips(SettingsStore s)=>new ClipboardStorage().Load(Path.Combine(s.DirectoryPath,"clipboard/history.json"));
         string ZipText(string zip,string name){using var archive=ZipFile.OpenRead(zip);using var reader=new StreamReader(archive.GetEntry(name)!.Open());return reader.ReadToEnd();}
         async Task Reject(Func<Task> action,string message){try{await action();Check(false,"expected rejection");}catch(DataStorageException e){Check(e.Message==message,"error: "+e.Message);}}
-        var source=Store("source");source.Save(source.Current with{General=source.Current.General with{StartWithWindows=true,PanelRadius=30},Clipboard=source.Current.Clipboard with{KeepHotkeyWithWinV=false},Words=new(new(KeyModifiers.None,0xA3){DoubleTap=true},false,true,WordsJoin.Line)});
+        var source=Store("source");source.Save(source.Current with{General=source.Current.General with{StartWithWindows=true,PanelRadius=30},Clipboard=source.Current.Clipboard with{KeepHotkeyWithWinV=false,ExcludedText=["source-private-fixture"]},Words=new(new(KeyModifiers.None,0xA3){DoubleTap=true},false,true,WordsJoin.Line)});
         var originalImage=Image(source,11,true);var text=Text("hello",true,1);
         Clips(source,text,Text("code"),originalImage,new(new("file",ClipKind.Files,null,["D:\\fixture.txt"],null,null,null,"fixture",null,DateTimeOffset.UtcNow,false),"file"));
         Put(Path.Combine(source.DirectoryPath,"gestures.json"),"{}");Put(Path.Combine(source.DirectoryPath,"launcher-usage.json"),"{\"app\":{\"Count\":3,\"LastUsed\":\"2026-11-01T00:00:00Z\"}}");
@@ -41,6 +41,7 @@ static partial class Program
             var settingsNode=JsonNode.Parse(ZipText(zip,"settings/settings.json"))!;
             Check(settingsNode["Storage"]==null&&settingsNode["General"]!["StartWithWindows"]==null&&settingsNode["Launcher"]!["Position"]==null,"local fields absent");
             Check(settingsNode["Clipboard"]!["KeepHotkeyWithWinV"]!.GetValue<bool>()==false,"084 exported preference");
+            Check(settingsNode["Clipboard"]!["ExcludedText"] is null,"clipboard text exclusions absent from the backup");
             Check(settingsNode["Words"]!["Hotkey"]!["DoubleTap"]!.GetValue<bool>()&&settingsNode["Words"]!["Join"]!.GetValue<string>()=="Line","093 exported words");
             var preview=await Transfer(source).InspectAsync(zip,default);Check(preview.HasSettings&&preview.HasUsage&&preview.ClipboardEntries==(option==ClipboardExport.None?0:option==ClipboardExport.TextOnly?2:3)&&preview.ClipboardImages==(option==ClipboardExport.WithImages?1:0),"preview counts");
             if(option!=ClipboardExport.None){var clips=JsonSerializer.Deserialize(ZipText(zip,"clipboard/history.json"),ClipboardJson.Default.StoredClipArray)!;Check(clips.All(c=>c.Entry.Kind!=ClipKind.Files),"no files");Check(clips[0].Entry.Pinned&&clips[0].Entry.CopiedAt==text.Entry.CopiedAt&&clips[0].Entry.Source=="fixture","metadata");}
@@ -56,7 +57,8 @@ static partial class Program
         await Reject(()=>Transfer(source).StageImportAsync(none,new(true,true,true,DataImportMode.Replace),null,default),Strings.Data_ImportNothing);
         string plain=Path.Combine(root,"plain");Put(plain,"plain");
         foreach(string bad in new[]{plain,Bad("no-manifest",_=>{}),Bad("broken",z=>Entry(z,"manifest.json","{"))})await Reject(()=>Transfer(source).InspectAsync(bad,default),Strings.Data_ImportInvalid);
-        var newer=manifest.DeepClone();newer["format"]=2;await Reject(()=>Transfer(source).InspectAsync(Bad("newer",z=>Entry(z,"manifest.json",newer.ToJsonString())),default),Strings.Data_ImportNewerFormat);
+        var incomplete=manifest.DeepClone();incomplete["format"]=3;await Reject(()=>Transfer(source).InspectAsync(Bad("missing-ocr",z=>Entry(z,"manifest.json",incomplete.ToJsonString())),default),Strings.Data_ImportInvalid);
+        var newer=manifest.DeepClone();newer["format"]=4;await Reject(()=>Transfer(source).InspectAsync(Bad("newer",z=>Entry(z,"manifest.json",newer.ToJsonString())),default),Strings.Data_ImportNewerFormat);
         foreach(string name in new[]{"../escape.txt","/absolute.txt","C:/absolute.txt","clipboard/../../escape.txt"}){
             string bad=Bad("slip"+Guid.NewGuid().ToString("N"),z=>{Entry(z,"manifest.json",manifest.ToJsonString());Entry(z,name,"bad");});
             await Reject(()=>Transfer(source).StageImportAsync(bad,new(true,true,true,DataImportMode.Replace),null,default),Strings.Data_ImportInvalid);
@@ -74,12 +76,13 @@ static partial class Program
         for(int i=0;i<bytes.Length-46;i++)if(BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(i,4))==0x02014b50)BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(i+24,4),(uint)DataStorage.ImportFileLimit);
         File.WriteAllBytes(totalZip,bytes);
         await Reject(()=>Transfer(source).StageImportAsync(totalZip,new(true,true,true,DataImportMode.Replace),null,default),Strings.Data_ImportTooLarge);
-        var target=Store("target");string large=Path.Combine(root,"large");Directory.CreateDirectory(large);target.Save(target.Current with{Storage=new(large),General=target.Current.General with{StartWithWindows=false},Launcher=target.Current.Launcher with{Position=new("fixture",.2,.3)}});
+        var target=Store("target");string large=Path.Combine(root,"large");Directory.CreateDirectory(large);target.Save(target.Current with{Storage=new(large),General=target.Current.General with{StartWithWindows=false},Launcher=target.Current.Launcher with{Position=new("fixture",.2,.3)},Clipboard=target.Current.Clipboard with{ExcludedText=["target-private-fixture"]}});
         var oldImage=Image(target,22);Clips(target,Text("old"),oldImage);
         Put(Path.Combine(target.DirectoryPath,"launcher-usage.json"),"{\"app\":{\"Count\":5,\"LastUsed\":\"2026-11-02T00:00:00Z\"}}");Put(Path.Combine(target.DirectoryPath,"terminal-history.json"),"[\"local\",\"shared\"]");
         async Task Apply(SettingsStore s,DataImportOptions options,string? zip=null){await Transfer(s).StageImportAsync(zip??full,options,null,default);StorageRecovery.RecoverAll(s.DirectoryPath);s.Load();Check(Transfer(s).LastImport?.Error==null,"apply success");}
         await Apply(target,new(true,false,false,DataImportMode.Replace));
         Check(!target.Current.Clipboard.KeepHotkeyWithWinV,"084 imported preference");
+        Check(target.Current.Clipboard.ExcludedText.SequenceEqual(["target-private-fixture"]),"import keeps local clipboard text exclusions");
         Check(target.Current.Words==source.Current.Words,"093 imported words including hotkey");
         Check(target.Current.General.PanelRadius==30&&!target.Current.General.StartWithWindows&&target.Current.Storage.LargeFilesDirectory==large&&target.Current.Launcher.Position?.MonitorId=="fixture","local settings preserved");
         Check(ReadClips(target).Length==2&&File.ReadAllText(Path.Combine(target.DirectoryPath,"launcher-usage.json")).Contains("5"),"settings only");

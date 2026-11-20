@@ -1,0 +1,18 @@
+@{
+    'ImageReader.exe' = '92544349421bdcf5c69688244f39765beb35e17d49a9d3d2981b6b0a6ca70ba3'
+    'onnxruntime.dll' = 'dec964ab1ee36cc9b0ae247d13b376627992fc57dec0454354017ab8fd84f1ea'
+    'onnxruntime_providers_shared.dll' = 'a2b3a50956aa75a9879c8472bc7df4f7a8072bcd2db19a1b7d988e7688f293ef'
+    'msvcp140.dll' = '7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca'
+    'msvcp140_1.dll' = '206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982'
+    'vcruntime140.dll' = 'd1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7'
+    'vcruntime140_1.dll' = 'a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e'
+    'resources.json' = '1a1df22170ee1a7847bc9e3afffcf35e30c446e2854171462555eb35d0cc74b4'
+    'THIRD_PARTY_NOTICES.md' = '24013cf06fb3c50d54b4e2f18a46beeb054c61f1903bd9b6063edbb6406eed41'
+    'legal/Ling-LICENSE.txt' = 'e6071bf8dbdbe2d24db453328d9396fa37ad3cbb19f4d89fe24f3440f3e16628'
+    'legal/Microsoft-VC-Runtime-LICENSE.docx' = '08651651a7602fc7c0e2763de0fde1ff9f868df2780597cd1775ee9d6441c783'
+    'legal/Microsoft-VC-Runtime-LICENSE.txt' = 'b45528e3b8bc5abf32ba78b6c053f40c724d7925b821cc97cdd8c28a2ae17ddb'
+    'legal/Microsoft-VC-Runtime-provenance.json' = 'cbf6d6bd12cc30067ba826e28311d2d86fe426289c7c9b998561bfb8e9c04dee'
+    'legal/ONNX-Runtime-LICENSE.txt' = '2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c'
+    'legal/ONNX-Runtime-ThirdPartyNotices.txt' = 'e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc'
+    'legal/OpenCV-LICENSE.txt' = 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'
+}

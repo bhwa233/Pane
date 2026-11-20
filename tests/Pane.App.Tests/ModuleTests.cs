@@ -18,16 +18,16 @@ static class ModuleTests
         int checks = 0;
         void Check(bool ok, string message) { checks++; if (!ok) throw new Exception(message); }
         string root = Path.Combine(AppContext.BaseDirectory, "results", "modules-" + Guid.NewGuid().ToString("N"));
-        var infos = new[] { "launcher", "clipboard", "gestures", "super-panel", "ai", "folder-jump", "rename" }
+        var infos = new[] { "launcher", "clipboard", "gestures", "super-panel", "ai", "folder-jump" }
             .Select(id => new ModuleInfo(id, ModuleCategory.Files, "test", true, [])).ToArray();
         for (int bits = 0; bits < 8; bits++)
         {
             var legacy = defaults with { Modules = null, Clipboard = defaults.Clipboard with { Enabled = (bits & 1) != 0 },
                 SuperPanel = defaults.SuperPanel with { Enabled = (bits & 2) != 0 }, FolderJump = defaults.FolderJump with { Enabled = (bits & 4) != 0 } };
             var migrated = ModuleSettings.Normalize(legacy, infos);
-            Check(migrated.Modules!.Count == 7, "migration contains all modules");
+            Check(migrated.Modules!.Count == 6, "migration contains all modules");
             Check(migrated.Modules["clipboard"] == legacy.Clipboard.Enabled && migrated.Modules["super-panel"] == legacy.SuperPanel.Enabled && migrated.Modules["folder-jump"] == legacy.FolderJump.Enabled, "legacy combinations");
-            Check(new[] { "launcher", "gestures", "ai", "rename" }.All(id => migrated.Modules[id]), "new module defaults");
+            Check(new[] { "launcher", "gestures", "ai" }.All(id => migrated.Modules[id]), "new module defaults");
             var store = new SettingsStore(Path.Combine(root, bits.ToString()), defaults); store.Save(migrated); store.Load();
             Check(store.Current.Modules!["clipboard"] == legacy.Clipboard.Enabled, "migration persisted");
         }

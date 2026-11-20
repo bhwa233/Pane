@@ -31,11 +31,14 @@ internal static class PortableCatalog
     internal static CatalogEntry? Candidate(string path,LauncherActionPlatform platform)
     {
         var target=Resolve(path,platform);if(target==null)return null;
+        string launch=Normalize(path)!;
+        bool shortcut=Path.GetExtension(launch).Equals(".lnk",StringComparison.OrdinalIgnoreCase);
         string? description=null;
-        try{description=FileVersionInfo.GetVersionInfo(target.Path).FileDescription;}catch(Exception e) when(e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception){}
+        if(!shortcut)
+            try{description=FileVersionInfo.GetVersionInfo(target.Path).FileDescription;}catch(Exception e) when(e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception){}
         // 参数按 Windows 引号规则重新编码，保留大小写及空参数。
         string args=target.RawArguments??string.Join(' ',target.Arguments.Select(Quote));
-        return new(DisplayName(target.Path,description),"",target.Path,args,Normalize(path)!,2,Id(path),target.Path,0);
+        return new(DisplayName(shortcut?launch:target.Path,description),"",target.Path,args,launch,2,Id(launch),target.Path,0);
     }
     internal static string Quote(string value)
     {

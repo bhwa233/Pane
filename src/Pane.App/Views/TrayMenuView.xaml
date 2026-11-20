@@ -42,6 +42,10 @@
 
     <Grid>
         <StackPanel x:Name="Root" Width="264" Padding="6" VerticalAlignment="Top">
+            <c:MoveSurface x:Name="DragHandle" Height="14">
+                <Border Width="28" Height="3" CornerRadius="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{ThemeResource PaneText3Brush}"/>
+            </c:MoveSurface>
             <TextBlock x:Name="UpdateHead" Margin="10,6,10,4" Visibility="Collapsed"
                        FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
             <Grid x:Name="UpdateItem" Tag="update" Style="{StaticResource ItemRow}" Visibility="Collapsed">
@@ -63,6 +67,46 @@
                 <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Tray_OpenClipboard}" Style="{StaticResource ItemText}"/>
                 <StackPanel x:Name="ClipboardKeys" Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center"/>
             </Grid>
+            <Grid x:Name="DesktopCardsItem" Tag="desktop-cards" Style="{StaticResource ItemRow}" Visibility="Collapsed">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <c:PaneIcon Glyph="pin" Style="{StaticResource ItemIcon}"/>
+                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.DesktopCards_Title}" Style="{StaticResource ItemText}"/>
+            </Grid>
+            <Grid x:Name="DesktopCardsToggleItem" Tag="desktop-cards-toggle" Style="{StaticResource ItemRow}" Visibility="Collapsed" Padding="0">
+                <Button x:Name="DesktopCardsToggleButton" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                        IsTabStop="False" Click="DesktopCardsToggleClicked">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter Content="{TemplateBinding Content}" Background="Transparent" VerticalContentAlignment="Center"/>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Grid Padding="10,0,10,0" ColumnSpacing="10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <c:PaneIcon x:Name="DesktopCardsToggleIcon" Style="{StaticResource ItemIcon}"/>
+                        <TextBlock x:Name="DesktopCardsToggleText" Grid.Column="1" Style="{StaticResource ItemText}"/>
+                    </Grid>
+                </Button>
+            </Grid>
+            <Grid x:Name="NotesItem" Tag="notes" Style="{StaticResource ItemRow}" Visibility="Collapsed">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <c:PaneIcon Glyph="pencil" Style="{StaticResource ItemIcon}"/>
+                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Module_Notes_Name}" Style="{StaticResource ItemText}"/>
+            </Grid>
+            <Grid x:Name="ScreenshotsItem" Tag="screenshots" Style="{StaticResource ItemRow}" Visibility="Collapsed">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <c:PaneIcon Glyph="scissors" Style="{StaticResource ItemIcon}"/>
+                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Module_Screenshots_Name}" Style="{StaticResource ItemText}"/>
+            </Grid>
+            <Grid x:Name="DictionaryItem" Tag="dictionary" Style="{StaticResource ItemRow}" Visibility="Collapsed">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <c:PaneIcon Glyph="search" Style="{StaticResource ItemIcon}"/>
+                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Translate_Dictionary}" Style="{StaticResource ItemText}"/>
+            </Grid>
+            <Grid x:Name="TrafficItem" Tag="traffic" Style="{StaticResource ItemRow}" Visibility="Collapsed">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <c:PaneIcon Glyph="globe" Style="{StaticResource ItemIcon}"/>
+                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Module_Traffic_Name}" Style="{StaticResource ItemText}"/>
+            </Grid>
             <Grid x:Name="TimerItem" Tag="timer" Style="{StaticResource ItemRow}" Visibility="Collapsed">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <c:PaneIcon Glyph="timer" Style="{StaticResource ItemIcon}"/>
@@ -72,11 +116,6 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <c:PaneIcon Glyph="close" Style="{StaticResource ItemIcon}"/>
                 <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Tray_TimerCancel}" Style="{StaticResource ItemText}"/>
-            </Grid>
-            <Grid x:Name="RenameItem" Tag="rename" Style="{StaticResource ItemRow}" Visibility="Collapsed">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <c:PaneIcon Glyph="pencil" Style="{StaticResource ItemIcon}"/>
-                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Tray_OpenRename}" Style="{StaticResource ItemText}"/>
             </Grid>
             <Grid Tag="settings" Style="{StaticResource ItemRow}">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>

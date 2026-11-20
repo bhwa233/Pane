@@ -89,6 +89,16 @@ static partial class Program
         var links=PortableCatalog.Scan([Portable057(shortcut),Portable057(nonExe),Portable057(Path.Combine(root,"gone.exe"))],default);
         Check(links.Candidates.Length==1&&links.Candidates[0].Row.Target==first&&links.Candidates[0].Row.Parsing==shortcut,"057 真实快捷方式仅接纳exe且保留启动入口");
         Check(links.Status[shortcut].Programs==1&&links.Status[Path.Combine(root,"gone.exe")].State==PortableScanState.Missing,"057 单程序存在和缺失状态");
+        var alternate = Path.Combine(root, "Alpha Workspace.lnk");
+        Marshal.ThrowExceptionForHR(CreatePaneShortcut(alternate, first, outside));
+        var variants = PortableCatalog.Scan([Portable057(first), Portable057(shortcut), Portable057(alternate)], default);
+        var variantGroups = AppDeduplication.Resolve(variants.Candidates.Select(candidate => candidate.Row));
+        Check(variantGroups.Length == 3 && variantGroups.All(group => group.Rows.Length == 1), "057 目标和参数相同的便携快捷方式不互相合并");
+        var entriesById = variantGroups.ToDictionary(group => group.StableId, group => group.Rows[0]);
+        Check(entriesById.TryGetValue(PortableCatalog.Id(shortcut), out var defaultLink) && defaultLink.Parsing == shortcut &&
+            entriesById.TryGetValue(PortableCatalog.Id(alternate), out var workspaceLink) && workspaceLink.Parsing == alternate &&
+            workspaceLink.Name == "Alpha Workspace" && entriesById.TryGetValue(PortableCatalog.Id(first), out var executable) &&
+            executable.Parsing == first, "057 独立快捷方式保留原始入口、可搜索名称和 Id，即使目标和参数相同");
         Check(PortableCatalog.Scan([Portable057(Path.Combine(root,"gone"),PortableKind.Folder)],default).Status.Values.Single().State==PortableScanState.Missing,"057 缺失目录状态");
         var row=scan.Candidates[0].Row;var installed=row with{Source=0,Name="Installed",LegacyId="app:installed"};
         var groups=AppDeduplication.Resolve([row,installed]);

@@ -4,7 +4,7 @@ using Pane.Localization;
 // 选中外文自动翻译（2026-10-30，原型 launcher.html #sp，设置 → AI 里打开）：弹出就翻、不防抖，单个单词也翻；
 // 超过约 2000 字不自动翻，给「翻译」按钮；中文照旧。自动翻译时动作换成 复制译文 / 翻译窗口 / 问 AI / 总结 / 复制原文 / 搜索。
 // Tab：到翻译窗口继续（自动翻译、翻译结果卡片时）。
-// 选中的是文件（040）：动作换成 批量重命名 / 复制路径 / 复制名称（每行一个），不自动翻译。
+// 选中的是文件（040）：动作换成 复制路径 / 复制名称（每行一个），不自动翻译。
 using System.ComponentModel;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -24,7 +24,7 @@ namespace Pane.Views;
 public sealed partial class SuperAction : INotifyPropertyChanged
 {
     public SuperAction(string id, string name, string glyph, bool ai, double width = 56) { Id = id; Name = name; Glyph = glyph; IsAi = ai; ItemWidth = width; }
-    /// <summary>格子宽：平时 6 个各 56；选中文件时只有 3 个，加宽到 84（「批量重命名」放得下）。</summary>
+    /// <summary>格子宽：平时 6 个各 56；选中文件时只有 2 个，加宽到 84。</summary>
     public double ItemWidth { get; }
     public string Id { get; }
     public string Name { get; }
@@ -39,6 +39,11 @@ public sealed partial class SuperAction : INotifyPropertyChanged
 public sealed partial class SuperView : UserControl, IPanelView, IDisposable
 {
     const string DemoSelection = "Glassmorphism relies on background blur, translucency and a subtle highlight border.";
+    // 设计预览 PANE_DESIGN_SELECTION=files 用的假文件（原 RenameSample 的照片夹具，随批量重命名移除后内联）。
+    const string DesignFolder = @"D:\照片\2026-10 青岛";
+    static readonly string[] DesignFiles =
+        ["20261012_093015", "20261012_101244", "20261012_164802", "20261013_081930", "20261013_120511", "20261013_183340",
+         "20261014_075902", "20261014_102217", "20261014_145530", "20261015_090118", "20261015_112645", "20261015_190023"];
 
     readonly IAiService ai;
     readonly ISelectionActions actions;
@@ -56,9 +61,8 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
     public event Action<string>? OpenTranslate;
     /// <summary>问 AI：打开对话窗口，选中的文字放进输入框，等你写问题。</summary>
     public event Action<string>? OpenChat;
-    /// <summary>批量重命名：打开重命名窗口，带上选中的文件。</summary>
-    public event Action<IReadOnlyList<string>>? OpenRename;
-    readonly List<SuperAction> fileActions = [new("rename", Strings.Common_Rename, "pencil", false, 84), new("copy-path", Strings.Common_CopyPath, "link", false, 84), new("copy-name", Strings.SuperPanel_CopyName, "copy", false, 84)];
+    /// <summary>选中文件时的动作（040）。批量重命名已随功能移除，只剩复制路径 / 复制名称。</summary>
+    readonly List<SuperAction> fileActions = [new("copy-path", Strings.Common_CopyPath, "link", false, 84), new("copy-name", Strings.SuperPanel_CopyName, "copy", false, 84)];
     IReadOnlyList<string>? files;
     int selected;
     bool activate;
@@ -115,7 +119,7 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
     public Size PreferredSize => new(360, 140);
     public event EventHandler<Size>? SizeRequested;
     public event EventHandler? CloseRequested;
-    public UIElement? DragRegion => null;
+    public UIElement DragRegion => SelectionHeader;
 
     public void OnShowing(PanelShowContext context)
     {
@@ -126,7 +130,7 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
         // 设计预览：PANE_DESIGN_SELECTION 指定选中文字（"-" 表示没读到）；宿主没给选区时用演示文字
         var preview = Environment.GetEnvironmentVariable("PANE_DESIGN_SELECTION");
         var sel = selection ?? (preview == "-" ? new SelectionResult(null, 0, SelectionFailure.Empty)
-                              : preview == "files" ? new SelectionResult(null, 0, SelectionFailure.None) { Files = RenameSample.Photos }
+                              : preview == "files" ? new SelectionResult(null, 0, SelectionFailure.None) { Files = [.. DesignFiles.Select(name => System.IO.Path.Combine(DesignFolder, name))] }
                                               : new SelectionResult(string.IsNullOrEmpty(preview) ? DemoSelection : preview, 0, SelectionFailure.None));
         selection = null; // 每次呼出由宿主重新给
         current = sel;
@@ -137,7 +141,7 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
         {
             ShowFiles(files);
             StartAuto(null);
-            SetItems(ModuleGate.On(Contracts.ModuleIds.Rename) ? fileActions : fileActions.Where(a => a.Id != "rename").ToList());   // 批量重命名停用（055）
+            SetItems(fileActions);
             foreach (var a in items) a.Enabled = true;
             highlight.Hide();
             selected = 0;
@@ -187,7 +191,6 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
         var id = items[index].Id;
         var list = files;
         CloseRequested?.Invoke(this, EventArgs.Empty);
-        if (id == "rename") { OpenRename?.Invoke(list); return; }
         var text = string.Join(Environment.NewLine, id == "copy-path" ? list : list.Select(p => System.IO.Path.GetFileName(p)));
         try { await actions.CopyAsync(text, CancellationToken.None); }
         catch (Exception e) { ((App)Application.Current).ReportFailure(id == "copy-path" ? Strings.Common_CopyPath : Strings.SuperPanel_CopyName, e); }

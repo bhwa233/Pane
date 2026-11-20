@@ -27,7 +27,6 @@ public sealed partial class App
         if(Take("module-open",out var owner))
         {
             if(owner.Trim()==ModuleIds.Ai){ShowTranslate(null);ShowChat(null,null);}
-            else if(owner.Trim()==ModuleIds.Rename)ShowRename([],0);
             else if(owner.Trim()==ModuleIds.Launcher)ShowFiles("Pane055-no-match-"+Guid.NewGuid().ToString("N"),null);
             File.WriteAllText(output+".module-open-result",ModuleDiagnostics());return true;
         }
@@ -62,12 +61,12 @@ public sealed partial class App
     {
         ClipboardHistory = clipboardBridge;
         secondaryActions = demo ? new Pane.DesignData.SelectionActionsSample() : new Pane.Services.SelectionActions();
-        FileSelection = demo ? new Pane.DesignData.RenameSample() : new Pane.Services.FileSelection();
+        FileSelection = new Pane.Services.FileSelection();
         selectionReader = new Pane.Services.SelectionReader(new Pane.Services.WindowsSelectionPlatform(),
             () => Store.Current.SuperPanel.ClipboardFallback, files: FileSelection as Pane.Services.FileSelection);
         // 新能力只需新增一个类，在此登记；显示顺序由这个列表决定。
         var host = new ModuleHost([new LauncherModule(this), new ClipboardModule(this), new GesturesModule(this),
-            new SuperModule(this), new AiModule(this), new FolderJumpModule(this), new RenameModule(this), new PowerTimerModule(this), new WordsModule(this)], Store,
+            new SuperModule(this), new AiModule(this), new FolderJumpModule(this), new PowerTimerModule(this), new WordsModule(this), new TrafficModule(this), new NotesModule(this), new ScreenshotsModule(this)], Store,
             () => WinVService?.State is WinVState.On or WinVState.Pending, OnUi);
         Modules = host;
         host.Changed += (_, _) => { shell?.Apply(ModuleShellSettings()); WakeFrames(); };
@@ -76,9 +75,10 @@ public sealed partial class App
     Pane.Settings.PaneSettings ModuleShellSettings()
     {
         var s = Store.Current;
-        if (Modules == null) return s with { Modules = new() { [ModuleIds.Launcher] = false, [ModuleIds.Clipboard] = false, [ModuleIds.Words] = false } };
+        if (Modules == null) return s with { Modules = new() { [ModuleIds.Launcher] = false, [ModuleIds.Clipboard] = false, [ModuleIds.Words] = false, [ModuleIds.Screenshots] = false } };
         return s with { Modules = new(s.Modules ?? []) { [ModuleIds.Launcher] = Modules.IsActive(ModuleIds.Launcher),
-            [ModuleIds.Clipboard] = Modules.IsActive(ModuleIds.Clipboard), [ModuleIds.Words] = Modules.IsActive(ModuleIds.Words) },
+            [ModuleIds.Clipboard] = Modules.IsActive(ModuleIds.Clipboard), [ModuleIds.Words] = Modules.IsActive(ModuleIds.Words),
+            [ModuleIds.Screenshots] = Modules.IsActive(ModuleIds.Screenshots), [ModuleIds.SuperPanel] = Modules.IsActive(ModuleIds.SuperPanel) },
             Clipboard = s.Clipboard with { Enabled = Modules.IsActive(ModuleIds.Clipboard) } };
     }
     bool AllowModule(string id)
@@ -86,8 +86,10 @@ public sealed partial class App
         if (Modules == null || Modules.IsActive(id)) { LastModuleCommandResult = "accepted:" + id; return true; }
         LastModuleCommandResult = "disabled:" + id;
         string name = id switch { ModuleIds.Launcher => Strings.Common_Launcher, ModuleIds.Clipboard => Strings.Common_Clipboard,
-            ModuleIds.SuperPanel => Strings.Common_SuperPanel, ModuleIds.Ai => "AI", ModuleIds.Rename => Strings.Common_Rename,
-            ModuleIds.Gestures => Strings.Module_Gestures_Name, ModuleIds.Words => Strings.Module_Words_Name, _ => Strings.Module_FolderJump_Name };
+            ModuleIds.SuperPanel => Strings.Common_SuperPanel, ModuleIds.Ai => "AI",
+            ModuleIds.Gestures => Strings.Module_Gestures_Name, ModuleIds.Words => Strings.Module_Words_Name,
+            ModuleIds.Traffic => Strings.Module_Traffic_Name, ModuleIds.Notes => Strings.Module_Notes_Name,
+            ModuleIds.Screenshots => Strings.Module_Screenshots_Name, _ => Strings.Module_FolderJump_Name };
         var text = string.Format(Strings.Module_NotEnabled, (object?)name);
         gestures?.Hint(new(GestureHintKind.Notice, [], CommandName: text));
         shell?.NotifyOnce(text);
@@ -149,7 +151,7 @@ public sealed partial class App
         public abstract Task StartAsync(CancellationToken token);
         public abstract Task StopAsync(CancellationToken token);
     }
-    sealed class LauncherModule(App app) : Capability(app, ModuleIds.Launcher, ModuleCategory.Search, "search", ModuleIds.Ai, ModuleIds.Clipboard, ModuleIds.Rename)
+    sealed class LauncherModule(App app) : Capability(app, ModuleIds.Launcher, ModuleCategory.Search, "search", ModuleIds.Ai, ModuleIds.Clipboard)
     {
         public override Task StartAsync(CancellationToken token)
         {
@@ -207,6 +209,7 @@ public sealed partial class App
             var view = new ClipboardView(history);
             view.SendToLauncher += (_, entry) => { if (a.AllowModule(ModuleIds.Launcher)) { a.launcherView?.AttachNext(entry); a.Command("show-launcher"); } };
             a.AddModulePanel("clipboard", Strings.Common_Clipboard, view, view, PanelPlacement.Pointer);
+            a.panels["clipboard"].HideOnBlur = () => view.CanHideOnBlur;
             a.WireClipboardLauncher(a.panels["clipboard"], view);
         }
         public override async Task StopAsync(CancellationToken token)
@@ -237,7 +240,7 @@ public sealed partial class App
             a.gestures?.Dispose(); a.gestures = null; await a.UpdateMouse(); if(reclaim)a.ReclaimModuleViews();
         }
     }
-    sealed class SuperModule(App app) : Capability(app, ModuleIds.SuperPanel, ModuleCategory.Mouse, "circle-dot", ModuleIds.Ai, ModuleIds.Rename)
+    sealed class SuperModule(App app) : Capability(app, ModuleIds.SuperPanel, ModuleCategory.Mouse, "circle-dot", ModuleIds.Ai)
     {
         public override async Task StartAsync(CancellationToken token)
         {
@@ -296,17 +299,11 @@ public sealed partial class App
     }
     sealed class WordsModule(App app) : Capability(app, ModuleIds.Words, ModuleCategory.Clipboard, "words", ModuleIds.Clipboard, ModuleIds.Launcher)
     {
-        public override Task StartAsync(CancellationToken token) { App.Words = App.demo ? new Pane.DesignData.TextSegmenterSample() : new Pane.Services.Words.TextSegmenter(); if(!App.demo)Pane.Services.PanelKeyRouter.SetWordsEnabled(true); return Task.CompletedTask; }
+        public override Task StartAsync(CancellationToken token) { App.Words = App.demo ? new Pane.DesignData.TextSegmenterSample() : new Pane.Services.Words.TextSegmenter(); return Task.CompletedTask; }
         public override Task StopAsync(CancellationToken token)
         {
             App.wordsSelectionCancellation?.Cancel(); App.RemoveSecondary(SecondaryId.Words); App.Words = null;
-            if(!App.demo)Pane.Services.PanelKeyRouter.SetWordsEnabled(false);
             return Task.CompletedTask;
         }
-    }
-    sealed class RenameModule(App app) : Capability(app, ModuleIds.Rename, ModuleCategory.Files, "pencil")
-    {
-        public override Task StartAsync(CancellationToken token) { App.Renamer = App.demo ? new Pane.DesignData.RenameSample() : new Pane.Services.Rename.BatchRenamer(); return Task.CompletedTask; }
-        public override Task StopAsync(CancellationToken token) { App.RemoveSecondary(SecondaryId.Rename); App.Renamer = null; return Task.CompletedTask; }
     }
 }

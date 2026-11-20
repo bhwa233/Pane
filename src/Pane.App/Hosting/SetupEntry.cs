@@ -22,6 +22,7 @@ internal static class SetupEntry
     {
         if (args is ["--restore-winv", var dataDirectory])
         {
+            if (SetupPaths.RequiresIsolation) { Environment.ExitCode = 2; return true; }
             try
             {
                 var service = new Pane.Services.WinV.WinVReplacement(Path.GetFullPath(dataDirectory),
@@ -51,7 +52,7 @@ internal static class SetupEntry
             return true;
         }
         if (args.FirstOrDefault() is not ("--setup" or "--uninstall" or "--uninstall-worker")) return false;
-        UninstallChain.Log("application-entry", path: Environment.ProcessPath);
+        if (!SetupPaths.RequiresIsolation) UninstallChain.Log("application-entry", path: Environment.ProcessPath);
         try
         {
             int isolatedIndex = Array.IndexOf(args, "--self-test-root");
@@ -64,7 +65,12 @@ internal static class SetupEntry
                 if (i + 1 >= args.Length || args[i] is not ("--package" or "--temp-dir" or "--self-test-root" or "--ready-event" or "--shown-event" or "--launcher-pid")) throw new ArgumentException("安装参数无效"); // 不翻译：异常
                 options.Add(args[i], args[i + 1]);
             }
-            IsolatedRoot = options.GetValueOrDefault("--self-test-root");
+            IsolatedRoot = options.TryGetValue("--self-test-root", out var root) ? SetupPaths.Isolated(root).Root : null;
+            if (SetupPaths.RequiresIsolation)
+            {
+                if (IsolatedRoot == null || AutoUpdate) { Environment.ExitCode = 2; return true; }
+                UninstallChain.Log("application-entry", path: Environment.ProcessPath);
+            }
             ReadyEvent = options.TryGetValue("--ready-event", out var signal) ? UninstallChain.ValidateEvent(signal) : null;
             ShownEvent = options.TryGetValue("--shown-event", out var shown) ? UninstallChain.ValidateEvent(shown) : null;
             if (options.TryGetValue("--launcher-pid", out var parent)) LauncherPid = int.Parse(parent);
@@ -101,6 +107,7 @@ internal static class SetupEntry
         }
         catch (Exception error)
         {
+            if (SetupPaths.RequiresIsolation && IsolatedRoot == null) { Environment.ExitCode = 2; return true; }
             UninstallChain.Log("application-entry", "failed", error);
             UninstallChain.Signal(ReadyEvent);
             Environment.ExitCode = 1;

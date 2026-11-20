@@ -8,14 +8,14 @@ using Pane.Contracts;
 using Pane.Settings;
 namespace Pane.Services.Launcher;
 
-internal sealed record LaunchRequest(string FileName,string[] Arguments,string WorkingDirectory,bool Elevated=false);
+internal sealed record LaunchRequest(string FileName,string[] Arguments,string WorkingDirectory,bool Elevated=false,bool Direct=false);
 internal interface ILaunchProcess { Task StartAsync(LaunchRequest request,CancellationToken token); }
 internal sealed class LaunchProcess:ILaunchProcess
 {
     public Task StartAsync(LaunchRequest request,CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        var start=new ProcessStartInfo(request.FileName){UseShellExecute=true,WorkingDirectory=request.WorkingDirectory,Verb=request.Elevated?"runas":""};
+        var start=new ProcessStartInfo(request.FileName){UseShellExecute=request.Elevated||!request.Direct,WorkingDirectory=request.WorkingDirectory,Verb=request.Elevated?"runas":""};
         foreach(var arg in request.Arguments)start.ArgumentList.Add(arg);
         using var process=Process.Start(start);
         return Task.CompletedTask;

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Pane.Views.DesktopScreenshotView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="using:Pane.Views.Controls"
+    xmlns:loc="using:Pane.Localization">
+    <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid x:Name="Header" Background="Transparent" Padding="12,0,6,0" ColumnSpacing="6"
+              BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="0,0,0,1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <c:PaneIcon Glyph="image" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
+            <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Screenshots_DesktopCard}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" FontSize="{StaticResource PaneTextSm}" FontWeight="SemiBold"
+                       Foreground="{ThemeResource PaneText1Brush}"/>
+            <Button x:Name="EditButton" Grid.Column="2" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="EditClicked"
+                    AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Edit}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_Edit}">
+                <c:PaneIcon Glyph="pencil" Width="13" Height="13"/>
+            </Button>
+            <Button Grid.Column="3" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="OpenClicked"
+                    AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_OpenHistory}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_OpenHistory}">
+                <c:PaneIcon Glyph="external" Width="13" Height="13"/>
+            </Button>
+            <Button Grid.Column="4" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="UnpinClicked"
+                    AutomationProperties.Name="{x:Bind loc:Strings.Notes_UnpinDesktop}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_UnpinDesktop}">
+                <c:PaneIcon Glyph="pin-off" Width="13" Height="13"/>
+            </Button>
+        </Grid>
+        <Image x:Name="Preview" Grid.Row="1" Margin="8" Stretch="Uniform" ImageFailed="ImageFailed"
+               AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Preview}"/>
+        <TextBlock x:Name="ImageError" Grid.Row="1" Margin="12" VerticalAlignment="Center" HorizontalAlignment="Center"
+                   TextWrapping="Wrap" Visibility="Collapsed" Text="{x:Bind loc:Strings.Screenshots_LoadFailed}"
+                   FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+    </Grid>
+</UserControl>

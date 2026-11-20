@@ -1,17 +1,20 @@
 // 替换剪贴板读取边界，直接运行产品解码与编码实现；夹具不进入系统剪贴板。
 #define NOMINMAX
 #include <windows.h>
+#include <vector>
 static UINT fixtureFormat;
 static HGLOBAL fixtureMemory;
-static UINT WINAPI FixtureRegister(LPCWSTR name){return wcscmp(name,L"Pane.OwnClipboard")==0?0xc002:wcscmp(name,L"Pane.SourceClipboard")==0?0xc003:0xc001;}
+static UINT WINAPI FixtureRegister(LPCWSTR name){return wcscmp(name,L"Pane.OwnClipboard")==0?0xc002:wcscmp(name,L"Pane.SourceClipboard")==0?0xc003:wcscmp(name,L"HTML Format")==0?0xc004:wcscmp(name,L"Rich Text Format")==0?0xc005:0xc001;}
 static BOOL WINAPI FixtureAvailable(UINT format){return format==fixtureFormat;}
 static HANDLE WINAPI FixtureGet(UINT format){return format==fixtureFormat?fixtureMemory:nullptr;}
 static bool fixtureOwn=false,fixtureSource=false,fixtureText=false;
+static std::vector<BYTE> fixtureHtml,fixtureRtf;
 static BOOL WINAPI FixtureOpen(HWND){return TRUE;}
 static BOOL WINAPI FixtureClose(){return TRUE;}
-static BOOL WINAPI FixtureEmpty(){fixtureOwn=false;fixtureSource=false;fixtureText=false;return TRUE;}
+static BOOL WINAPI FixtureEmpty(){fixtureOwn=false;fixtureSource=false;fixtureText=false;fixtureHtml.clear();fixtureRtf.clear();return TRUE;}
 static HANDLE WINAPI FixtureSet(UINT format,HANDLE memory){
  if(format==0xc002)fixtureOwn=true;if(format==0xc003)fixtureSource=true;if(format==CF_UNICODETEXT)fixtureText=true;
+ if(format==0xc004||format==0xc005){auto bytes=static_cast<const BYTE*>(GlobalLock(memory));auto& target=format==0xc004?fixtureHtml:fixtureRtf;if(!bytes)return nullptr;target.assign(bytes,bytes+GlobalSize(memory));GlobalUnlock(memory);}
  GlobalFree(memory);return reinterpret_cast<HANDLE>(1);
 }
 #define OpenClipboard FixtureOpen
@@ -103,6 +106,14 @@ int main(int argc,char** argv){
   Check(PaneClipWrite(L"synthetic copy",nullptr,nullptr,0,mode)==1,"write synthetic text");
   Check(fixtureText&&fixtureOwn==(mode==1)&&fixtureSource==(mode==0),"native write mode formats");
  }
+ const std::vector<BYTE> html{'<','b','>','a','<','/','b','>'},rtf{'{','\\','r','t','f','1',' ','a','}'};
+ Check(PaneClipWriteRichText(L"a",html.data(),static_cast<int>(html.size()),rtf.data(),static_cast<int>(rtf.size()),1)==1,"write combined text formats");
+ auto exact=[](const std::vector<BYTE>& data,const std::vector<BYTE>& expected){return data.size()>expected.size()&&std::equal(expected.begin(),expected.end(),data.begin())&&data[expected.size()]==0;};
+ Check(fixtureOwn&&fixtureText&&exact(fixtureHtml,html)&&exact(fixtureRtf,rtf),"publish exact bytes and terminators with unicode and own marker");
+ Check(PaneClipWriteRichText(L"a",html.data(),8*1024*1024+1,nullptr,0,1)==0&&exact(fixtureHtml,html),"reject oversized format before changing the clipboard");
+ const std::vector<BYTE> composed(512*1024,'a');
+ Check(PaneClipWriteRichText(L"a",composed.data(),static_cast<int>(composed.size()),nullptr,0,1)==1&&exact(fixtureHtml,composed),"write composed HTML larger than the passive capture limit");
+ Check(PaneClipWrite(L"a",nullptr,nullptr,0,1)==1&&fixtureText&&fixtureHtml.empty()&&fixtureRtf.empty(),"plain route clears rich formats");
  Benchmark();
  std::cout<<"PASS image assertions="<<checks<<";systemClipboard=0\n";
 }

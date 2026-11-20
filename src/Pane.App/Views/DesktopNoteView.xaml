@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Pane.Views.DesktopNoteView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="using:Pane.Views.Controls"
+    xmlns:loc="using:Pane.Localization">
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid x:Name="Header" Background="Transparent" Padding="12,0,6,0" ColumnSpacing="4"
+              BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="0,0,0,1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <c:PaneIcon Glyph="pencil" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
+            <TextBlock x:Name="TitleText" Grid.Column="1" VerticalAlignment="Center" MaxLines="1" TextTrimming="CharacterEllipsis"
+                       FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}" FontWeight="SemiBold"
+                       Foreground="{ThemeResource PaneText1Brush}"/>
+            <Button x:Name="PadButton" Grid.Column="2" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="PadClicked">
+                <c:PaneIcon x:Name="PadIcon" Glyph="pencil" Width="13" Height="13"/>
+            </Button>
+            <Button x:Name="TopmostButton" Grid.Column="3" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="TopmostClicked">
+                <c:PaneIcon x:Name="TopmostIcon" Glyph="pin" Width="13" Height="13"/>
+            </Button>
+            <Button Grid.Column="4" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="UnpinClicked"
+                    AutomationProperties.Name="{x:Bind loc:Strings.Notes_UnpinDesktop}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_UnpinDesktop}">
+                <c:PaneIcon Glyph="pin-off" Width="13" Height="13"/>
+            </Button>
+        </Grid>
+
+        <!-- 贴纸面（tile）：只读正文 + 首图 -->
+        <ScrollViewer x:Name="TilePane" Grid.Row="1" Padding="12,8" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="6">
+                <TextBlock x:Name="BodyText" TextWrapping="Wrap" FontFamily="{StaticResource PaneFontUi}"
+                           FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}"/>
+                <Image x:Name="ImagePreview" MaxHeight="86" Stretch="Uniform" HorizontalAlignment="Left" Visibility="Collapsed"
+                       AutomationProperties.Name="{x:Bind loc:Strings.Notes_Images}"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 编辑面（pad）：标题 + 正文 + 状态行；Markdown 便签带精简格式按钮 -->
+        <Grid x:Name="PadPane" Grid.Row="1" Padding="10,8,10,8" RowSpacing="6" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBox x:Name="PadTitle" MaxLength="180" PlaceholderText="{x:Bind loc:Strings.Notes_Title}"
+                     AutomationProperties.Name="{x:Bind loc:Strings.Notes_Title}" TextChanged="PadChanged"/>
+            <TextBox x:Name="PadBody" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
+                     PlaceholderText="{x:Bind loc:Strings.Notes_Body}" AutomationProperties.Name="{x:Bind loc:Strings.Notes_Body}"
+                     FontFamily="{StaticResource PaneFontUi}" ScrollViewer.VerticalScrollBarVisibility="Auto" TextChanged="PadChanged"/>
+            <Grid Grid.Row="2" ColumnSpacing="6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="PadStatus" VerticalAlignment="Center" MaxLines="1" TextTrimming="CharacterEllipsis"
+                           FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"
+                           AutomationProperties.LiveSetting="Polite"/>
+                <Button x:Name="PadFormatBold" Grid.Column="1" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
+                        Content="B" FontWeight="SemiBold" FontSize="{StaticResource PaneTextXs}" Click="CardFormatBold" Visibility="Collapsed"
+                        AutomationProperties.Name="{x:Bind loc:Strings.Notes_FormatBold}"/>
+                <Button x:Name="PadFormatHeading" Grid.Column="2" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
+                        Content="H" FontSize="{StaticResource PaneTextXs}" Click="CardFormatHeading" Visibility="Collapsed"
+                        AutomationProperties.Name="{x:Bind loc:Strings.Notes_FormatHeading}"/>
+                <Button x:Name="PadFormatList" Grid.Column="3" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
+                        Content="•" FontSize="{StaticResource PaneTextSm}" Click="CardFormatList" Visibility="Collapsed"
+                        AutomationProperties.Name="{x:Bind loc:Strings.Notes_FormatList}"/>
+                <Button x:Name="PadCollapse" Grid.Column="4" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
+                        Click="CollapseClicked" AutomationProperties.Name="{x:Bind loc:Strings.Notes_CollapsePad}"
+                        ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_CollapsePad}">
+                    <c:PaneIcon Glyph="chev-d" Width="13" Height="13"/>
+                </Button>
+            </Grid>
+        </Grid>
+
+        <!-- 拖角缩放：两种形态都在右下角（跨全部行） -->
+        <Border x:Name="ResizeGrip" Grid.RowSpan="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="16" Height="16"
+                Background="Transparent" PointerPressed="GripPressed" PointerMoved="GripMoved" PointerReleased="GripReleased"
+                AutomationProperties.Name="{x:Bind loc:Strings.Notes_ResizeCard}">
+            <TextBlock Text="◦" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                       Foreground="{ThemeResource PaneText3Brush}" IsHitTestVisible="False"/>
+        </Border>
+    </Grid>
+</UserControl>

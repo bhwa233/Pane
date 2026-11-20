@@ -1,6 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><IsAotCompatible>true</IsAotCompatible><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
   <ItemGroup><Compile Include="../../src/Pane.App/Services/Launcher/WebSearchHistory.cs" Link="WebSearchHistory.cs"/>
+    <Compile Include="../../src/Pane.App/Services/Notes/NoteStore.cs" Link="NoteStore.cs"/>
+    <Compile Include="../../src/Pane.App/Services/Screenshots/ScreenshotStore.cs" Link="ScreenshotStore.cs"/>
+    <Compile Include="../../src/Pane.App/Services/Screenshots/NativeScreenshotCapture.cs" Link="NativeScreenshotCapture.cs"/>
+    <Compile Include="../../src/Pane.App/Services/Screenshots/NativeScreenshotOcr.cs" Link="NativeScreenshotOcr.cs"/>
+    <Compile Include="../../src/Pane.App/Services/Screenshots/OcrHistoryStore.cs" Link="OcrHistoryStore.cs"/>
+    <Compile Include="../../src/Pane.App/Services/Screenshots/OcrRecognition.cs" Link="OcrRecognition.cs"/>
     <Compile Include="../../src/Pane.App/Services/Clipboard/*.cs" Link="Clipboard/%(Filename)%(Extension)"/>
     <Compile Include="../../src/Pane.App/Services/SelectionService.cs" Link="SelectionService.cs"/>
     <Compile Include="../../src/Pane.App/Services/SelectionLog.cs" Link="SelectionLog.cs"/>
@@ -9,6 +15,6 @@
     <Compile Include="../../src/Pane.App/Contracts/DataStorage.cs" Link="Contracts/DataStorage.cs"/>
     <Compile Include="../../src/Pane.App/Contracts/Launcher.cs" Link="Contracts/Launcher.cs"/>
     <Compile Include="../../src/Pane.App/Contracts/Selection.cs" Link="Contracts/Selection.cs"/>
-    <Compile Include="../../src/Pane.App/Settings/*.cs" Link="Settings/%(Filename)%(Extension)"/><Compile Include="../../src/Pane.App/Contracts/Rename.cs" Link="Rename.cs"/>
+    <Compile Include="../../src/Pane.App/Settings/*.cs" Link="Settings/%(Filename)%(Extension)"/>
   <Compile Include="../../src/Pane.App/Hosting/ShellHotkeyBindings.cs" Link="ShellHotkeyBindings.cs"/></ItemGroup>
 <ItemGroup><Compile Include="../../src/Pane.App/Services/PasteTransfer.cs" Link="PasteTransfer.cs"/></ItemGroup><ItemGroup><Compile Include="../../src/Pane.App/Services/FileSelection.cs" Link="FileSelection.cs"/></ItemGroup><ItemGroup><Compile Include="../TestResults.cs" Link="TestResults.cs"/></ItemGroup><Import Project="../Localization.targets" /><ItemGroup><Compile Include="../../src/Pane.App/Services/Ai/SecretStore.cs" Link="SecretStore.cs"/><Compile Include="../../src/Pane.App/Contracts/Ai.cs" Link="Ai.cs"/></ItemGroup><ItemGroup><Compile Include="../../src/Pane.App/Contracts/Update.cs" Link="Update.cs"/><Compile Include="../../src/Pane.App/Contracts/ReleaseNotes.cs" Link="ReleaseNotes.cs"/></ItemGroup></Project>

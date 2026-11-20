@@ -15,11 +15,12 @@ internal static class Program
         string? launcherPid = null;
         FileStream? helperLease = null, temporaryLease = null;
         bool relay = args.FirstOrDefault() == "--relocate";
+        bool cleanupRelay = relay && !SetupPaths.RequiresIsolation;
         try
         {
             // 外壳等待期间不能持有待替换目录；卸载中转也走此入口。
             Environment.CurrentDirectory = Path.GetTempPath();
-            UninstallChain.Log("wrapper-entry", path: Environment.ProcessPath);
+            if (!SetupPaths.RequiresIsolation) UninstallChain.Log("wrapper-entry", path: Environment.ProcessPath);
             int isolatedIndex = Array.IndexOf(args, "--self-test-root");
             if (isolatedIndex >= 0 && isolatedIndex + 1 < args.Length) isolated = SetupPaths.Isolated(args[isolatedIndex + 1]).Root;
             var values = args.ToList();
@@ -45,13 +46,22 @@ internal static class Program
                 if (args.Length != offset + 2 || args[offset] != "--self-test-root") throw new ArgumentException("安装参数无效");
                 isolated = SetupPaths.Isolated(args[offset + 1]).Root;
             }
+            if (SetupPaths.RequiresIsolation)
+            {
+                if (isolated == null || autoUpdate) return 2;
+                UninstallChain.Log("wrapper-entry", path: Environment.ProcessPath);
+            }
             if (!relay && string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "Uninstall Pane", StringComparison.OrdinalIgnoreCase))
             {
                 var paths = (isolated == null ? SetupPaths.Production : SetupPaths.Isolated(isolated)).ResolveInstalled(isolated);
                 UninstallChain.Launch(paths, Environment.ProcessPath!, isolated, (where, error) => { step = where; throw error; });
                 return 0;
             }
-            if (relay) helperLease = UninstallChain.Lease(Environment.ProcessPath!, isolated);
+            if (relay)
+            {
+                helperLease = UninstallChain.Lease(Environment.ProcessPath!, isolated);
+                cleanupRelay = true;
+            }
             step = "cleanup-stale";
             UninstallChain.Cleanup(isolated);
             if (relay)
@@ -70,6 +80,9 @@ internal static class Program
             {
                 using var payload = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip") ?? throw new IOException("安装包缺少程序文件");
                 using var zip = new ZipArchive(payload, ZipArchiveMode.Read);
+                step = "verify-traffic-payload";
+                TrafficPreviewPayload.Verify(zip);
+                step = "extract-package";
                 zip.ExtractToDirectory(temporary);
             }
             UninstallChain.Log(step, path: temporary);
@@ -114,9 +127,10 @@ internal static class Program
         }
         catch (Exception error)
         {
+            if (SetupPaths.RequiresIsolation && isolated == null) return 2;
             UninstallChain.Log(step, "failed", error);
             UninstallChain.Signal(readyEvent);
-            string description = step switch { "extract-package" => "解压安装文件", "cleanup-stale" => "清理旧的临时文件", "start-worker" => "启动安装界面", "worker-exit" => "安装界面意外退出", _ => step }; // 不翻译：安装外壳没有资源
+            string description = step switch { "extract-package" => "解压安装文件", "verify-traffic-payload" => "校验流量服务文件", "cleanup-stale" => "清理旧的临时文件", "start-worker" => "启动安装界面", "worker-exit" => "安装界面意外退出", _ => step }; // 不翻译：安装外壳没有资源
             string message = $"没有装上：{description}出错。\n{UninstallChain.Reason(error)}\n日志：{UninstallChain.LogPath}"; // 不翻译：安装外壳没有资源
             if (isolated != null) { Directory.CreateDirectory(isolated); File.WriteAllText(Path.Combine(isolated, "wrapper-error.txt"), message + "\n" + error); }
             else MessageBoxW(0, message, "Pane 安装程序", 0x10); // 不翻译：安装外壳没有资源
@@ -131,7 +145,7 @@ internal static class Program
             temporaryLease?.Dispose();
             try { if (temporary != null && !Directory.Exists(temporary)) File.Delete(temporary + ".lease"); }
             catch (Exception error) { UninstallChain.Log("cleanup-lease", "retained", error, temporary); }
-            if (relay) { try { File.Delete(Environment.ProcessPath!); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { UninstallChain.Log("cleanup-self", "retained", e, Environment.ProcessPath); } }
+            if (cleanupRelay) { try { File.Delete(Environment.ProcessPath!); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { UninstallChain.Log("cleanup-self", "retained", e, Environment.ProcessPath); } }
             helperLease?.Dispose();
         }
     }

@@ -13,8 +13,16 @@
     IsTabStop="True" UseSystemFocusVisuals="False">
 
     <Grid>
-        <Canvas x:Name="HighlightLayer" IsHitTestVisible="False"/>
-        <StackPanel x:Name="Root" Width="340" Padding="6" VerticalAlignment="Top"/>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <c:MoveSurface x:Name="DragHandle" Height="14">
+            <Border Width="28" Height="3" CornerRadius="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{ThemeResource PaneText3Brush}"/>
+        </c:MoveSurface>
+        <Canvas x:Name="HighlightLayer" Grid.Row="1" IsHitTestVisible="False"/>
+        <StackPanel x:Name="Root" Grid.Row="1" Width="340" Padding="6" VerticalAlignment="Top"/>
 
         <!-- 样板：代码里建行时取字体、颜色 -->
         <StackPanel Visibility="Collapsed">

@@ -14,18 +14,46 @@
     IsTabStop="False">
 
     <UserControl.Resources>
-        <!-- 一条记录：类型图标 28 | 内容 + 元信息 -->
         <DataTemplate x:Key="ClipTemplate" x:DataType="clip:ClipRow">
-            <Grid Padding="12,10,12,10" ColumnSpacing="10" Background="Transparent">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="28"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Border Width="28" Height="28" VerticalAlignment="Top" CornerRadius="8"
-                        Background="{ThemeResource PaneFillControlBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="1">
-                    <c:PaneIcon Glyph="{x:Bind TypeGlyph}" Width="15" Height="15" Foreground="{ThemeResource PaneText2Brush}"/>
-                </Border>
-                <StackPanel Grid.Column="1">
+            <Grid Padding="12,8,12,8" Background="Transparent">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                    <Grid Margin="0,0,0,4" MinHeight="{StaticResource PaneControlXs}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Width="14" Height="14" Margin="4,0,0,0" CornerRadius="4" VerticalAlignment="Center"
+                                Background="{x:Bind SourceBrush}" Visibility="{x:Bind SourceVisibility}">
+                            <c:PaneIcon Glyph="{x:Bind SourceGlyph}" Width="9" Height="9" StrokeWidth="2.4" Foreground="White"/>
+                        </Border>
+                        <!-- 真实来源图标：程序自己的图标，不加底板 -->
+                        <Image Width="14" Height="14" Margin="4,0,0,0" VerticalAlignment="Center" Stretch="Uniform"
+                               Source="{x:Bind SourcePicture}" Visibility="{x:Bind SourcePictureVisibility}"/>
+                        <TextBlock Grid.Column="1" Margin="4,0,4,0" Text="{x:Bind MetaText}" VerticalAlignment="Center"
+                                   FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}"
+                                   Foreground="{ThemeResource PaneText3Brush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlXs}" Height="{StaticResource PaneControlXs}" CornerRadius="7"
+                                    Click="{x:Bind ToggleFavorite}" Visibility="{x:Bind FavoriteVisibility}" ToolTipService.ToolTip="{x:Bind FavoriteTip}"
+                                    AutomationProperties.Name="{x:Bind FavoriteTip}">
+                                <c:PaneIcon Glyph="bookmark" IsFilled="{x:Bind Favorite}" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
+                            </Button>
+                            <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlXs}" Height="{StaticResource PaneControlXs}" CornerRadius="7"
+                                    Click="{x:Bind TogglePin}" ToolTipService.ToolTip="{x:Bind PinTip}" AutomationProperties.Name="{x:Bind PinTip}">
+                                <c:PaneIcon Glyph="pin" IsFilled="{x:Bind Pinned}" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
+                            </Button>
+                            <StackPanel VerticalAlignment="Center" c:KeyCombo.Text="{x:Bind Hotkey}" Visibility="{x:Bind HotkeyVisibility}"/>
+                            <Border Width="20" Height="20" VerticalAlignment="Center" CornerRadius="5"
+                                    Background="{ThemeResource PaneFillControlBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="1">
+                                <c:PaneIcon Glyph="{x:Bind TypeGlyph}" Width="13" Height="13" Foreground="{ThemeResource PaneText2Brush}"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                <StackPanel Grid.Row="1">
                     <!-- 文本 / 链接：最多两行 -->
                     <TextBlock clip:ClipMatch.Source="{x:Bind Body}" Visibility="{x:Bind TextVisibility}"
                                FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextMd}" LineHeight="20"
@@ -57,50 +85,9 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- 元信息：图钉、来源小图标、来源 · 时间；右端 Alt+数字 / 操作按钮 -->
-                    <Grid Margin="0,4,0,0" ColumnSpacing="6" MinHeight="24">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <c:PaneIcon Glyph="pin" IsFilled="True" Width="12" Height="12" VerticalAlignment="Center"
-                                    Foreground="{ThemeResource PaneText2Brush}" Visibility="{x:Bind PinVisibility}"/>
-                        <Border Grid.Column="1" Width="14" Height="14" CornerRadius="4" VerticalAlignment="Center"
-                                Background="{x:Bind SourceBrush}" Visibility="{x:Bind SourceVisibility}">
-                            <c:PaneIcon Glyph="{x:Bind SourceGlyph}" Width="9" Height="9" StrokeWidth="2.4" Foreground="White"/>
-                        </Border>
-                        <!-- 真实来源图标：程序自己的图标，不加底板 -->
-                        <Image Grid.Column="1" Width="14" Height="14" VerticalAlignment="Center" Stretch="Uniform"
-                               Source="{x:Bind SourcePicture}" Visibility="{x:Bind SourcePictureVisibility}"/>
-                        <TextBlock Grid.Column="2" Text="{x:Bind MetaText}" VerticalAlignment="Center"
-                                   FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}"
-                                   Foreground="{ThemeResource PaneText3Brush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
-                        <Grid Grid.Column="3" VerticalAlignment="Center">
-                            <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" c:KeyCombo.Text="{x:Bind Hotkey}"
-                                        Visibility="{x:Bind HotkeyVisibility}" Opacity="{x:Bind HotkeyOpacity, Mode=OneWay}"/>
-                            <StackPanel Orientation="Horizontal" Spacing="2" Opacity="{x:Bind ActionsOpacity, Mode=OneWay}"
-                                        IsHitTestVisible="{x:Bind ActionsHitTest, Mode=OneWay}">
-                                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlXs}" Height="{StaticResource PaneControlXs}" CornerRadius="7"
-                                        Click="{x:Bind Send}" Visibility="{x:Bind SendVisibility}" ToolTipService.ToolTip="{x:Bind loc:Strings.Clipboard_SendToLauncherHint}">
-                                    <c:PaneIcon Glyph="R" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
-                                </Button>
-                                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlXs}" Height="{StaticResource PaneControlXs}" CornerRadius="7"
-                                        Click="{x:Bind Words}" Visibility="{x:Bind WordsVisibility}" ToolTipService.ToolTip="{x:Bind loc:Strings.Words_OpenHint}">
-                                    <c:PaneIcon Glyph="words" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
-                                </Button>
-                                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlXs}" Height="{StaticResource PaneControlXs}" CornerRadius="7"
-                                        Click="{x:Bind TogglePin}" ToolTipService.ToolTip="{x:Bind PinTip}">
-                                    <c:PaneIcon Glyph="pin" IsFilled="{x:Bind Pinned}" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
-                                </Button>
-                                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlXs}" Height="{StaticResource PaneControlXs}" CornerRadius="7"
-                                        Click="{x:Bind Delete}" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_Delete}">
-                                    <c:PaneIcon Glyph="close" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
-                                </Button>
-                            </StackPanel>
-                        </Grid>
-                    </Grid>
+                    <TextBlock clip:ClipMatch.Source="{x:Bind Annotation}" Visibility="{x:Bind AnnotationVisibility}" Margin="0,4,0,0"
+                               FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}"
+                               Foreground="{ThemeResource PaneText2Brush}" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
             </Grid>
         </DataTemplate>
@@ -129,14 +116,12 @@
             </StackPanel>
         </DataTemplate>
 
-        <!-- 筛选小标签：选中用正文色加粗，未选中用次要文字色（透明度近似 text-2 / text-1） -->
         <DataTemplate x:Key="ChipTemplate" x:DataType="clip:ChipItem">
-            <Grid Height="28" Padding="12,0,12,0" Background="Transparent">
-                <TextBlock Text="{x:Bind Label}" VerticalAlignment="Center"
-                           FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}"
-                           Foreground="{ThemeResource PaneText1Brush}"
-                           FontWeight="{x:Bind Weight, Mode=OneWay}" Opacity="{x:Bind TextOpacity, Mode=OneWay}"/>
-            </Grid>
+            <Button Style="{StaticResource PaneIconButton}" Width="32" Height="28" Padding="0" IsTabStop="True" Click="OnChipClicked"
+                    ToolTipService.ToolTip="{x:Bind Label}" AutomationProperties.Name="{x:Bind Label}">
+                <c:PaneIcon Glyph="{x:Bind Glyph}" Width="16" Height="16" Opacity="{x:Bind IconOpacity, Mode=OneWay}"
+                            Foreground="{ThemeResource PaneText1Brush}"/>
+            </Button>
         </DataTemplate>
 
         <Style x:Key="FootText" TargetType="TextBlock">
@@ -160,8 +145,9 @@
         <c:NoticeStrip x:Name="Notice"/>
 
         <!-- 搜索框：聚焦时外圈一道主题色光环（主题色只用于焦点） -->
-        <Grid Grid.Row="1" Padding="16,16,16,8">
-            <Border x:Name="FocusRing" Margin="-2" CornerRadius="12" BorderThickness="2" BorderBrush="{StaticResource PaneAccentBrush}" Opacity="0"/>
+        <Grid x:Name="SearchRow" Grid.Row="1" Padding="16,16,16,8">
+            <c:MoveSurface Margin="-16,-16,-16,-8"/>
+            <Border x:Name="FocusRing" Margin="-2" CornerRadius="12" BorderThickness="2" BorderBrush="{StaticResource PaneAccentBrush}" Opacity="0" IsHitTestVisible="False"/>
             <Border Height="32" Padding="10,0,10,0" CornerRadius="{StaticResource PaneRadiusControl}"
                     Background="{ThemeResource PaneFillControlBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="1">
                 <Grid ColumnSpacing="6">
@@ -181,6 +167,10 @@
 
         <!-- 类型筛选：选中项高亮滑动 -->
         <Grid Grid.Row="2" Padding="16,0,16,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
             <Canvas x:Name="ChipHighlightLayer" IsHitTestVisible="False"/>
             <ItemsControl x:Name="Chips" ItemTemplate="{StaticResource ChipTemplate}" IsTabStop="False">
                 <ItemsControl.ItemsPanel>
@@ -189,6 +179,13 @@
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
             </ItemsControl>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <Button x:Name="CollectionsButton" Style="{StaticResource PaneIconButton}" Width="28" Height="28"
+                        AutomationProperties.Name="{x:Bind loc:Strings.Clipboard_Collections}" ToolTipService.ToolTip="{x:Bind loc:Strings.Clipboard_Collections}">
+                    <c:PaneIcon x:Name="CollectionsIcon" Glyph="folder" Width="15" Height="15"/>
+                    <Button.Flyout><MenuFlyout Opening="OnCollectionsOpening"/></Button.Flyout>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <!-- 列表 -->
@@ -206,8 +203,14 @@
 
         <!-- 快捷键提示 -->
         <Grid Grid.Row="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <Border Height="1" VerticalAlignment="Top" Background="{ThemeResource PaneStrokeBrush}"/>
-            <c:WrapPanel x:Name="Foot" Margin="16,9,16,9" HorizontalSpacing="12" VerticalSpacing="4"/>
+            <TextBlock x:Name="FileStatus" Visibility="Collapsed" Margin="16,8,16,0" TextWrapping="Wrap"
+                       FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}" AutomationProperties.LiveSetting="Polite"/>
+            <c:WrapPanel x:Name="Foot" Grid.Row="1" Margin="16,9,16,9" HorizontalSpacing="12" VerticalSpacing="4"/>
             <!-- 快捷键提示的样板（隐藏），代码照它的样式生成 -->
             <TextBlock x:Name="HintLabelProto" Visibility="Collapsed" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
             <Border x:Name="KbdProto" Visibility="Collapsed" Style="{StaticResource PaneKbdBorder}"><TextBlock Style="{StaticResource PaneKbdText}"/></Border>

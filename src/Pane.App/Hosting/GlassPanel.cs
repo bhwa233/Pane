@@ -20,7 +20,7 @@ public sealed partial class GlassPanel : IDisposable
     internal IPanelView View=>view;
     readonly KeyEventHandler keyHandler;
     readonly GlassParameters parameters;
-    readonly bool settingsWindow;
+    readonly bool settingsWindow, desktopCard;
     public event EventHandler? Hidden;
     public bool MaterialAttached=>target.Root==scene.Root && scene.Attached && Native.IsWindowVisible(Visual);
     public PanelPlacement Placement {get;set;}
@@ -54,9 +54,9 @@ public sealed partial class GlassPanel : IDisposable
     bool disposing,focusing,pendingFocus,animating;
     /// <summary>Esc 是否收起窗口（视图没处理时）。二级窗口（文件、翻译、AI 对话）设成 false：Esc 永远不关窗口。</summary>
     public bool EscapeHides {get;set;}=true;
-    public GlassPanel(string name, UIElement content, IPanelView view, GlassParameters parameters, bool settingsWindow=false, bool interactive=true, Size? minSize=null)
+    public GlassPanel(string name, UIElement content, IPanelView view, GlassParameters parameters, bool settingsWindow=false, bool interactive=true, Size? minSize=null, bool desktopCard=false)
     {
-        this.view=view;this.parameters=parameters;this.settingsWindow=settingsWindow;
+        this.view=view;this.parameters=parameters;this.settingsWindow=settingsWindow;this.desktopCard=desktopCard;
         keyHandler=(_,e)=>{if(e.Key==Windows.System.VirtualKey.Escape&&EscapeHides){e.Handled=true;Hide();}};
         Width=view.PreferredSize.Width;Height=view.PreferredSize.Height;
         // 设计改（2026-10-29）：有任务栏按钮的窗口里，设置窗口最小 760 × 520 可拖边框改大小；安装 / 卸载窗口（520 × 480）比这小，就固定大小。
@@ -67,9 +67,9 @@ public sealed partial class GlassPanel : IDisposable
         var wc=new Native.WndClass{size=(uint)Marshal.SizeOf<Native.WndClass>(),proc=proc,name=className,instance=Native.GetModuleHandleW(null)};
         Native.RegisterClassExW(ref wc);
         Visual=Native.CreateWindowExW(0x82800A0,wc.name!,name,0x80000000,0,0,688,464,0,0,wc.instance,0);
-        Input=Native.CreateWindowExW(settingsWindow?(demo?0x8240000u:0x240000u):interactive?(demo?0x8200080u:0x200080u):0x82800A0u,wc.name!,name,settingsWindow?0x800E0000u:0x80000000u,48,48,592,352,settingsWindow?0:Visual,0,wc.instance,0);
+        Input=Native.CreateWindowExW(desktopCard?0x8200080u:settingsWindow?(demo?0x8240000u:0x240000u):interactive?(demo?0x8200080u:0x200080u):0x82800A0u,wc.name!,name,settingsWindow?0x800E0000u:0x80000000u,48,48,592,352,settingsWindow||desktopCard?0:Visual,0,wc.instance,0);
         if(Visual==0||Input==0)throw new System.ComponentModel.Win32Exception();
-        if(!settingsWindow)transient.Add(this);
+        if(!settingsWindow&&!desktopCard)transient.Add(this);
         if(settingsWindow)AppIcon.Apply(Input);   // 设置窗口在任务栏上有按钮：给它 Pane 的图标，不然是系统默认的程序图标
         Native.SetLayeredWindowAttributes(Visual,0,255,2);if(!interactive)Native.SetLayeredWindowAttributes(Input,0,255,2);
         // 设计改（2026-11-01，issue 3 录屏）：关掉系统的窗口过渡动画（DWMWA_TRANSITIONS_FORCEDISABLED）。出现、收起、最小化、还原都由这里自己做；
@@ -123,18 +123,23 @@ public sealed partial class GlassPanel : IDisposable
     public bool Passive {get;private set;}
     /// <summary>开始收起（Hide 被调用、面板原来是显示状态）时。剪贴板用它结束按键接管。</summary>
     public event EventHandler? Hiding;
-    public void Show(bool near=false,int px=0,int py=0,bool activate=true,bool passive=false)
+    public void Show(bool near=false,int px=0,int py=0,bool activate=true,bool passive=false)=>
+        Show(near,px,py,activate,passive,null);
+    internal void ShowOnScreen(Native.Point screen,bool activate)=>
+        Show(false,screen.X,screen.Y,activate,false,null,screenSelected:true);
+    void Show(bool near,int px,int py,bool activate,bool passive,Point? desktopOrigin,bool screenSelected=false)
     {
         if(disposing)return;
+        if(desktopCard)activate=false;
         passive=passive&&interactive&&!settingsWindow&&!demo;
         if(passive)activate=false;
-        SetPassive(passive);
+        if(!desktopCard)SetPassive(passive);
         // 设计改（2026-10-31）：前台是本面板或另一个随用随收的面板（启动器 → 剪贴板、面板已开再呼出）时，
         // 沿用它记下的原窗口；原来直接记成面板自己，收起后粘贴切不回去，误报「没有权限往这个窗口输入」
         var foreground=Native.GetForegroundWindow();
         var panel=transient.FirstOrDefault(p=>p.Input==foreground||p.Visual==foreground);
         Previous=panel==null?foreground:panel.Previous;
-        if(!near){Native.GetCursorPos(out var cursor);px=cursor.X;py=cursor.Y;}
+        if(!near&&!screenSelected){Native.GetCursorPos(out var cursor);px=cursor.X;py=cursor.Y;}
         near=near||Placement is PanelPlacement.Pointer or PanelPlacement.Tray;
         view.OnShowing(new PanelShowContext(Previous,new Windows.Foundation.Point(px,py),activate&&!demo));
         // 设计改（2026-11-09，issue 40）：从收起状态打开时不沿用上次的尺寸。原来启动器上次搜过东西、结果区很高，
@@ -151,14 +156,15 @@ public sealed partial class GlassPanel : IDisposable
         }
         // 托盘菜单要按最终尺寸算位置，弹出前直接定尺寸，不走改尺寸的弹簧
         if(Placement==PanelPlacement.Tray&&!Shown){var s=view.PreferredSize;Width=targetWidth=Math.Max(minWidth,s.Width);Height=targetHeight=Math.Max(minHeight,s.Height);resizing=false;}
-        var point=PlaceForShow(px,py,near);int x=point.X,y=point.Y;
+        var point=desktopOrigin??PlaceForShow(px,py,near);int x=point.X,y=point.Y;
         if(!Shown&&!animating){scale=(float)GlassParameters.Token("PaneEnterScale");opacity=0;}
         // 设计改（2026-10-31，issue 3）：设置窗口和二级窗口每次打开都是新建的，页面重，从打开到第一次画上屏幕要一两百毫秒（慢机器更久）；
         // 原来淡入从打开那一刻就开始计时，窗口露面时已经淡完，看着就是「从全透明直接跳到半透明」。
         // 新建的窗口第一次显示时先隐身，等内容和玻璃都画好一帧再现身、开始淡入；常驻面板（启动器等）不多等
         Layout(x-(int)(48*dpi),y-(int)(48*dpi));Shown=true;
         if(!shownOnce&&!revealing){shownOnce=true;Cloak(true);revealing=true;Reveal(++revealVersion);}else if(!revealing)Animate();
-        Native.ShowWindow(Visual,4);Native.ShowWindow(Input,4);Native.SetWindowPos(Visual,settingsWindow&&!demo?0:-1,0,0,0,0,0x13);Native.SetWindowPos(Input,settingsWindow&&!demo?0:-1,0,0,0,0,0x13);
+        nint zOrder=desktopCard?1:settingsWindow&&!demo?0:-1;
+        Native.ShowWindow(Visual,4);Native.ShowWindow(Input,4);Native.SetWindowPos(Visual,zOrder,0,0,0,0,0x13);Native.SetWindowPos(Input,zOrder,0,0,0,0,0x13);
         // 两次独立置顶不能保证 owner 与 owned 窗口连续；背景可能插在中间。
         // 显式以输入窗定位视觉窗，并禁止系统联动调整所有者的 Z 序。
         if(!Native.SetWindowPos(Visual,Input,0,0,0,0,0x213))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -186,7 +192,7 @@ public sealed partial class GlassPanel : IDisposable
     // 已显示的面板重新拿回前台和键盘焦点（剪贴板叠在启动器上用完收起后，焦点回到启动器）
     public void Refocus()
     {
-        if(!Shown||Passive||disposing||demo)return;
+        if(!Shown||Passive||disposing||demo||desktopCard)return;
         Activate();
         if(root.IsLoaded)Focus();else pendingFocus=true;
     }
@@ -272,8 +278,8 @@ public sealed partial class GlassPanel : IDisposable
         view.OnShown();
         if(!demo&&activate&&interactive){Activate();pendingFocus=true;}
     }
-    /// <summary>「总在最前」（二级窗口右上角的图钉）。只对有任务栏按钮的窗口有意义，面板本来就在最前。</summary>
-    public void SetTopmost(bool on){if(!settingsWindow||demo)return;Native.SetWindowPos(Input,on?-1:-2,0,0,0,0,0x13);Native.SetWindowPos(Visual,Input,0,0,0,0,0x213);}
+    /// <summary>「总在最前」（二级窗口右上角的图钉；桌面便签卡置顶也走这里）。面板本来就在最前，只对有任务栏按钮的窗口和桌面卡有意义。</summary>
+    public void SetTopmost(bool on){if(demo)return;if(!settingsWindow&&!desktopCard)return;Native.SetWindowPos(Input,on?-1:-2,0,0,0,0,0x13);Native.SetWindowPos(Visual,Input,0,0,0,0,0x213);}
     public void Toggle(){if(Shown)Hide();else Show();}
     // 设计改（2026-10-29）：出现 / 消失只有玻璃缩放，内容不缩放、只淡入淡出，位置从头到尾不动。
     // 玻璃在系统合成器、内容在 WinUI 合成器，两边永远做不到同一帧：原来每帧分别设缩放值，内容总比玻璃晚一帧左右（3～10 像素）；
@@ -313,7 +319,7 @@ public sealed partial class GlassPanel : IDisposable
         if(resizing)StepResize();
         if(deferFrames>0&&--deferFrames==0){if(Shown&&!IsIconic(Input))FollowTo(deferredRect);else ElementCompositionPreview.GetElementVisual(root).Opacity=opacity;}
         if(rectAnimating)StepRect();
-        if(Shown&&!animating)CheckOutsideClick();
+        if(Shown&&!animating&&!desktopCard)CheckOutsideClick();
         if(Shown&&!animating&&Passive)CheckPassiveForeground();
         if(!animating)return;
         double t=animation.Elapsed.TotalMilliseconds,duration=GlassParameters.Token(Showing?"PaneDurNormal":"PaneDurFast")*parameters.Current.MotionSpeed;
@@ -367,7 +373,7 @@ public sealed partial class GlassPanel : IDisposable
     }
     nint ChildWndProc(nint h,uint m,nuint w,nint l,nuint id,nuint data) {
         if(m==0x84 && settingsWindow){var hit=HitTest(l);if(hit!=1)return -1;}
-        if(m==0x21 && Passive)return 3;   // WM_MOUSEACTIVATE → MA_NOACTIVATE
+        if(m==0x21 && (Passive||desktopCard))return 3;   // WM_MOUSEACTIVATE → MA_NOACTIVATE
         return Native.DefSubclassProc(h,m,w,l);
     }
     nint HitTest(nint l){
@@ -380,6 +386,9 @@ public sealed partial class GlassPanel : IDisposable
     }
     nint WndProc(nint h,uint m,nuint w,nint l)
     {
+        if(desktopCard&&h==Input&&m==0x21)return 3;
+        if(desktopCard&&h==Input&&Shown&&(m==0x7e||(m==0x1a&&w==0x2f)||(m==0x02E0&&!movingWindows)))
+            DesktopWorkAreaChanged?.Invoke();
         if(settingsWindow && h==Input && m==0x84)return HitTest(l);
         if(settingsWindow && m==0x83)return 0;
         if(h==Input && m==0x02E0){if(movingWindows)return 0;dpi=(w&0xffff)/96f;var rect=Marshal.PtrToStructure<Native.Rect>(l);Layout(rect.Left-(int)(48*dpi),rect.Top-(int)(48*dpi));return 0;}

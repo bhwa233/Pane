@@ -26,6 +26,12 @@ public sealed partial class SettingsView
         Group(null,
             Row("Pane", Strings.Settings_About_DescriptionTagline, Chip(version)));
         if (app.Updates is { } updates) RenderUpdate(updates);
+        else
+        {
+            List<FrameworkElement> changelog = [];
+            AppendChangelog(changelog, version);
+            if (changelog.Count > 0) Group(null, changelog.ToArray());
+        }
         Group(Strings.Settings_About_Information,
             Row(Strings.Settings_About_License, Strings.Settings_About_LicenseDescription, Button(Strings.Common_Open, "external", () => OpenUrl(SourceUrl))),
             Row(Strings.Settings_About_DataLocation, app.Store.DirectoryPath, Button(Strings.Common_Open, "external", () =>
@@ -298,7 +304,12 @@ public sealed partial class SettingsView
         var onStart = Switch(update.InstallOnStartup, v => app.Store.Save(app.Store.Current with { Update = app.Store.Current.Update with { InstallOnStartup = v } }));
         Enable(onStart, update.AutoUpdate);
         rows.Add(Row(Strings.Update_InstallOnStartup, Strings.Update_InstallOnStartupDescription, onStart));
-        // 更新日志：随安装包带着的历代说明，版本列表，点一行展开那一版（默认展开当前运行的版本）
+        AppendChangelog(rows, u.CurrentVersion);
+        Group(Strings.Update_Title, rows.ToArray());
+    }
+
+    void AppendChangelog(List<FrameworkElement> rows, string currentVersion)
+    {
         if (app.ReleaseHistory is { All.Count: > 0 } history)
         {
             if (PendingChangelog is { } wanted) { PendingChangelog = null; changelogOpen = true; revealKey = "changelog"; changelogVersion = history.Find(wanted)?.Version ?? history.All[0].Version; }
@@ -307,7 +318,7 @@ public sealed partial class SettingsView
             {
                 if (changelogOpen) { Collapse("changelog", () => { changelogOpen = false; Render(); }); return; }
                 changelogOpen = true; revealKey = "changelog";
-                changelogVersion ??= history.Find(u.CurrentVersion)?.Version ?? history.All[0].Version;
+                changelogVersion ??= history.Find(currentVersion)?.Version ?? history.All[0].Version;
                 Render();
             }
             designToggles["changelog"] = ToggleChangelog;
@@ -315,12 +326,10 @@ public sealed partial class SettingsView
                 Button(changelogOpen ? Strings.Common_Collapse : Strings.Update_ChangelogOpen, null, ToggleChangelog)));
             if (changelogOpen) rows.Add(Reveal("changelog", history.All.Select(ChangelogVersion)));
         }
-        Group(Strings.Update_Title, rows.ToArray());
-
         // 一版：版本行 + 展开的说明在同一行里（中间不画分隔线），箭头转 180°
         FrameworkElement ChangelogVersion(ReleaseNotes n)
         {
-            bool current = SameVersion(n.Version, u.CurrentVersion), open = changelogVersion == n.Version;
+            bool current = SameVersion(n.Version, currentVersion), open = changelogVersion == n.Version;
             string key = "changelog:" + n.Version;
             bool opening = open && revealKey == key;
             var label = current ? string.Format(Strings.Update_CurrentTag, (object?)n.Version) : n.Version;

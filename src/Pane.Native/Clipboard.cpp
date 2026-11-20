@@ -10,6 +10,7 @@
 #include <future>
 #include <vector>
 #include <algorithm>
+#include <initializer_list>
 using Microsoft::WRL::ComPtr;
 #define API extern "C" __declspec(dllexport)
 namespace {
@@ -48,8 +49,18 @@ HRESULT NormalizeImage(IWICImagingFactory* f,IWICBitmapSource* source,ComPtr<IWI
  ComPtr<IWICBitmap> bitmap;hr=f->CreateBitmapFromMemory(w,h,GUID_WICPixelFormat32bppBGRA,w*4,size,pixels.data(),&bitmap);
  if(SUCCEEDED(hr))result=bitmap;return hr;
 }
-HGLOBAL Memory(const void* data,size_t size){auto h=GlobalAlloc(GMEM_MOVEABLE,size);if(!h)return nullptr;auto p=GlobalLock(h);if(!p){GlobalFree(h);return nullptr;}memcpy(p,data,size);GlobalUnlock(h);return h;}
+HGLOBAL Memory(const void* data,size_t size,bool endWithZero=false){auto h=GlobalAlloc(endWithZero?GMEM_MOVEABLE|GMEM_ZEROINIT:GMEM_MOVEABLE,size+(endWithZero?1:0));if(!h)return nullptr;auto p=GlobalLock(h);if(!p){GlobalFree(h);return nullptr;}memcpy(p,data,size);GlobalUnlock(h);return h;}
 bool Put(UINT format,HGLOBAL& memory){if(!SetClipboardData(format,memory))return false;memory=nullptr;return true;}
+struct ClipboardBlock{UINT format;HGLOBAL& memory;};
+bool WriteClipboard(int mode,std::initializer_list<ClipboardBlock> blocks){
+ const UINT markerFormat=RegisterClipboardFormatW(mode==1?L"Pane.OwnClipboard":L"Pane.SourceClipboard");
+ if(!markerFormat||std::any_of(blocks.begin(),blocks.end(),[](const ClipboardBlock& block){return block.memory&&!block.format;}))return false;
+ DWORD one=1;HGLOBAL marker=Memory(&one,sizeof(one));HWND owner=CreateWindowW(L"STATIC",L"",0,0,0,0,0,HWND_MESSAGE,nullptr,GetModuleHandleW(nullptr),nullptr);
+ bool opened=false;if(owner&&marker)for(int attempt=0;attempt<5&&!opened;attempt++){opened=OpenClipboard(owner)!=0;if(!opened)Sleep(15);}
+ bool ok=opened&&EmptyClipboard()&&Put(markerFormat,marker);
+ for(const auto& block:blocks){if(ok&&block.memory)ok=Put(block.format,block.memory);}
+ if(opened)CloseClipboard();if(owner)DestroyWindow(owner);if(marker)GlobalFree(marker);return ok;
+}
 }
 API void* PaneClipListen(Callback callback){
  auto p=new Listener();p->callback=callback;std::promise<bool> ready;auto future=ready.get_future();
@@ -63,10 +74,11 @@ API void* PaneClipListen(Callback callback){
 }
 API int PaneClipStop(void* state,int* count){auto p=static_cast<Listener*>(state);PostMessageW(p->window,WM_CLOSE,0,0);p->thread.join();*count=p->count;bool ok=p->removed;delete p;return ok;}
 // 调用方持有 OpenClipboard；不改变剪贴板。DIB 用 BMP 文件头交 WIC 解码。
-API int PaneClipImageAlloc(void** output,int* length){
+static int ReadClipboardImage(void** output,int* length,UINT maxBytes,UINT maxPixels){
  *output=nullptr;*length=0;auto f=Factory();if(!f)return 0;ComPtr<IWICBitmapSource> source;ComPtr<IWICStream> input;ComPtr<IWICBitmapDecoder> decoder;ComPtr<IWICBitmapFrameDecode> frame;
  UINT format=RegisterClipboardFormatW(L"PNG");if(!IsClipboardFormatAvailable(format))format=IsClipboardFormatAvailable(CF_DIBV5)?CF_DIBV5:CF_DIB;
- auto handle=GetClipboardData(format);if(!handle)return 0;size_t size=GlobalSize(handle);auto p=static_cast<BYTE*>(GlobalLock(handle));if(!p||size>MAXDWORD-sizeof(BITMAPFILEHEADER)){if(p)GlobalUnlock(handle);return 0;}
+ auto handle=GetClipboardData(format);if(!handle)return 0;size_t size=GlobalSize(handle);if(size>maxBytes||size>MAXDWORD-sizeof(BITMAPFILEHEADER))return 0;
+ auto p=static_cast<BYTE*>(GlobalLock(handle));if(!p)return 0;
  std::vector<BYTE> bytes;
  if(format==CF_DIB||format==CF_DIBV5){
   if(size<sizeof(BITMAPINFOHEADER)){GlobalUnlock(handle);return 0;}auto header=reinterpret_cast<BITMAPINFOHEADER*>(p);
@@ -80,20 +92,30 @@ API int PaneClipImageAlloc(void** output,int* length){
  }else bytes.assign(p,p+size);GlobalUnlock(handle);
  HRESULT hr=f->CreateStream(&input);if(SUCCEEDED(hr))hr=input->InitializeFromMemory(bytes.data(),static_cast<DWORD>(bytes.size()));
  if(SUCCEEDED(hr))hr=f->CreateDecoderFromStream(input.Get(),nullptr,WICDecodeMetadataCacheOnLoad,&decoder);if(SUCCEEDED(hr))hr=decoder->GetFrame(0,&frame);
+ if(SUCCEEDED(hr)&&maxPixels!=0){UINT width=0,height=0;hr=frame->GetSize(&width,&height);if(SUCCEEDED(hr)&&static_cast<unsigned long long>(width)*height>maxPixels)return 0;}
  if(SUCCEEDED(hr))hr=NormalizeImage(f.Get(),frame.Get(),source);
  ComPtr<IStream> encoded;if(SUCCEEDED(hr))hr=CreateStreamOnHGlobal(nullptr,TRUE,&encoded);if(SUCCEEDED(hr))hr=Encode(f.Get(),source.Get(),encoded.Get());
- STATSTG stats{};if(SUCCEEDED(hr))hr=encoded->Stat(&stats,STATFLAG_NONAME);if(FAILED(hr)||stats.cbSize.QuadPart>INT_MAX)return 0;
+ STATSTG stats{};if(SUCCEEDED(hr))hr=encoded->Stat(&stats,STATFLAG_NONAME);if(FAILED(hr)||stats.cbSize.QuadPart>INT_MAX||stats.cbSize.QuadPart>maxBytes)return 0;
  *length=static_cast<int>(stats.cbSize.QuadPart);*output=CoTaskMemAlloc(*length);if(!*output)return 0;LARGE_INTEGER zero{};encoded->Seek(zero,STREAM_SEEK_SET,nullptr);ULONG read=0;hr=encoded->Read(*output,*length,&read);
  if(FAILED(hr)||read!=static_cast<ULONG>(*length)){CoTaskMemFree(*output);*output=nullptr;return 0;}return 1;
 }
-API int PaneClipSaveImage(const wchar_t* input,const wchar_t* full,const wchar_t* thumb,int* width,int* height){
+API int PaneClipImageAlloc(void** output,int* length){return ReadClipboardImage(output,length,MAXDWORD,0);}
+API int PaneClipImageAllocLimited(void** output,int* length,UINT maxBytes,UINT maxPixels){return ReadClipboardImage(output,length,maxBytes,maxPixels);}
+static int SaveDecodedImage(const wchar_t* input,const wchar_t* full,const wchar_t* thumb,UINT maxPixels,bool repairAlpha,int* width,int* height){
  Apartment apartment;auto f=Factory();if(!f)return 0;ComPtr<IWICBitmapDecoder> decoder;ComPtr<IWICBitmapFrameDecode> frame;ComPtr<IWICBitmapScaler> scale;
  HRESULT hr=f->CreateDecoderFromFilename(input,nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder);if(SUCCEEDED(hr))hr=decoder->GetFrame(0,&frame);
- UINT w=0,h=0;if(SUCCEEDED(hr))hr=frame->GetSize(&w,&h);if(!w||!h||w>INT_MAX||h>INT_MAX)return 0;*width=static_cast<int>(w);*height=static_cast<int>(h);
- ComPtr<IWICBitmapSource> source;if(SUCCEEDED(hr))hr=NormalizeImage(f.Get(),frame.Get(),source);
+ UINT w=0,h=0;if(SUCCEEDED(hr))hr=frame->GetSize(&w,&h);if(!w||!h||w>INT_MAX||h>INT_MAX||(maxPixels&&static_cast<unsigned long long>(w)*h>maxPixels))return 0;*width=static_cast<int>(w);*height=static_cast<int>(h);
+ ComPtr<IWICBitmapSource> source;
+ if(SUCCEEDED(hr)){if(repairAlpha)hr=NormalizeImage(f.Get(),frame.Get(),source);else source=frame;}
  if(SUCCEEDED(hr)&&full)hr=Save(f.Get(),source.Get(),full);if(SUCCEEDED(hr))hr=f->CreateBitmapScaler(&scale);double k=std::min(1.0,640.0/std::max(w,h));
  if(SUCCEEDED(hr))hr=scale->Initialize(source.Get(),std::max(1u,static_cast<UINT>(w*k)),std::max(1u,static_cast<UINT>(h*k)),WICBitmapInterpolationModeFant);
  if(SUCCEEDED(hr))hr=Save(f.Get(),scale.Get(),thumb);return SUCCEEDED(hr);
+}
+API int PaneClipSaveImage(const wchar_t* input,const wchar_t* full,const wchar_t* thumb,int* width,int* height){
+ return SaveDecodedImage(input,full,thumb,0,true,width,height);
+}
+API int PaneClipSaveImageLimited(const wchar_t* input,const wchar_t* full,const wchar_t* thumb,UINT maxPixels,int* width,int* height){
+ return SaveDecodedImage(input,full,thumb,maxPixels,false,width,height);
 }
 API int PaneClipWrite(const wchar_t* text,const wchar_t* image,const wchar_t* files,int fileChars,int mode){
  Apartment apartment;HGLOBAL data=nullptr,png=nullptr;UINT format=CF_UNICODETEXT;
@@ -107,10 +129,19 @@ API int PaneClipWrite(const wchar_t* text,const wchar_t* image,const wchar_t* fi
   ComPtr<IStream> stream;if(SUCCEEDED(CreateStreamOnHGlobal(nullptr,TRUE,&stream))&&SUCCEEDED(Encode(f.Get(),frame.Get(),stream.Get()))){HGLOBAL mem=nullptr;GetHGlobalFromStream(stream.Get(),&mem);auto ptr=GlobalLock(mem);if(ptr){png=Memory(ptr,GlobalSize(mem));GlobalUnlock(mem);}}
  }else if(files&&fileChars>1){format=CF_HDROP;std::vector<BYTE> bytes(sizeof(DROPFILES)+static_cast<size_t>(fileChars)*2);auto drop=reinterpret_cast<DROPFILES*>(bytes.data());drop->pFiles=sizeof(DROPFILES);drop->fWide=TRUE;memcpy(bytes.data()+sizeof(DROPFILES),files,static_cast<size_t>(fileChars)*2);data=Memory(bytes.data(),bytes.size());}
  else if(text)data=Memory(text,(wcslen(text)+1)*2);if(!data){if(png)GlobalFree(png);return 0;}
- DWORD one=1;HGLOBAL marker=Memory(&one,sizeof(one));HWND owner=CreateWindowW(L"STATIC",L"",0,0,0,0,0,HWND_MESSAGE,nullptr,GetModuleHandleW(nullptr),nullptr);
- bool opened=false;if(owner&&marker)for(int i=0;i<5&&!opened;i++){opened=OpenClipboard(owner)!=0;if(!opened)Sleep(15);}
- bool ok=opened&&EmptyClipboard()&&Put(RegisterClipboardFormatW(mode==1?L"Pane.OwnClipboard":L"Pane.SourceClipboard"),marker)&&Put(format,data);
- if(ok&&png)ok=Put(RegisterClipboardFormatW(L"PNG"),png);if(opened)CloseClipboard();if(owner)DestroyWindow(owner);if(marker)GlobalFree(marker);if(data)GlobalFree(data);if(png)GlobalFree(png);return ok;
+ bool ok=WriteClipboard(mode,{{format,data},{png?RegisterClipboardFormatW(L"PNG"):0,png}});
+ if(data)GlobalFree(data);if(png)GlobalFree(png);return ok;
+}
+API int PaneClipWriteRichText(const wchar_t* text,const BYTE* html,int htmlSize,const BYTE* rtf,int rtfSize,int mode){
+ constexpr int htmlLimit=8*1024*1024,rtfLimit=256*1024;
+ if(!text||htmlSize<0||htmlSize>htmlLimit||rtfSize<0||rtfSize>rtfLimit||(htmlSize&&!html)||(rtfSize&&!rtf))return 0;
+ HGLOBAL plain=Memory(text,(wcslen(text)+1)*sizeof(wchar_t));
+ HGLOBAL htmlBlock=htmlSize?Memory(html,htmlSize,true):nullptr;
+ HGLOBAL rtfBlock=rtfSize?Memory(rtf,rtfSize,true):nullptr;
+ bool ok=plain&&(!htmlSize||htmlBlock)&&(!rtfSize||rtfBlock)&&WriteClipboard(mode,{
+  {CF_UNICODETEXT,plain},{htmlBlock?RegisterClipboardFormatW(L"HTML Format"):0,htmlBlock},
+  {rtfBlock?RegisterClipboardFormatW(L"Rich Text Format"):0,rtfBlock}});
+ if(plain)GlobalFree(plain);if(htmlBlock)GlobalFree(htmlBlock);if(rtfBlock)GlobalFree(rtfBlock);return ok;
 }
 API int PaneClipSaveDialog(const wchar_t* source,const wchar_t* name){
  Apartment apartment;ComPtr<IFileSaveDialog> dialog;HRESULT hr=CoCreateInstance(CLSID_FileSaveDialog,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&dialog));

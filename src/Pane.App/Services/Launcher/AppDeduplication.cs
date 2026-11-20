@@ -26,7 +26,8 @@ internal static class AppDeduplication
     static string PreviousKey(CatalogEntry row)=>row.Id.Contains('!')?"package:"+row.Id:
         row.Target.Length>0?"target:"+Environment.ExpandEnvironmentVariables(row.Target).Trim()+"\n"+row.Args:"shell:"+(row.Id.Length>0?row.Id:row.Parsing);
     static bool IsExecutable(string path){path=Environment.ExpandEnvironmentVariables(path).Trim();return Path.IsPathFullyQualified(path)&&Path.GetExtension(path).Equals(".exe",StringComparison.OrdinalIgnoreCase);}
-    public static string Key(CatalogEntry row)=>row.Id.Contains('!')&&!IsExecutable(row.Target)?"package:"+row.Id+(row.Args.Length>0?"\n"+row.Args:""):
+    public static string Key(CatalogEntry row)=>row.Source==2&&Path.GetExtension(row.Parsing).Equals(".lnk",StringComparison.OrdinalIgnoreCase)?"portable-shortcut:"+row.Parsing:
+        row.Id.Contains('!')&&!IsExecutable(row.Target)?"package:"+row.Id+(row.Args.Length>0?"\n"+row.Args:""):
         row.Target.Length>0?"target:"+Environment.ExpandEnvironmentVariables(row.Target).Trim()+"\n"+row.Args:"shell:"+(row.Id.Length>0?row.Id:row.Parsing)+(row.Args.Length>0?"\n"+row.Args:"");
     // 相同 AUMID 是跨来源证据；有多个目标或参数时不猜测缺失的入口。
     internal static CatalogEntry[] Prepare(IEnumerable<CatalogEntry> entries){

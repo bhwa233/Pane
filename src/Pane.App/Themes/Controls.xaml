@@ -109,6 +109,20 @@
         </Setter>
     </Style>
 
+    <Style x:Key="PaneSegmentButton" TargetType="Button">
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="AllowFocusOnInteraction" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <ContentPresenter Content="{TemplateBinding Content}" Background="Transparent"
+                                      HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                      Padding="{TemplateBinding Padding}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- 文字按钮（原型 .btn 的次要样式）：中性填充 + 细描边，悬停加深；按下缩小 0.97 以后由代码做 -->
     <Style x:Key="PaneTextButton" TargetType="Button">
         <Setter Property="MinHeight" Value="{StaticResource PaneControlSm}"/>

@@ -42,7 +42,7 @@ public sealed partial class PowerReminderView : UserControl, IPanelView, IDispos
     public Size PreferredSize => new(320, 132);
     public event EventHandler<Size>? SizeRequested { add { } remove { } }
     public event EventHandler? CloseRequested { add { } remove { } }
-    public UIElement? DragRegion => null;
+    public UIElement DragRegion => Header;
     public void OnShowing(PanelShowContext context) { Refresh(); clock.Start(); }
     public void OnShown() { }
     public void OnHidden() => Dispose();

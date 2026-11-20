@@ -1,4 +1,4 @@
-﻿param([string]$PackageMetadata,[string]$Report,[string]$EngineAssetDirectory)
+﻿param([string]$PackageMetadata,[string]$Report,[string]$EngineAssetDirectory,[switch]$WithNativeCapture,[switch]$WithTrafficService,[switch]$WithNativeOcr)
 $ErrorActionPreference='Stop'
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $engineAssets=@('google','bing','bilibili','github','baidu') | ForEach-Object {"Assets/Engines/$_.png"}
@@ -13,9 +13,48 @@ if($EngineAssetDirectory){
     Write-Host "engineAssets=5; hashesVerified=True"
     return
 }
-if(!$PackageMetadata){$PackageMetadata=Join-Path $repo 'dist/package.json'}
-if(!$Report){$Report=Join-Path $repo 'out/payload-audit.json'}
+if($WithTrafficService -and (!$WithNativeCapture -or !$PackageMetadata -or !$Report)){throw '流量服务审计需要截图开关、隔离预览清单和独立报告路径'}
+if($WithNativeOcr -and (!$WithNativeCapture -or !$PackageMetadata -or !$Report)){throw 'OCR 审计需要截图开关、隔离预览清单和独立报告路径'}
+if(!$PackageMetadata){$PackageMetadata=Join-Path $repo $(if($WithNativeCapture){'out/capture-preview/package.json'}else{'dist/package.json'})}
+if(!$Report){$Report=Join-Path $repo $(if($WithNativeCapture){'out/capture-preview/payload-audit.json'}else{'out/payload-audit.json'})}
 $metadata=Get-Content -LiteralPath $PackageMetadata -Encoding UTF8 -Raw | ConvertFrom-Json
+if([bool]$metadata.ocrPreview -ne [bool]$WithNativeOcr -or ($WithNativeOcr -and !$metadata.isolatedPreview) -or ($metadata.ocrSourceBuild -and !$WithNativeOcr)){throw 'OCR 预览清单与审计选项不一致'}
+$ocrAssets=@{}
+if($WithNativeOcr){$ocrAssets=Import-PowerShellDataFile -LiteralPath (Join-Path $repo 'src/Pane.Capture/ocr-preview.lock.psd1')}
+if($metadata.ocrSourceBuild){
+    $ocrRoot=Join-Path (Split-Path $metadata.stage -Parent) 'ocr-build'
+    $builds=@(Get-ChildItem -LiteralPath $ocrRoot -Directory -Filter 'build-*')
+    if($builds.Count -ne 1){throw '未能确定包内 OCR 对应的源码构建目录'}
+    $ocrAssets['ImageReader.exe']=(Get-FileHash -LiteralPath (Join-Path $builds[0].FullName 'obj/ImageReader.exe') -Algorithm SHA256).Hash
+    $ocrAssets.Remove('resources.json')
+    $ocrAssets['sources.lock.json']=(Get-FileHash -LiteralPath (Join-Path $repo 'src/Pane.Capture/sources.lock.json') -Algorithm SHA256).Hash
+}
+$captureAssets=@{}
+$trafficAssets=@{}
+if($WithNativeCapture){
+    $captureRoot=Join-Path (Split-Path $metadata.stage -Parent) 'capture-build'
+    $builds=@(Get-ChildItem -LiteralPath $captureRoot -Directory -Filter 'build-*')
+    if($builds.Count -ne 1){throw '未能确定预览包的原生截图构建目录'}
+    $build=$builds[0].FullName
+    $captureAssets=@{
+        'NativeCapture/ScreenCapture.exe'=Join-Path $build 'obj/ScreenCapture.exe'
+        'NativeCapture/LICENSE.ScreenCapture.txt'=Join-Path $build 'src/ScreenCapture/LICENSE'
+        'NativeCapture/LICENSE.Ling.txt'=Join-Path $build 'src/Ling/LICENSE'
+        'NativeCapture/LICENSE.galaxy-tools.txt'=Join-Path $repo 'src/Pane.Capture/LICENSE.galaxy-tools.txt'
+        'NativeCapture/LICENSE.Lucide.txt'=Join-Path $repo 'src/Pane.App/ThirdParty/Lucide-LICENSE.txt'
+    }
+    foreach($notice in 'LICENSE.cgif.txt','LICENSE.quirc.txt','LICENSE.Yoga.txt'){
+        $captureAssets['NativeCapture/'+$notice]=Join-Path $repo "src/Pane.Capture/notices/$notice"
+    }
+}
+if($WithTrafficService){
+    $trafficRoot=Join-Path (Split-Path $metadata.stage -Parent) 'traffic-build'
+    $builds=@(Get-ChildItem -LiteralPath $trafficRoot -Directory -Filter 'build-*')
+    if($builds.Count -ne 1){throw '未能确定流量服务预览构建目录'}
+    foreach($name in 'Pane.TrafficService-x64-preview.zip','Pane.TrafficService-x64-preview.zip.manifest.json'){
+        $trafficAssets["TrafficService/$name"]=Join-Path $builds[0].FullName $name
+    }
+}
 $assets=Get-Content -LiteralPath (Join-Path $repo 'src/Pane.App/obj/project.assets.json') -Encoding UTF8 -Raw | ConvertFrom-Json
 $cache=@($assets.packageFolders.PSObject.Properties.Name)[0]
 # NRBF 读取器经 NativeAOT 链接，不会作为独立 DLL 出现在载荷文件归属表中。
@@ -51,6 +90,16 @@ $rows=@(foreach($file in Get-ChildItem -LiteralPath $metadata.stage -Recurse -Fi
     if($notices.ContainsKey($path)){
         if((Get-FileHash -LiteralPath (Join-Path $repo $notices[$path]) -Algorithm SHA256).Hash -ne $hash){throw "许可文件不一致：$path"}
         $kind='notice'
+    } elseif($captureAssets.ContainsKey($path)){
+        if((Get-FileHash -LiteralPath $captureAssets[$path] -Algorithm SHA256).Hash -ne $hash){throw "原生截图文件与构建来源不一致：$path"}
+        $kind=if($path.EndsWith('.exe')){'native-capture'}else{'notice'}
+    } elseif($trafficAssets.ContainsKey($path)){
+        if((Get-FileHash -LiteralPath $trafficAssets[$path] -Algorithm SHA256).Hash -ne $hash){throw "流量服务文件与构建来源不一致：$path"}
+        $kind='traffic-preview'
+    } elseif($path.StartsWith('NativeOcr/',[StringComparison]::OrdinalIgnoreCase)){
+        $relative=$path.Substring('NativeOcr/'.Length)
+        if(!$ocrAssets.ContainsKey($relative) -or $ocrAssets[$relative] -ne $hash){throw "OCR 预览文件与锁定输入或源码构建不一致：$path"}
+        $kind=if($relative.StartsWith('legal/') -or $relative -eq 'THIRD_PARTY_NOTICES.md'){'notice'}else{'ocr-preview'}
     } elseif($engineAssets -contains $path){
         if((Get-FileHash -LiteralPath (Join-Path $repo "src/Pane.App/$path") -Algorithm SHA256).Hash -ne $hash){throw "引擎图标不一致：$path"}
         $kind='search-engine-mark'
@@ -58,10 +107,41 @@ $rows=@(foreach($file in Get-ChildItem -LiteralPath $metadata.stage -Recurse -Fi
     [pscustomobject]@{path=$path;sha256=$hash;kind=$kind;packages=$matches}
 })
 foreach($path in $notices.Keys){if($rows.path -notcontains $path){throw "payload 缺少许可证：$path"}}
+foreach($path in $captureAssets.Keys){if($rows.path -notcontains $path){throw "payload 缺少原生截图文件：$path"}}
+foreach($path in $trafficAssets.Keys){if($rows.path -notcontains $path){throw "payload 缺少流量服务文件：$path"}}
+foreach($path in $ocrAssets.Keys){if($rows.path -notcontains "NativeOcr/$path"){throw "payload 缺少 OCR 文件：$path"}}
 foreach($path in $engineAssets){if($rows.path -notcontains $path){throw "payload 缺少引擎图标：$path"}}
 # 核对真正传给安装外壳的 ZIP，并确认其字节完整嵌入最终安装程序。
 $zipPath=Join-Path (Split-Path $metadata.stage -Parent) 'payload.zip'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+$trafficFiles=0
+if($WithTrafficService){
+    $trafficZip=Join-Path $metadata.stage 'TrafficService/Pane.TrafficService-x64-preview.zip'
+    $manifest=Get-Content -LiteralPath "$trafficZip.manifest.json" -Encoding UTF8 -Raw | ConvertFrom-Json
+    if($manifest.schema -ne 1 -or $manifest.archive -ne (Split-Path $trafficZip -Leaf) -or
+        (Get-FileHash -LiteralPath $trafficZip -Algorithm SHA256).Hash -ne $manifest.sha256){throw '流量服务 ZIP 与清单不一致'}
+    $trafficArchive=[IO.Compression.ZipFile]::OpenRead($trafficZip)
+    $trafficSha=[Security.Cryptography.SHA256]::Create()
+    $expected=@{}
+    try {
+        foreach($entry in $manifest.files){
+            if($expected.ContainsKey($entry.path)){throw "流量服务清单包含重复文件：$($entry.path)"}
+            $expected.Add($entry.path,$entry)
+        }
+        if(!$expected.ContainsKey('Pane.TrafficService.exe')){throw '流量服务 ZIP 缺少服务程序'}
+        $trafficFiles=$expected.Count
+        foreach($entry in $trafficArchive.Entries){
+            $path=$entry.FullName.Replace('\','/')
+            $row=$expected[$path]
+            if(!$row -or $row.bytes -ne $entry.Length){throw "流量服务 ZIP 文件不一致：$path"}
+            $stream=$entry.Open()
+            try{$hash=[BitConverter]::ToString($trafficSha.ComputeHash($stream)).Replace('-','')}finally{$stream.Dispose()}
+            if($hash -ne $row.sha256){throw "流量服务 ZIP 校验失败：$path"}
+            $expected.Remove($path)
+        }
+        if($expected.Count -ne 0){throw '流量服务 ZIP 缺少清单文件'}
+    } finally {$trafficArchive.Dispose();$trafficSha.Dispose()}
+}
 $archive=[IO.Compression.ZipFile]::OpenRead($zipPath)
 $sha=[Security.Cryptography.SHA256]::Create()
 try {
@@ -82,7 +162,11 @@ try {
     if(!$found){throw '安装程序中未找到完整 payload ZIP'}
 } finally {$archive.Dispose();$sha.Dispose()}
 New-Item -ItemType Directory -Force -Path (Split-Path ([IO.Path]::GetFullPath($Report)) -Parent)|Out-Null
-[pscustomobject]@{version=$metadata.version;files=$rows.Count;embeddedZipVerified=$true;entries=$rows} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Report -Encoding UTF8
-Write-Host "payload=$($rows.Count); licenses=$($notices.Count); embeddedZipVerified=True"
+$audit=[ordered]@{version=$metadata.version;files=$rows.Count;embeddedZipVerified=$true;entries=$rows}
+if($WithTrafficService){$audit.trafficFilesVerified=$trafficFiles}
+if($WithNativeOcr){$audit.ocrFilesVerified=$ocrAssets.Count}
+if($metadata.ocrSourceBuild){$audit.ocrSourceBuild=$true}
+[pscustomobject]$audit | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Report -Encoding UTF8
+Write-Host "payload=$($rows.Count); licenses=$(@($rows | Where-Object kind -EQ 'notice').Count); embeddedZipVerified=True"
 Write-Host "NativeAOT component=$($nrbf[0].Name); license=MIT; sharedNoticesVerified=True"
 $rows | ForEach-Object {$_.packages} | Group-Object | ForEach-Object {Write-Host "$($_.Name): $($_.Count)"}

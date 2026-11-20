@@ -1,5 +1,8 @@
 #define NOMINMAX
+#include <winsock2.h>
 #include <windows.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
 #include <UIAutomation.h>
 #include <exdisp.h>
 #include <shlobj.h>
@@ -15,6 +18,7 @@
 using Microsoft::WRL::ComPtr;
 #define API extern "C" __declspec(dllexport)
 namespace {
+struct InterfaceCounters {GUID id; ULONG64 download,upload; NET_IFINDEX index;};
 std::atomic<unsigned> commandEpoch=0;
 std::recursive_timed_mutex inputMutex;
 std::atomic_flag selectionBusy=ATOMIC_FLAG_INIT;
@@ -33,6 +37,20 @@ bool snapshot(std::vector<Snapshot>& data){
  return GetLastError()==0;
 }
 std::wstring clipboardText(){auto h=GetClipboardData(CF_UNICODETEXT);if(!h)return {};auto p=static_cast<wchar_t*>(GlobalLock(h));if(!p)return {};size_t max=GlobalSize(h)/sizeof(wchar_t),n=0;while(n<max&&p[n])n++;std::wstring s(p,n);GlobalUnlock(h);return s;}
+}
+API int PanePhysicalInterfaceCounters(InterfaceCounters* output,int capacity){
+    MIB_IF_TABLE2* table=nullptr;
+    if(GetIfTable2(&table)!=NO_ERROR)return -1;
+    int count=0;
+    for(ULONG index=0;index<table->NumEntries;++index){
+        const auto& row=table->Table[index];
+        if(!row.InterfaceAndOperStatusFlags.HardwareInterface||row.InterfaceAndOperStatusFlags.FilterInterface||
+            row.OperStatus!=IfOperStatusUp||row.Type==IF_TYPE_SOFTWARE_LOOPBACK||row.Type==IF_TYPE_TUNNEL)continue;
+        if(count<capacity)output[count]={row.InterfaceGuid,row.InOctets,row.OutOctets,row.InterfaceIndex};
+        ++count;
+    }
+    FreeMibTable(table);
+    return count;
 }
 API int PaneKey(unsigned short vk,int down,int unicode){INPUT i{};i.type=INPUT_KEYBOARD;i.ki.dwExtraInfo=pane::InputTag;
  if(unicode){i.ki.wScan=vk;i.ki.dwFlags=KEYEVENTF_UNICODE;}else{i.ki.wVk=vk;if(vk==VK_RCONTROL||vk==VK_RMENU||(vk>=VK_PRIOR&&vk<=VK_DELETE)||vk==VK_LWIN||vk==VK_RWIN)i.ki.dwFlags|=KEYEVENTF_EXTENDEDKEY;}

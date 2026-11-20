@@ -17,10 +17,17 @@ static partial class Program
     {
         if(args is ["--mirror-export"]){await MirrorExport097Tests();return;}
         if(args is ["--083"]){await Transfer083Tests();TestResults.Pass();return;}
+        if(args is ["--notes-backup"]){await NotesBackupTests();TestResults.Pass();return;}
+        if(args is ["--screenshot-backup"]){await ScreenshotBackupTests();TestResults.Pass();return;}
+        if(args is ["--ocr-backup"]){await OcrHistoryBackupTests();TestResults.Pass();return;}
+        if(args is ["--merge"]){await ClipboardMergeTests();TestResults.Pass();return;}
+        if(args is ["--rich-text"]){await ClipboardRichTextTests();TestResults.Pass();return;}
+        if(args is ["--collections"]){await ClipboardCollectionsTests();TestResults.Pass();return;}
         if(args is ["--082"]){await Storage082Tests();TestResults.Pass();return;}
         if(args is ["--hidden-paste",var output]){HiddenPasteTests(output);return;}
         string native=Path.GetFullPath(args[0]);
         NativeLibrary.SetDllImportResolver(Assembly.GetExecutingAssembly(),(name,_,_)=>name=="Pane.Native.dll"?NativeLibrary.Load(native):0);
+        if(args is [_,"--gallery"]){await ClipboardGalleryTests();TestResults.Pass();return;}
         if(args is [_,"production-fixture",var fixture]){
             string directory=Path.GetFullPath(fixture);if(Directory.Exists(directory))throw new InvalidOperationException("夹具目标已存在");
             Directory.CreateDirectory(directory);var store=new SettingsStore(directory,Defaults());
@@ -53,18 +60,26 @@ static partial class Program
             settings.Save(settings.Current with{Clipboard=settings.Current.Clipboard with{HonorExcludeMarker=false,ExcludedPrograms=["BLOCKED.EXE"]}});
             source1.Emit(new(Text:"secret",Program:"blocked.exe"));Check(history.Snapshot().Count==0,"case insensitive exclusion");
             source1.Emit(new(Text:"accepted",Exclude:true,History:0,Cloud:0));Check(history.Snapshot().Count==1,"marker override");source1.Emit(new(Text:"own",Own:true));Check(history.Snapshot().Count==1,"own always excluded");
-            settings.Save(settings.Current with{Clipboard=settings.Current.Clipboard with{HonorExcludeMarker=true}});
-            source1.Emit(new(Text:"repeat"));var duplicate=history.Snapshot()[0];source1.Emit(new(Text:"repeat"));Check(history.Snapshot().Count==2&&history.Snapshot()[0].Id==duplicate.Id&&history.Snapshot()[0].CopiedAt>=duplicate.CopiedAt,"dedupe time and identity");
+            settings.Save(settings.Current with{Clipboard=settings.Current.Clipboard with{HonorExcludeMarker=true,ExcludedText=["fixture-token:","accept"]}});
+            source1.Emit(new(Text:"prefix FIXTURE-TOKEN: synthetic"));
+            Check(history.Snapshot().Single().Text=="accepted","exclude a case-insensitive substring without changing existing history");
+            source1.Emit(new(Text:"repeat"));var duplicate=history.Snapshot()[0];
+            var annotation=ClipAnnotation.FromInput(" release checklist "," Ship，ship, archive ");
+            Check(history.SetAnnotation(duplicate.Id,annotation),"annotate existing clip");
+            source1.Emit(new(Text:"repeat"));var recaptured=history.Snapshot()[0];
+            Check(history.Snapshot().Count==2&&recaptured.Id==duplicate.Id&&recaptured.CopiedAt>=duplicate.CopiedAt&&recaptured.Annotation?.Note=="release checklist","dedupe keeps annotation, time and identity");
             settings.Save(settings.Current with{Clipboard=settings.Current.Clipboard with{Dedupe=false}});source1.Emit(new(Text:"repeat"));Check(history.Snapshot().Count==3,"dedupe disabled");
             history.ClearUnpinned();settings.Save(settings.Current with{Clipboard=settings.Current.Clipboard with{Dedupe=true,Limit=200}});
             source1.Emit(new(Text:"pinned"));pinned=history.Snapshot()[0].Id;history.SetPinned(pinned,true);
+            var pinnedAt=history.Snapshot()[0].CopiedAt;
+            Check(history.SetAnnotation(pinned,annotation)&&history.Snapshot()[0].CopiedAt==pinnedAt,"annotation does not reorder or unpin clip");
             for(int i=0;i<205;i++)source1.Emit(new(Text:"text "+i));
             var snapshot=history.Snapshot();Check(snapshot.Count==201&&snapshot[0].Id==pinned&&snapshot[1].Text=="text 204"&&!snapshot.Any(e=>e.Text=="text 0"),"limit excludes pinned and trims oldest");
             history.ClearUnpinned();Check(history.Snapshot().Count==1&&history.Snapshot()[0].Pinned,"clear keeps pin");
             source1.Emit(new(Files:[@"C:\fixture\one.txt",@"C:\fixture\two.txt"],Text:"ignored"));Check(history.Snapshot().First(e=>!e.Pinned).Kind==ClipKind.Files,"files priority");
             source1.Emit(new(Png:Png(640,360,1)));var image=history.Snapshot().First(e=>e.Kind==ClipKind.Image);imageId=image.Id;full=image.ContentPath;
             Check(image.ImageWidth==640&&image.ImageHeight==360&&File.Exists(full)&&File.Exists(image.Thumbnail!.Path),"full image thumbnail");
-            await history.PasteAsync(pinned,false,123,default);Check(writer.Entry?.Id==pinned&&writer.Target==123&&!writer.Plain,"paste delegates target");
+            await history.PasteAsync(pinned,false,123,default);Check(writer.Entry?.Id==pinned&&writer.Entry.Text=="pinned"&&writer.Target==123&&!writer.Plain,"paste keeps original content and target");
             await history.PasteAsync(imageId,true,123,default);Check(writer.Plain,"plain paste flag");
             var before=history.Snapshot().First(e=>e.Id==imageId).CopiedAt;settings.Save(settings.Current with{Clipboard=settings.Current.Clipboard with{MoveToTopAfterPaste=false}});await history.PasteAsync(imageId,false,123,default);Check(history.Snapshot().First(e=>e.Id==imageId).CopiedAt==before,"paste move disabled");
             source1.Emit(new(Text:"newer"));settings.Save(settings.Current with{Clipboard=settings.Current.Clipboard with{MoveToTopAfterPaste=true}});await history.PasteAsync(imageId,false,123,default);Check(history.Snapshot()[1].Id==imageId,"paste moves after pins");
@@ -75,13 +90,18 @@ static partial class Program
         Check(source1.Disposed,"source disposed");
         using(var history=new ClipboardHistory(settings,new FakeSource(),writer,imageFiles)){
             await history.Ready;Check(history.Snapshot().Any(e=>e.Id==pinned&&e.Pinned)&&history.Snapshot().Any(e=>e.Id==imageId&&e.ContentPath==full)&&history.Snapshot().Any(e=>e.Files?.Count==2),"storage roundtrip metadata files images pins");
+            var annotation=history.Snapshot().Single(e=>e.Id==pinned).Annotation;
+            Check(annotation is {Note:"release checklist"}&&annotation.Tags.SequenceEqual(["Ship","archive"])&&annotation.Matches("CHECKLIST")&&annotation.Matches("ship"),"persist normalized searchable annotation");
+            Check(history.SetAnnotation(pinned,ClipAnnotation.FromInput(" ",",，"))&&history.Snapshot().Single(e=>e.Id==pinned).Annotation==null,"empty annotation clears metadata");
             history.Delete(imageId);Check(!history.Snapshot().Any(e=>e.Id==imageId),"delete");
+            Check(!history.SetAnnotation(imageId,annotation),"annotating a missing clip does not recreate it");
         }
         Check(!File.Exists(full),"delete image after durable index");
         using(var history=new ClipboardHistory(settings,new FakeSource(),writer,imageFiles)){
             await history.Ready;history.SetPinned(pinned,false);history.ClearUnpinned();Check(history.Snapshot().Count==0,"unpin and clear");
         }
         settings.Load();Check(!settings.Current.Clipboard.RecordText&&!settings.Current.Clipboard.RecordFiles&&settings.Current.Clipboard.Limit==200&&settings.Current.Clipboard.ExcludedPrograms[0]=="BLOCKED.EXE","new settings roundtrip");
+        Check(settings.Current.Clipboard.ExcludedText.SequenceEqual(["fixture-token:","accept"]),"text exclusion rules persisted locally");
         using(var source=new WindowsClipboardSource(settings,true)){source.Captured+=_=>throw new Exception("observe read content");source.Start();await Task.Delay(150);Check(source.Registered,"native register");source.Dispose();Check(source.Removed,"native unregister and thread join");}
         await SwitchTests();
         await PersistenceTests();

@@ -1,5 +1,5 @@
 using Pane.Localization;
-// 分词的界面接线（设计负责人，093）：分词窗口从剪贴板文字条目（Ctrl+B / 行尾按钮）、分词热键（工程接）打开。docs/design.md「分词」。
+// 分词窗口从剪贴板条目的右键菜单或分词热键打开。
 using Pane.Contracts;
 using Pane.Views;
 namespace Pane;

@@ -16,13 +16,14 @@ public sealed partial class SettingsView
 
     // 导出选项只在本次打开期间记住，不进设置
     bool exportSettings = true, exportUsage = true;
+    bool exportNotes, exportScreenshots, exportOcrHistory;
     ClipboardExport exportClipboard = ClipboardExport.TextOnly;
     double? exportProgress;
     string? exportNote, exportedPath;   // 导出结果或失败原因；成功时记下文件位置，给「打开文件夹」用
 
     string? importPath;
     DataImportPreview? importInfo;
-    bool importReading, importSettings, importUsage, importClipboard;
+    bool importReading, importSettings, importUsage, importClipboard, importNotes, importScreenshots, importOcrHistory;
     DataImportMode importMode = DataImportMode.Merge;
     double? stageProgress;
     string? importNote;                 // 读取或准备失败的原因，临时换掉组说明
@@ -34,7 +35,7 @@ public sealed partial class SettingsView
             OpenImportPreview(@"D:\备份\Pane 数据 2026-11-08.zip", DataStorageSample.Preview); // 不翻译：演示数据
 
         // 导出
-        bool anything = exportSettings || exportUsage || exportClipboard != ClipboardExport.None;
+        bool anything = exportSettings || exportUsage || exportClipboard != ClipboardExport.None || exportNotes || exportScreenshots || exportOcrHistory;
         FrameworkElement exportAction;
         if (exportProgress is { } p) exportAction = Chip(string.Format(Strings.Settings_Data_Exporting, p));
         else
@@ -53,6 +54,9 @@ public sealed partial class SettingsView
             Row(Strings.Settings_Data_CategoryClipboard, Strings.Settings_Data_ClipboardExportDescription,
                 Seg([(nameof(ClipboardExport.None), Strings.Settings_Data_ClipboardNone), (nameof(ClipboardExport.TextOnly), Strings.Settings_Data_ClipboardTextOnly), (nameof(ClipboardExport.WithImages), Strings.Settings_Data_ClipboardWithImages)],
                     exportClipboard.ToString(), v => { exportClipboard = Enum.Parse<ClipboardExport>(v); Render(); })),
+            Row(Strings.Module_Notes_Name, Strings.Settings_Data_ExportNotesDescription, Switch(exportNotes, v => { exportNotes = v; Render(); })),
+            Row(Strings.Module_Screenshots_Name, Strings.Settings_Data_ExportScreenshotsDescription, Switch(exportScreenshots, v => { exportScreenshots = v; Render(); })),
+            Row(Strings.Screenshots_OcrHistory, Strings.Settings_Data_ExportOcrHistoryDescription, Switch(exportOcrHistory, v => { exportOcrHistory = v; Render(); })),
             Row(Strings.Settings_Data_ExportToFile, exportNote ?? Strings.Settings_Data_ExportToFileDescription, exportTail),
         ], Strings.Settings_Data_ExportNote);
 
@@ -74,13 +78,28 @@ public sealed partial class SettingsView
             rows.Add(ImportPart(Strings.Settings_Data_CategoryUsage, Strings.Settings_Data_UsageDescription, info.HasUsage, importUsage, v => importUsage = v, busy));
             rows.Add(ImportPart(Strings.Settings_Data_CategoryClipboard, string.Format(Strings.Settings_Data_ImportClipboardCount, info.ClipboardEntries, info.ClipboardImages),
                 info.ClipboardEntries > 0, importClipboard, v => importClipboard = v, busy));
-            // 合并 / 覆盖只影响使用记录和剪贴板；两者都没选时变灰
+            rows.Add(ImportPart(Strings.Module_Notes_Name, string.Format(Strings.Settings_Data_ImportNotesCount, info.Notes ?? 0),
+                info.Notes != null, importNotes, v => importNotes = v, busy));
+            rows.Add(ImportPart(Strings.Module_Screenshots_Name, string.Format(Strings.Settings_Data_ImportScreenshotsCount, info.Screenshots ?? 0),
+                info.Screenshots != null, importScreenshots, v => importScreenshots = v, busy));
+            rows.Add(ImportPart(Strings.Screenshots_OcrHistory, string.Format(Strings.Settings_Data_ImportOcrHistoryCount, info.OcrHistory ?? 0),
+                info.OcrHistory != null, importOcrHistory, v => importOcrHistory = v, busy));
             var mode = Seg([(nameof(DataImportMode.Merge), Strings.Settings_Data_Merge), (nameof(DataImportMode.Replace), Strings.Settings_Data_Replace)], importMode.ToString(),
                 v => { importMode = Enum.Parse<DataImportMode>(v); Render(); });
-            Enable(mode, !busy && (importUsage || importClipboard));
-            rows.Add(Row(Strings.Settings_Data_ImportMode, importMode == DataImportMode.Merge ? Strings.Settings_Data_MergeDescription : Strings.Settings_Data_ReplaceDescription, mode));
+            bool importCards = importNotes || importScreenshots;
+            bool importContent = importUsage || importClipboard || importCards || importOcrHistory;
+            Enable(mode, !busy && importContent);
+            var modeDescription = importMode == DataImportMode.Merge
+                ? importCards ? Strings.Settings_Data_MergeWithCards : Strings.Settings_Data_MergeDescription
+                : importCards ? Strings.Settings_Data_ReplaceWithCards : Strings.Settings_Data_ReplaceDescription;
+            if (importOcrHistory)
+            {
+                var ocrDescription = importMode == DataImportMode.Merge ? Strings.Settings_Data_MergeOcrHistory : Strings.Settings_Data_ReplaceOcrHistory;
+                modeDescription = importUsage || importClipboard || importCards ? modeDescription + "\n" + ocrDescription : ocrDescription;
+            }
+            rows.Add(Row(Strings.Settings_Data_ImportMode, modeDescription, mode));
             FrameworkElement start = busy ? Chip(string.Format(Strings.Settings_Data_Preparing, stageProgress))
-                : Disabled(Button(Strings.Settings_Data_ImportRestart, "restart", () => _ = StartImport()), !(importSettings || importUsage || importClipboard));
+                : Disabled(Button(Strings.Settings_Data_ImportRestart, "restart", () => _ = StartImport()), !(importSettings || importContent));
             rows.Add(Row(Strings.Settings_Data_ImportStart, Strings.Settings_Data_ImportStartDescription, start));
         }
         else
@@ -122,7 +141,7 @@ public sealed partial class SettingsView
         var progress = new Progress<double>(v => { exportProgress = v; if (current.Id == "data") Later(0); });
         try
         {
-            var result = await Transfer!.ExportAsync(path, new(exportSettings, exportUsage, exportClipboard), progress, CancellationToken.None);
+            var result = await Transfer!.ExportAsync(path, new(exportSettings, exportUsage, exportClipboard, exportNotes, exportScreenshots, exportOcrHistory), progress, CancellationToken.None);
             exportNote = string.Format(Strings.Settings_Data_Exported, result.Path, SizeText(result.Bytes));
             exportedPath = result.Path;
         }
@@ -167,6 +186,9 @@ public sealed partial class SettingsView
         importSettings = info.HasSettings;
         importUsage = info.HasUsage;
         importClipboard = info.ClipboardEntries > 0;
+        importNotes = info.Notes > 0;
+        importScreenshots = info.Screenshots > 0;
+        importOcrHistory = info.OcrHistory > 0;
         importMode = DataImportMode.Merge;
     }
 
@@ -184,7 +206,7 @@ public sealed partial class SettingsView
         importNote = null;
         Render();
         var progress = new Progress<double>(v => { stageProgress = v; if (current.Id == "data") Later(0); });
-        try { await Transfer!.StageImportAsync(path, new(importSettings, importUsage, importClipboard, importMode), progress, CancellationToken.None); }
+        try { await Transfer!.StageImportAsync(path, new(importSettings, importUsage, importClipboard, importMode, importNotes, importScreenshots, importOcrHistory), progress, CancellationToken.None); }
         catch (Exception e)
         {
             importNote = e is DataStorageException ? e.Message : App.FailureReason(e) ?? e.Message;

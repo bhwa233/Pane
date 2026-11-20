@@ -4,7 +4,6 @@ using System.Text.Json.Serialization;
 namespace Pane.Settings;
 [JsonSerializable(typeof(PaneSettings))]
 [JsonSerializable(typeof(GlassCommand))]
-[JsonSerializable(typeof(RenameSettings))]
 [JsonSourceGenerationOptions(WriteIndented=true, UseStringEnumConverter=true)]
 internal partial class SettingsJson : JsonSerializerContext { }
 public sealed class SettingsStore
@@ -22,6 +21,7 @@ public sealed class SettingsStore
     public PaneSettings Current { get; private set; }
     // 顺序固定为存储锁 → 设置写锁；历史保存和搬移共用此锁。
     internal object StorageSync { get; }=new();
+    internal SemaphoreSlim ScreenshotPinSync { get; }=new(1);
     readonly PaneSettings defaults;
     public event EventHandler? Changed;
     public event EventHandler<string>? CorruptFile;
@@ -98,25 +98,30 @@ public sealed class SettingsStore
     }
     internal static void Validate(PaneSettings s)
     {
-        if(s.Rename.Presets.Length>30||!ValidRules(s.Rename.LastRules)||s.Rename.Presets.Any(p=>p==null||string.IsNullOrWhiteSpace(p.Name)||!ValidRules(p.Rules)))throw new ArgumentException(Strings.Settings_Rename_Invalid);
         if(s.Ai==null)throw new ArgumentException(Strings.Settings_Ai_Invalid);
         s.Ai.Validate();
         if(s.Version!=1||s.General==null||s.Launcher?.Hotkey==null||s.Clipboard?.Hotkey==null) throw new ArgumentException(Strings.Settings_InvalidVersion);
         if(s.SuperPanel is null || !Enum.IsDefined(s.SuperPanel.TriggerButton) || s.SuperPanel.HoldMilliseconds<=0 || s.SuperPanel.DisabledPrograms is null) throw new ArgumentException(Strings.Settings_Super_Invalid);
+        const KeyModifiers shortcutModifiers = KeyModifiers.Ctrl | KeyModifiers.Alt | KeyModifiers.Shift | KeyModifiers.Win;
+        if (s.SuperPanel.Hotkey is not { DoubleTap: false, VirtualKey: > 0 and <= 255, Modifiers: var modifiers } ||
+            modifiers == KeyModifiers.None || (modifiers & ~shortcutModifiers) != 0) throw new ArgumentException(Strings.Settings_Super_Invalid);
         if(s.Icons.Overrides.Any(p=>string.IsNullOrWhiteSpace(p.Key)||!Enum.IsDefined(p.Value))||s.Icons.CustomIcons.Any(p=>string.IsNullOrWhiteSpace(p.Key)||string.IsNullOrWhiteSpace(p.Value)))throw new ArgumentException(Strings.Settings_Icons_Invalid); var g=s.General;
         var c=s.Clipboard;
         if((!c.RecordText&&!c.RecordImages&&!c.RecordFiles)||c.Limit is not (200 or 500 or 1000 or 5000)||c.ExcludedPrograms.Any(p=>string.IsNullOrWhiteSpace(p)||p.IndexOfAny(['/', '\\', '\r', '\n'])>=0))throw new ArgumentException(Strings.Settings_Clipboard_Invalid);
+        if(c.ExcludedText.Length>ClipboardSettings.TextExclusionLimit||c.ExcludedText.Any(term=>string.IsNullOrWhiteSpace(term)||
+            term.Length>ClipboardSettings.TextExclusionLength||term.IndexOfAny(['\0','\r','\n'])>=0))
+            throw new ArgumentException(string.Format(Strings.Settings_Clipboard_ExcludedTextInvalid, ClipboardSettings.TextExclusionLimit, ClipboardSettings.TextExclusionLength));
         var l=s.Launcher;
         if(!Enum.IsDefined(l.Width)||l.AppRows is <1 or >4||l.FileRows is not (3 or 5 or 8 or 10))throw new ArgumentException(Strings.Settings_Launcher_Invalid);
         if(s.Update.NewsShown<0)throw new ArgumentException(Strings.Settings_InvalidNumber);
         if(l.ActionRow==null||l.ActionRow.Any(string.IsNullOrWhiteSpace)||!Enum.IsDefined(l.KeepInput)||l.AutoAttachSeconds is not (0 or 1 or 3 or 5)||l.FileResultCount is not (5 or 8 or 12)||l.Favorites==null||l.SearchEngines==null||l.PinnedApps==null||l.SearchEngines.Length==0)throw new ArgumentException(Strings.Settings_Launcher_Invalid);
         if(l.Favorites.Any(f=>f==null||string.IsNullOrWhiteSpace(f.Path))||l.PinnedApps.Any(string.IsNullOrWhiteSpace))throw new ArgumentException(Strings.Settings_LauncherEntry_Invalid);
         if(l.SearchEngines.Any(e=>e==null||string.IsNullOrWhiteSpace(e.Name)||string.IsNullOrWhiteSpace(e.Keyword)||e.Keyword.Any(char.IsWhiteSpace)||e.UrlTemplate==null||!e.UrlTemplate.Contains("{query}",StringComparison.Ordinal)||!Uri.TryCreate(e.UrlTemplate.Replace("{query}","test"),UriKind.Absolute,out var uri)||uri.Scheme is not ("http" or "https"))||l.SearchEngines.Select(e=>e.Keyword).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=l.SearchEngines.Length||!l.SearchEngines.Any(e=>string.Equals(e.Keyword,l.DefaultEngine,StringComparison.OrdinalIgnoreCase)))throw new ArgumentException(Strings.Settings_SearchEngine_Invalid);
+        if(!QuickLinkRules.ValidEntries(l))throw new ArgumentException(Strings.QuickLinks_Invalid);
         if(s.Launcher.Position is {} p && (string.IsNullOrWhiteSpace(p.MonitorId)||!double.IsFinite(p.X)||!double.IsFinite(p.Y))) throw new ArgumentException(Strings.Settings_LauncherPosition_Invalid);
         if(!Enum.IsDefined(g.Theme)||!double.IsFinite(g.PanelRadius)||g.PanelRadius<0||g.PanelRadius>100||!double.IsFinite(g.MotionSpeed)||g.MotionSpeed<=0||g.MotionSpeed>20) throw new ArgumentException(Strings.Settings_InvalidNumber);
         if(g.AccentColor==null||g.AccentColor.Length!=9||g.AccentColor[0]!='#'||!uint.TryParse(g.AccentColor.AsSpan(1),System.Globalization.NumberStyles.HexNumber,null,out _)) throw new ArgumentException(Strings.Settings_InvalidAccent);
         foreach(var v in new[]{g.GlassLight,g.GlassDark}) if(v==null||!Valid(v.TintOpacity,1)||!Valid(v.LuminosityOpacity,1)||!Valid(v.Saturation,2)||!Valid(v.Highlight,1)||!Valid(v.Shadow,1)||!Valid(v.ExtraBlur,250)) throw new ArgumentException(Strings.Settings_InvalidGlass);
     }
-    static bool ValidRules(Pane.Contracts.RenameRule[]? rules)=>rules!=null&&rules.Length<=20&&rules.All(r=>r!=null&&Enum.IsDefined(r.Kind)&&Enum.IsDefined(r.Position)&&Enum.IsDefined(r.Case)&&Enum.IsDefined(r.DateSource)&&r.Find!=null&&r.Text!=null&&r.Separator!=null&&r.DateFormat!=null);
     static bool Valid(double v,double max)=>double.IsFinite(v)&&v>=0&&v<=max;
 }

@@ -1,16 +1,27 @@
 // 剪贴板历史：界面和剪贴板服务之间的接口。归设计负责人定义，工程照着实现真实服务。
 // 规则依据 docs/requirements.md「剪贴板」和 docs/design.md「技术决策」（图片、文件列表保存完整内容，能再次粘贴）。
 // 界面开发期间用 DesignData/ClipboardSample 的假数据。
+using System.Text.Json.Serialization;
+
 namespace Pane.Contracts;
 
 /// <summary>条目类型。Code / Link / Color 是文本的细分，由服务按内容判断；界面按类型选图标和排版。</summary>
 public enum ClipKind { Text, Code, Link, Color, Image, Files }
+
+public enum ClipMergeResult { Saved, InvalidSelection, FileUnavailable, ImageUnavailable, TooLarge, StorageFull, Unavailable }
+public readonly record struct ClipGalleryImportResult(int Added, int Existing, int Failed);
+public enum ClipTextCopyResult { Saved, InvalidText, OriginalUnavailable, HistoryFull, Unavailable }
+public sealed record ClipboardCleanupPreview(IReadOnlyList<ClipEntry> Entries, int Remaining);
 
 /// <summary>
 /// 一张图：真实数据给本机位图路径（缩略图由服务生成好，不在界面里解码原图）；
 /// 界面假数据没有位图时用渐变色块代替。
 /// </summary>
 public sealed record ClipPicture(string? Path, string? GradientFrom = null, string? GradientTo = null);
+public sealed record ClipRichText(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] byte[]? Html,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] byte[]? Rtf,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool ImageMerge = false);
 
 public sealed record ClipEntry(
     string Id,
@@ -24,12 +35,38 @@ public sealed record ClipEntry(
     LauncherIcon? SourceIcon,             // 来源程序的小图标；没有就不显示
     DateTimeOffset CopiedAt,
     bool Pinned,
-    string? ContentPath = null);           // Image：完整图片（PNG）的本机路径，粘贴、另存为、复制图片用；界面显示只用 Thumbnail
+    string? ContentPath = null,            // Image：完整图片（PNG）的本机路径，粘贴、另存为、复制图片用；界面显示只用 Thumbnail
+    ClipAnnotation? Annotation = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClipRichText? RichText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Collections = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Archived = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Favorite = false)
+{
+    internal bool Collected => Favorite || Collections is { Count: > 0 };
+    internal bool HasImageContent => Kind == ClipKind.Image || RichText?.ImageMerge == true;
+}
+
+public sealed record ClipAnnotation(string Note, IReadOnlyList<string> Tags)
+{
+    public const int NoteLimit = 500, TagsLimit = 256;
+
+    internal static ClipAnnotation? FromInput(string note, string tags)
+    {
+        if (note.Length > NoteLimit || tags.Length > TagsLimit) throw new ArgumentException();
+        note = note.Trim();
+        var values = tags.Split([',', '\uFF0C'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return note.Length == 0 && values.Length == 0 ? null : new(note, Array.AsReadOnly(values));
+    }
+
+    internal bool Matches(string query) => Note.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        Tags.Any(tag => tag.Contains(query, StringComparison.OrdinalIgnoreCase));
+}
 
 public interface IClipboardHistory
 {
     /// <summary>当前全部条目。排序：已固定在前，其余按复制时间从新到旧。</summary>
-    IReadOnlyList<ClipEntry> Snapshot();
+    IReadOnlyList<ClipEntry> Snapshot(bool includeArchived = false);
 
     /// <summary>历史变化（新复制、删除、固定、粘贴后挪到最前）。可能在后台线程触发，界面自己切回 UI 线程。</summary>
     event EventHandler? Changed;
@@ -40,11 +77,22 @@ public interface IClipboardHistory
     /// 界面先收起面板再调用。失败抛带类型的异常（目标窗口已关闭、权限受限、超时）。
     /// </summary>
     Task PasteAsync(string id, bool plainText, nint targetWindow, CancellationToken cancellationToken);
+    Task<ClipMergeResult> MergeAsync(IReadOnlyList<string> ids, CancellationToken cancellationToken);
+    Task<ClipGalleryImportResult> ImportGalleryAsync(IReadOnlyList<string> paths, string collection, CancellationToken cancellationToken)
+        => Task.FromResult(new ClipGalleryImportResult(0, 0, paths.Count));
+    ClipTextCopyResult SaveTextCopy(string id, string text) => ClipTextCopyResult.Unavailable;
+    string? GetTextDraft(string id) => null;
+    bool SetTextDraft(string id, string? text) => false;
+    Task ExportFileAsync(string id, string path, CancellationToken cancellationToken) => Task.FromException(new NotSupportedException());
 
     void SetPinned(string id, bool pinned);
+    bool SetFavorite(string id, bool favorite);
+    bool SetAnnotation(string id, ClipAnnotation? annotation);
+    bool SetDetails(string id, ClipAnnotation? annotation, IReadOnlyList<string>? collections);
     void Delete(string id);
-    /// <summary>清空未固定的条目（设置页「清空历史」）。已固定的保留。</summary>
     void ClearUnpinned();
+    ClipboardCleanupPreview PreviewCleanup() => new([], 0);
+    int ConfirmCleanup(ClipboardCleanupPreview preview) => 0;
 
     /// <summary>
     /// 历史存不进硬盘时的原因（045）：一句给用户看的中文，如「保存失败：文件被占用（已重试 12 次）」；正常时为 null。
