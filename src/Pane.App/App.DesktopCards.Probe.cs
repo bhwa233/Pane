@@ -19,10 +19,8 @@ public sealed partial class App
         {
             var fixture = GetNotes();
             fixture.Load();
-            fixture.Select(null);
-            fixture.Edit("Layout probe", "Layout edits do not change card content.");
-            if (!fixture.SaveDraft()) throw new InvalidOperationException("Missing layout probe note.");
-            ToggleNotePin(fixture.Draft!.Id);
+            var probeNote = fixture.Create("Layout probe", "Layout edits do not change card content.");
+            ToggleNotePin(probeNote.Id);
             SetTrafficPin(true);
             var image = GetScreenshots().Import(source.Trim());
             SaveScreenshotLayout(image, true, null);

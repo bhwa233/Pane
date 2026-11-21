@@ -28,17 +28,13 @@
             </Button>
         </Grid>
 
-        <!-- 贴纸面（tile）：只读正文 + 首图 -->
+        <!-- 贴纸面（tile）：只读正文 -->
         <ScrollViewer x:Name="TilePane" Grid.Row="1" Padding="12,8" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="6">
-                <TextBlock x:Name="BodyText" TextWrapping="Wrap" FontFamily="{StaticResource PaneFontUi}"
-                           FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}"/>
-                <Image x:Name="ImagePreview" MaxHeight="86" Stretch="Uniform" HorizontalAlignment="Left" Visibility="Collapsed"
-                       AutomationProperties.Name="{x:Bind loc:Strings.Notes_Images}"/>
-            </StackPanel>
+            <TextBlock x:Name="BodyText" TextWrapping="Wrap" FontFamily="{StaticResource PaneFontUi}"
+                       FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText1Brush}"/>
         </ScrollViewer>
 
-        <!-- 编辑面（pad）：标题 + 正文 + 状态行；Markdown 便签带精简格式按钮 -->
+        <!-- 编辑面（pad）：标题 + 正文 + 状态行 -->
         <Grid x:Name="PadPane" Grid.Row="1" Padding="10,8,10,8" RowSpacing="6" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -54,23 +50,11 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="PadStatus" VerticalAlignment="Center" MaxLines="1" TextTrimming="CharacterEllipsis"
                            FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"
                            AutomationProperties.LiveSetting="Polite"/>
-                <Button x:Name="PadFormatBold" Grid.Column="1" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
-                        Content="B" FontWeight="SemiBold" FontSize="{StaticResource PaneTextXs}" Click="CardFormatBold" Visibility="Collapsed"
-                        AutomationProperties.Name="{x:Bind loc:Strings.Notes_FormatBold}"/>
-                <Button x:Name="PadFormatHeading" Grid.Column="2" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
-                        Content="H" FontSize="{StaticResource PaneTextXs}" Click="CardFormatHeading" Visibility="Collapsed"
-                        AutomationProperties.Name="{x:Bind loc:Strings.Notes_FormatHeading}"/>
-                <Button x:Name="PadFormatList" Grid.Column="3" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
-                        Content="•" FontSize="{StaticResource PaneTextSm}" Click="CardFormatList" Visibility="Collapsed"
-                        AutomationProperties.Name="{x:Bind loc:Strings.Notes_FormatList}"/>
-                <Button x:Name="PadCollapse" Grid.Column="4" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
+                <Button x:Name="PadCollapse" Grid.Column="1" Style="{StaticResource PaneIconButton}" Width="26" Height="26"
                         Click="CollapseClicked" AutomationProperties.Name="{x:Bind loc:Strings.Notes_CollapsePad}"
                         ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_CollapsePad}">
                     <c:PaneIcon Glyph="chev-d" Width="13" Height="13"/>

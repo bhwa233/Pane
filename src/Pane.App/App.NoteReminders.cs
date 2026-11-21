@@ -32,12 +32,9 @@ public sealed partial class App
     DateTimeOffset? GetNoteReminder(Guid id) =>
         Store.Current.NoteReminders?.TryGetValue(id, out var due) == true ? due : null;
 
-    IReadOnlyDictionary<string, DateTimeOffset>? GetTaskReminders(Guid id) =>
-        Store.Current.NoteTaskReminders?.GetValueOrDefault(id);
-
-    void SetNoteReminder(Guid id, string? task, DateTimeOffset? due)
+    void SetNoteReminder(Guid id, DateTimeOffset? due)
     {
-        Store.Update(settings => NoteReminderSchedule.Set(settings, id, task, due));
+        Store.Update(settings => NoteReminderSchedule.Set(settings, id, due));
         RefreshNoteReminder(id);
         ScheduleNoteReminders();
     }
@@ -80,7 +77,7 @@ public sealed partial class App
             store.Load();
             note = store.Find(next.NoteId);
             if (note == null) RemoveNoteReminders(next.NoteId);
-            else SetNoteReminder(next.NoteId, next.Task, null);
+            else SetNoteReminder(next.NoteId, null);
         }
         catch (Exception error) when (NoteStore.IsStorageError(error))
         {
@@ -91,7 +88,7 @@ public sealed partial class App
 
         if (note == null) return;
         sender.Stop();
-        var view = new NoteReminderView(note.Title, next.Task, () => ShowNotes(note.Id));
+        var view = new NoteReminderView(note.Title, () => ShowNotes(note.Id));
         ShowReminderPanel(SecondaryId.NoteReminder, Strings.Notes_Reminder, view, view, ScheduleNoteReminders);
     }
 }

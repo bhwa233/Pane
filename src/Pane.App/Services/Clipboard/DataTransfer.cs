@@ -115,7 +115,7 @@ internal sealed partial class DataStorage
         if(!name.StartsWith("clipboard/images/",StringComparison.Ordinal))return false;
         string leaf=name[17..];return leaf.EndsWith(".png",StringComparison.Ordinal)&&Guid.TryParseExact(leaf.EndsWith(".thumb.png",StringComparison.Ordinal)?leaf[..^10]:leaf[..^4],"N",out _);
     }
-    static bool Allowed(string name)=>TransferFiles.Contains(name)||ImageName(name)||name==NoteIndex||TryNoteName(name,out _,out _)||TryNoteImageName(name,out _)||name==ScreenshotIndex||TryScreenshotName(name,out _)||name==OcrIndex||TryOcrName(name,out _,out _);
+    static bool Allowed(string name)=>TransferFiles.Contains(name)||ImageName(name)||name==NoteIndex||TryNoteName(name,out _,out _)||name==ScreenshotIndex||TryScreenshotName(name,out _)||name==OcrIndex||TryOcrName(name,out _,out _);
     static JsonObject ValidateArchive(ZipArchive zip)
     {
         if(zip.Entries.Count>ImportEntryLimit)throw new DataStorageException(Strings.Data_ImportTooLarge);
@@ -132,8 +132,7 @@ internal sealed partial class DataStorage
         var noteEntries=zip.Entries.Where(e=>e.FullName.StartsWith("notes/",StringComparison.OrdinalIgnoreCase)).ToArray();
         if(format>=2&&obj.ContainsKey("notes")){
             int notes=obj["notes"]!.GetValue<int>();
-            if(notes<0||zip.GetEntry(NoteIndex)==null||noteEntries.Any(e=>e.FullName!=NoteIndex&&!TryNoteName(e.FullName,out _,out _)&&
-                (!TryNoteImageName(e.FullName,out _)||e.Length>Pane.Services.Notes.NoteStore.ImageByteLimit))||
+            if(notes<0||zip.GetEntry(NoteIndex)==null||noteEntries.Any(e=>e.FullName!=NoteIndex&&!TryNoteName(e.FullName,out _,out _))||
                 notes!=noteEntries.Count(e=>TryNoteName(e.FullName,out _,out var ticks)&&ticks==null))throw Invalid();
         }else if(noteEntries.Length!=0||obj.ContainsKey("notes"))throw Invalid();
         var screenshotEntries=zip.Entries.Where(e=>e.FullName.StartsWith(ScreenshotPrefix,StringComparison.OrdinalIgnoreCase)).ToArray();

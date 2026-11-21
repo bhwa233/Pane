@@ -1880,6 +1880,9 @@
   <data name="Notes_ImageLimit" xml:space="preserve"><value>每条便签最多添加 4 张图片</value></data>
   <data name="Notes_ImageFailed" xml:space="preserve"><value>无法添加图片，请检查格式、大小及存储权限</value></data>
   <data name="Notes_ExportFileFailed" xml:space="preserve"><value>无法另存便签正文</value></data>
+  <data name="Notes_UndoDelete" xml:space="preserve"><value>撤销删除</value></data>
+  <data name="Notes_ImportedFiles" xml:space="preserve"><value>已导入 {0} 个新便签</value></data>
+  <data name="Notes_ImportPartialFailed" xml:space="preserve"><value>部分文件导入失败：{0}</value></data>
   <data name="Screenshots_Ocr" xml:space="preserve"><value>图片取字</value></data>
   <data name="Screenshots_ClipboardOcr" xml:space="preserve"><value>剪贴板图片取字</value></data>
   <data name="Screenshots_ClipboardNoImage" xml:space="preserve"><value>剪贴板中没有图片</value></data>

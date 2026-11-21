@@ -1863,6 +1863,9 @@
   <data name="Notes_ImageLimit" xml:space="preserve"><value>每則便箋最多新增 4 張圖片</value></data>
   <data name="Notes_ImageFailed" xml:space="preserve"><value>無法新增圖片，請檢查格式、大小及儲存權限</value></data>
   <data name="Notes_ExportFileFailed" xml:space="preserve"><value>無法另存便箋內文</value></data>
+  <data name="Notes_UndoDelete" xml:space="preserve"><value>撤銷刪除</value></data>
+  <data name="Notes_ImportedFiles" xml:space="preserve"><value>已匯入 {0} 個新便箋</value></data>
+  <data name="Notes_ImportPartialFailed" xml:space="preserve"><value>部分檔案匯入失敗：{0}</value></data>
   <data name="Screenshots_Ocr" xml:space="preserve"><value>圖片取字</value></data>
   <data name="Screenshots_ClipboardOcr" xml:space="preserve"><value>剪貼簿圖片取字</value></data>
   <data name="Screenshots_ClipboardNoImage" xml:space="preserve"><value>剪貼簿中沒有圖片</value></data>

@@ -3,21 +3,17 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Pane.Services.Clipboard;
-using Pane.Services.Screenshots;
 
 namespace Pane.Services.Notes;
 
+/// <summary>纯文本便签（notes-mvp §1）：只保留标题、正文、分类、时间与回收状态。
+/// 旧记录里的 Images/EditorMode 读取时忽略，下次提交写出 MVP 模型后不再保留。</summary>
 internal sealed record NoteDocument(Guid Id, string Title, string Body, DateTimeOffset Updated)
 {
     string category = "";
     public string Category { get => category; init => category = value?.Trim() ?? ""; }
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Guid[]? Images { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Recycled { get; init; }
-    /// <summary>编辑模式（040，galaxy 对齐）：0 = 纯文本，1 = Markdown。默认 0（旧文件缺省即纯文本）。</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public int EditorMode { get; init; }
 }
 
 [JsonSerializable(typeof(NoteDocument))]
@@ -31,28 +27,11 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
     internal const int TitleLimit = 180;
     internal const int BodyLimit = 200_000;
     internal const int CategoryLimit = 64;
-    internal const int ImageLimit = 4;
-    internal const int ImageByteLimit = 8 * 1024 * 1024;
-    internal const uint ImagePixelLimit = 8_000_000;
     static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: true, throwOnInvalidBytes: true);
     string HistoryDirectory => Path.Combine(directory, ".history");
-    string ImagesDirectory => Path.Combine(directory, ".images");
     Dictionary<Guid, NoteDocument>? documents;
     public int UnreadableCount { get; private set; }
     public event EventHandler? Changed;
-    public NoteDocument? Draft { get; private set; }
-    public bool DraftIsSaved => Draft is { } draft && documents!.ContainsKey(draft.Id);
-    public bool HasChanges => Draft is { } draft &&
-        (documents!.TryGetValue(draft.Id, out var saved)
-            ? !SameContent(draft, saved)
-            : draft.Title.Length != 0 || draft.Body.Length != 0 || draft.Category.Length != 0 || draft.Images is { Length: > 0 } || draft.EditorMode != 0);
-
-    static bool SameContent(NoteDocument first, NoteDocument second) => first.Title == second.Title && first.Body == second.Body &&
-        first.Category == second.Category && first.EditorMode == second.EditorMode &&
-        first.Images.AsSpan().SequenceEqual(second.Images);
-
-    static bool ValidImages(NoteDocument note) => note.Images is not { } images ||
-        images.Length <= ImageLimit && !images.Contains(Guid.Empty) && images.Distinct().Count() == images.Length;
 
     internal IEnumerable<NoteDocument> DocumentsInStorage => documents!.Values.OrderByDescending(note => note.Updated);
     public IEnumerable<NoteDocument> Documents => DocumentsInStorage.Where(note => !note.Recycled);
@@ -73,10 +52,8 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
                     continue;
                 using var stream = File.OpenRead(file);
                 var note = JsonSerializer.Deserialize(stream, NoteJson.Default.NoteDocument);
-                if (note == null || note.Id != id || note.Title == null || note.Body == null || !ValidImages(note))
-                    unreadable++;
-                else
-                    loaded.Add(id, note);
+                if (note == null || note.Id != id || note.Title == null || note.Body == null) unreadable++;
+                else loaded.Add(id, note);
             }
             catch (Exception error) when (IsStorageError(error)) { unreadable++; }
         }
@@ -84,126 +61,85 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
         UnreadableCount = unreadable;
     }
 
-    public void Select(Guid? id)
+    /// <summary>新建一条独立便签（导入 / 工具结果落盘 / 会话首次落盘）。不依赖任何编辑会话，
+    /// 永不因别处未保存而拒绝。id 缺省时生成新 GUID；指定时必须与现有便签不冲突。</summary>
+    public NoteDocument Create(string title, string body, string? category = null, Guid? id = null)
     {
-        if (HasChanges) throw new InvalidOperationException("Save the note before changing selection.");
-        Draft = id is { } key ? Find(key) ?? throw new KeyNotFoundException() : new(Guid.NewGuid(), "", "", default);
-    }
-
-    public void Edit(string title, string body, string? category = null)
-    {
-        if (Draft is not { } draft) return;
-        var normalized = NormalizeNewlines(body);
-        if (documents!.TryGetValue(draft.Id, out var saved) && normalized == NormalizeNewlines(saved.Body))
-            normalized = saved.Body;
-        Draft = draft with { Title = title, Body = normalized, Category = category ?? draft.Category };
-    }
-
-    /// <summary>切换当前便签的编辑模式（0 纯文本 / 1 Markdown，galaxy note.setEditorMode 对齐）。已保存条目立即持久化；
-    /// 新草稿先记在内存，首次保存时随正文落盘。不产生历史版本。</summary>
-    public void SetEditorMode(int mode)
-    {
-        if (mode is not (0 or 1) || Draft is not { } draft) return;
-        lock (storageGate)
-        {
-            if (documents!.GetValueOrDefault(draft.Id) is { } saved)
-            {
-                WriteCurrentState(saved with { EditorMode = mode });
-                Draft = draft with { EditorMode = mode };
-            }
-            else Draft = draft with { EditorMode = mode };
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
-    }
-
-    public bool SaveDraft()
-    {
-        if (!HasChanges || Draft is not { } draft) return false;
-        Commit(draft);
-        return true;
-    }
-
-    /// <summary>桌面便签卡直接保存指定便签（galaxy 便签卡编辑同一条数据、产生历史版本）。不改 Draft 的选中状态；
-    /// 正编辑同一条时同步草稿内容，主窗口下次呈现时不回跳。内容未变化时不动 Updated、不产生版本。</summary>
-    public bool SaveCardEdit(Guid id, string title, string body)
-    {
-        title ??= "";
         var normalized = NormalizeNewlines(body ?? "");
-        if (title.Length > TitleLimit || normalized.Length > BodyLimit || normalized.Contains('\0')) throw new InvalidDataException();
+        if ((title ?? "").Length > TitleLimit || normalized.Length > BodyLimit || (title ?? "").Contains('\0') || normalized.Contains('\0'))
+            throw new InvalidDataException();
+        var saved = new NoteDocument(id ?? Guid.NewGuid(), title ?? "", normalized, default) { Category = category?.Trim() ?? "" };
         lock (storageGate)
         {
-            if (documents!.GetValueOrDefault(id) is not { Recycled: false } note) return false;
-            if (note.Title == title && note.Body == normalized) return true;
-            var next = note with { Title = title, Body = normalized };
-            CommitCore(next, select: false);
-            if (Draft?.Id == id) Draft = next;
+            if (documents!.ContainsKey(saved.Id)) throw new InvalidDataException();
+            Write(saved, PathFor(saved.Id), overwrite: false);
+            documents[saved.Id] = saved;
         }
         Changed?.Invoke(this, EventArgs.Empty);
-        return true;
+        return saved;
     }
 
-    internal void AddImage(byte[] png)
+    /// <summary>提交已存在便签的当前正文。history 为真时先把被替换内容记为一个历史版本；
+    /// 自动保存传 false，避免连续输入挤满 30 版上限（notes-mvp §4）。
+    /// 内容未变化时不写盘、不推进 Updated、不产生版本。</summary>
+    public NoteDocument Save(NoteDocument note, bool history)
+    {
+        var normalized = NormalizeNewlines(note.Body ?? "");
+        if ((note.Title ?? "").Length > TitleLimit || normalized.Length > BodyLimit || (note.Title ?? "").Contains('\0') || normalized.Contains('\0'))
+            throw new InvalidDataException();
+        lock (storageGate)
+        {
+            var previous = documents!.GetValueOrDefault(note.Id);
+            if (previous is not { Recycled: false } current) throw new KeyNotFoundException();
+            var next = note with { Title = note.Title ?? "", Body = normalized, Category = note.Category?.Trim() ?? "" };
+            if (SameContent(next, current)) return current;
+            next = next with { Updated = NextStamp(current.Updated) };
+            if (history) WriteHistory(current);
+            Write(next, PathFor(next.Id), overwrite: true);
+            documents![next.Id] = next;
+            if (history) TrimVersions(next.Id);
+            return next;
+        }
+    }
+
+    /// <summary>恢复历史版本：被替换的当前内容先记为历史，恢复后的便签保留当前分类，
+    /// 不被旧正文的分类带回（notes-mvp §4）。</summary>
+    public NoteDocument Restore(Guid id, NoteDocument version)
     {
         lock (storageGate)
         {
-            if (Draft is not { } draft || draft.Images is { Length: >= ImageLimit }) throw new InvalidOperationException();
-            using var input = new MemoryStream(png, writable: false);
-            ValidateImage(input);
-            if (IsLink(directory)) throw new InvalidDataException();
-            Directory.CreateDirectory(ImagesDirectory);
-            if (IsLink(ImagesDirectory)) throw new InvalidDataException();
-            var id = Guid.NewGuid();
-            var path = ImagePath(draft.Id, id);
-            var temporary = path + ".tmp";
-            try
-            {
-                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                {
-                    stream.Write(png);
-                    stream.Flush(true);
-                }
-                File.Move(temporary, path);
-            }
-            finally { File.Delete(temporary); }
-            Draft = draft with { Images = [.. (draft.Images ?? []), id] };
+            var current = documents!.GetValueOrDefault(id);
+            if (current is not { Recycled: false } saved) throw new KeyNotFoundException();
+            var restored = saved with { Title = version.Title, Body = version.Body, Updated = NextStamp(saved.Updated) };
+            WriteHistory(saved);
+            Write(restored, PathFor(id), overwrite: true);
+            documents![id] = restored;
+            TrimVersions(id);
+            return restored;
         }
     }
 
-    internal void RemoveImage(Guid id)
+    static bool SameContent(NoteDocument first, NoteDocument second) =>
+        first.Title == second.Title && first.Body == second.Body && first.Category == second.Category;
+
+    static DateTimeOffset NextStamp(DateTimeOffset previous)
     {
-        lock (storageGate)
+        var now = DateTimeOffset.UtcNow;
+        if (now <= previous)
         {
-            if (Draft is not { Images: { } images } draft || !images.Contains(id)) return;
-            var remaining = images.Where(item => item != id).ToArray();
-            Draft = draft with { Images = remaining.Length == 0 ? null : remaining };
-            PruneImages(draft.Id);
+            if (previous == DateTimeOffset.MaxValue) throw new InvalidDataException();
+            now = previous.ToUniversalTime().AddTicks(1);
         }
+        return now;
     }
 
-    internal string ImagePath(Guid note, Guid image) => Path.Combine(ImagesDirectory, $"{note:N}-{image:N}.png");
-
-    internal string? FindImage(Guid note, Guid image)
+    void WriteHistory(NoteDocument previous)
     {
-        try
-        {
-            var path = ImagePath(note, image);
-            if (IsLink(directory)) return null;
-            using var input = ScreenshotStore.OpenSessionFile(ImagesDirectory, Path.GetFileName(path), ImageByteLimit);
-            ValidateImage(input);
-            return path;
-        }
-        catch (Exception error) when (IsStorageError(error)) { return null; }
+        Directory.CreateDirectory(HistoryDirectory);
+        Write(previous, VersionPath(previous.Id, previous.Updated), overwrite: true);
     }
 
-    internal static void ValidateImage(Stream input)
-    {
-        if (input.Length > ImageByteLimit) throw new InvalidDataException();
-        var (width, height) = ScreenshotStore.ReadSize(input);
-        if ((ulong)width * height > ImagePixelLimit) throw new InvalidDataException();
-    }
-
-    static bool IsLink(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
-
+    /// <summary>TXT 读取（notes-mvp §3）：严格 UTF-8、容量与换行规范化。选择器和存储入口都拒绝非 .txt。</summary>
     internal static (string Title, string Body) ReadFile(string path)
     {
         if (!IsNoteFile(path)) throw new InvalidDataException();
@@ -219,21 +155,38 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
         return (title, body);
     }
 
-    internal void ImportFile(string title, string body)
+    /// <summary>另存建议名：标题 → 正文首个非空行 → fallback。替换 Windows 非法字符和保留名，
+    /// 去掉首尾空格与点并限制长度（notes-mvp §3）。</summary>
+    internal static string SuggestedFileName(string title, string body, string fallback)
     {
-        if (HasChanges) throw new InvalidOperationException();
-        Commit(new(Guid.NewGuid(), title, body, default));
+        var source = (title ?? "").Trim();
+        if (source.Length == 0)
+            foreach (var line in (body ?? "").Replace("\r", "").Split('\n'))
+            {
+                source = line.Trim();
+                if (source.Length > 0) break;
+            }
+        if (source.Length == 0) source = fallback;
+        var builder = new StringBuilder(source.Length);
+        foreach (var character in source)
+        {
+            if (character is '<' or '>' or ':' or '"' or '/' or '\\' or '|' or '?' or '*' || char.IsControl(character)) continue;
+            builder.Append(character);
+        }
+        var name = builder.ToString().Trim(' ', '.');
+        if (name.Length == 0) name = fallback;
+        var stem = name.Split('.')[0].Trim();
+        if (stem.Length > 0 && ReservedNames.Contains(stem.ToLowerInvariant())) name = "_" + name;
+        if (name.Length > 80) name = name[..(char.IsHighSurrogate(name[79]) ? 78 : 80)].TrimEnd(' ', '.');
+        return name.Length == 0 ? fallback : name;
     }
 
-    internal void SaveNew(string title, string body)
-    {
-        body = NormalizeNewlines(body);
-        if (title.Length > TitleLimit || body.Length > BodyLimit || string.IsNullOrWhiteSpace(body) || body.Contains('\0'))
-            throw new InvalidDataException();
-        Load();
-        Commit(new(Guid.NewGuid(), title, body, default), select: false);
-    }
+    static readonly HashSet<string> ReservedNames = ["con", "prn", "aux", "nul",
+        "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+        "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"];
 
+    /// <summary>TXT 另存：只生成 .txt，写当前纯文本正文，覆盖由保存对话框确认；
+    /// 取消或写入失败不改变源便签（notes-mvp §3）。</summary>
     internal void ExportFile(NoteDocument note, string path, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -253,7 +206,7 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
         finally { File.Delete(temporary); }
     }
 
-    static bool IsNoteFile(string path) => Path.GetExtension(path).ToLowerInvariant() is ".md" or ".txt";
+    static bool IsNoteFile(string path) => Path.GetExtension(path).ToLowerInvariant() == ".txt";
 
     public IReadOnlyList<DateTimeOffset> Versions(Guid id) => documents!.TryGetValue(id, out var saved)
         ? HistoryFiles(id).Select(Path.GetFileNameWithoutExtension).Select(name =>
@@ -268,82 +221,123 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
             throw new FileNotFoundException();
         using var stream = File.OpenRead(VersionPath(id, version));
         var note = JsonSerializer.Deserialize(stream, NoteJson.Default.NoteDocument);
-        if (note == null || note.Recycled || note.Id != id || note.Updated != version || note.Title == null || note.Body == null || !ValidImages(note))
+        if (note == null || note.Recycled || note.Id != id || note.Updated != version || note.Title == null || note.Body == null)
             throw new InvalidDataException();
         return note;
     }
 
     /// <summary>版本内容指纹（galaxy note.restore 的 expectedRevision 对齐）：预览时取指纹，
-    /// 恢复时再验一次，期间版本文件被外部改动就拒绝，避免把预览到的内容换成别的东西。</summary>
+    /// 恢复时再验一次，期间内容变化就拒绝，避免把预览到的内容换成别的东西。</summary>
     internal static string VersionHash(NoteDocument note)
     {
         var payload = Encoding.UTF8.GetBytes(note.Title + "\n" + note.Body);
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload));
     }
 
-    public bool RestoreVersion(Guid id, DateTimeOffset version, string? expectedHash = null)
+    /// <summary>回收任意已保存便签（行菜单 / 编辑器删除用）。会话层负责先结清草稿。</summary>
+    public bool Recycle(Guid id)
     {
-        if (Draft?.Id != id || HasChanges || !DraftIsSaved) return false;
-        var previous = ReadVersion(id, version);
-        if (expectedHash is { } expected && !string.Equals(expected, VersionHash(previous), StringComparison.Ordinal)) return false;
-        if (!SameContent(previous, Draft)) Commit(previous);
+        lock (storageGate)
+        {
+            if (documents!.GetValueOrDefault(id) is not { Recycled: false } note) return false;
+            WriteCurrentState(note with { Recycled = true });
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
         return true;
     }
 
-    void Commit(NoteDocument draft, bool select = true)
+    /// <summary>分类改名：批量更新该分类下所有已保存便签。元数据级操作，不产生历史版本、不推进 Updated。</summary>
+    public int RenameCategory(string from, string to)
     {
-        lock (storageGate) CommitCore(draft, select);
-        Changed?.Invoke(this,EventArgs.Empty);
+        var target = to?.Trim() ?? "";
+        if (target.Length == 0 || target.Length > CategoryLimit || from.Length == 0) throw new ArgumentException(null, nameof(to));
+        lock (storageGate)
+        {
+            var affected = 0;
+            foreach (var (id, note) in documents!)
+            {
+                if (!string.Equals(note.Category, from, StringComparison.OrdinalIgnoreCase)) continue;
+                WriteCurrentState(note with { Category = target });
+                affected++;
+            }
+            if (affected > 0) Changed?.Invoke(this, EventArgs.Empty);
+            return affected;
+        }
     }
 
-    void CommitCore(NoteDocument draft, bool select)
+    /// <summary>删除分类：该分类下便签归为未分类（元数据级，语义同 RenameCategory）。</summary>
+    public int ClearCategory(string name)
     {
-        var loaded = documents!;
-        var previous = loaded.GetValueOrDefault(draft.Id);
-        var now = DateTimeOffset.UtcNow;
-        if (previous != null && now <= previous.Updated)
+        if (name.Length == 0) throw new ArgumentException(null, nameof(name));
+        lock (storageGate)
         {
-            if (previous.Updated == DateTimeOffset.MaxValue) throw new InvalidDataException();
-            now = previous.Updated.ToUniversalTime().AddTicks(1);
+            var affected = 0;
+            foreach (var (id, note) in documents!)
+            {
+                if (!string.Equals(note.Category, name, StringComparison.OrdinalIgnoreCase)) continue;
+                WriteCurrentState(note with { Category = "" });
+                affected++;
+            }
+            if (affected > 0) Changed?.Invoke(this, EventArgs.Empty);
+            return affected;
         }
-        var saved = draft with { Updated = now };
-        foreach (var image in saved.Images ?? [])
-            if (FindImage(saved.Id, image) == null) throw new InvalidDataException();
-        if (previous != null)
-        {
-            Directory.CreateDirectory(HistoryDirectory);
-            Write(previous, VersionPath(previous.Id, previous.Updated), overwrite: true);
-        }
-        Write(saved, PathFor(saved.Id), overwrite: previous != null);
-        loaded[saved.Id] = saved;
-        if (select) Draft = saved;
-        if (previous != null) TrimVersions(saved.Id);
-        if (previous?.Images != null || saved.Images != null || Directory.Exists(ImagesDirectory)) PruneImages(saved.Id);
     }
 
-    void PruneImages(Guid id)
+    /// <summary>移动任意已保存便签到分类。</summary>
+    public bool MoveCategory(Guid id, string category)
     {
-        try
+        var target = category?.Trim() ?? "";
+        if (target.Length > CategoryLimit) return false;
+        lock (storageGate)
         {
-            if (!Directory.Exists(ImagesDirectory) || IsLink(directory) || IsLink(ImagesDirectory)) return;
-            var files = Directory.GetFiles(ImagesDirectory, $"{id:N}-*.png");
-            if (files.Length == 0) return;
-            var retained = new HashSet<Guid>();
-            if (Draft?.Id == id) retained.UnionWith(Draft.Images ?? []);
-            if (documents!.TryGetValue(id, out var current))
-            {
-                retained.UnionWith(current.Images ?? []);
-                foreach (var version in Versions(id)) retained.UnionWith(ReadVersion(id, version).Images ?? []);
-            }
-            foreach (var path in files)
-            {
-                var leaf = Path.GetFileNameWithoutExtension(path);
-                if (leaf.Length == 65 && Guid.TryParseExact(leaf.AsSpan(33), "N", out var image) && !retained.Contains(image) && !IsLink(path))
-                    File.Delete(path);
-            }
+            if (documents!.GetValueOrDefault(id) is not { Recycled: false } note) return false;
+            WriteCurrentState(note with { Category = target });
         }
-        catch (Exception error) when (IsStorageError(error)) { }
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
     }
+
+    public bool RestoreRecycled(Guid id)
+    {
+        lock (storageGate)
+        {
+            if (documents!.GetValueOrDefault(id) is not { Recycled: true } note) return false;
+            WriteCurrentState(note with { Recycled = false });
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    void WriteCurrentState(NoteDocument note)
+    {
+        Write(note, PathFor(note.Id), overwrite: true);
+        documents![note.Id] = note;
+    }
+
+    public bool DeleteRecycled(Guid id)
+    {
+        lock (storageGate)
+        {
+            var loaded = documents!;
+            if (loaded.GetValueOrDefault(id) is not { Recycled: true }) return false;
+            var file = PathFor(id);
+            File.Delete(file + ".tmp");
+            foreach (var version in HistoryFiles(id, ".json.tmp")) File.Delete(version);
+            foreach (var version in HistoryFiles(id)) File.Delete(version);
+            File.Delete(file);
+            loaded.Remove(id);
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    internal string PathFor(Guid id) => Path.Combine(directory, $"{id:N}.json");
+
+    internal string VersionPath(Guid id, DateTimeOffset version) => Path.Combine(HistoryDirectory,
+        $"{id:N}-{version.UtcTicks.ToString("D19", CultureInfo.InvariantCulture)}.json");
+
+    IEnumerable<string> HistoryFiles(Guid id, string extension = ".json") => Directory.Exists(HistoryDirectory)
+        ? Directory.EnumerateFiles(HistoryDirectory, $"{id:N}-???????????????????{extension}") : [];
 
     void TrimVersions(Guid id)
     {
@@ -374,135 +368,6 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
             throw;
         }
     }
-
-    public void RecycleDraft()
-    {
-        lock (storageGate)
-        {
-            if (Draft is not { } draft) return;
-            if (DraftIsSaved)
-            {
-                var recycled = draft with { Recycled = true };
-                if (HasChanges) CommitCore(recycled, select: false);
-                else WriteCurrentState(recycled);
-            }
-            Draft = null;
-            PruneImages(draft.Id);
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
-    }
-
-    /// <summary>回收任意已保存便签（不经过草稿，行菜单删除用）。草稿正编辑同一条且有未保存改动时返回 false。</summary>
-    public bool Recycle(Guid id)
-    {
-        lock (storageGate)
-        {
-            if (documents!.GetValueOrDefault(id) is not { Recycled: false } note) return false;
-            if (Draft?.Id == id && HasChanges) return false;
-            WriteCurrentState(note with { Recycled = true });
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
-        return true;
-    }
-
-    /// <summary>分类改名：批量更新该分类下所有已保存便签。元数据级操作，不产生历史版本、不推进 Updated；
-    /// 草稿正好是该分类时同步改草稿，保持已保存语义。</summary>
-    public int RenameCategory(string from, string to)
-    {
-        var target = to?.Trim() ?? "";
-        if (target.Length == 0 || target.Length > CategoryLimit || from.Length == 0) throw new ArgumentException(null, nameof(to));
-        lock (storageGate)
-        {
-            var affected = 0;
-            foreach (var (id, note) in documents!)
-            {
-                if (!string.Equals(note.Category, from, StringComparison.OrdinalIgnoreCase)) continue;
-                WriteCurrentState(note with { Category = target });
-                if (Draft?.Id == id) Draft = Draft with { Category = target };
-                affected++;
-            }
-            if (affected > 0) Changed?.Invoke(this, EventArgs.Empty);
-            return affected;
-        }
-    }
-
-    /// <summary>删除分类：该分类下便签归为未分类（元数据级，语义同 RenameCategory）。</summary>
-    public int ClearCategory(string name)
-    {
-        if (name.Length == 0) throw new ArgumentException(null, nameof(name));
-        lock (storageGate)
-        {
-            var affected = 0;
-            foreach (var (id, note) in documents!)
-            {
-                if (!string.Equals(note.Category, name, StringComparison.OrdinalIgnoreCase)) continue;
-                WriteCurrentState(note with { Category = "" });
-                if (Draft?.Id == id) Draft = Draft with { Category = "" };
-                affected++;
-            }
-            if (affected > 0) Changed?.Invoke(this, EventArgs.Empty);
-            return affected;
-        }
-    }
-
-    /// <summary>移动任意已保存便签到分类（不经过草稿）。</summary>
-    public bool MoveCategory(Guid id, string category)
-    {
-        var target = category?.Trim() ?? "";
-        if (target.Length > CategoryLimit) return false;
-        lock (storageGate)
-        {
-            if (documents!.GetValueOrDefault(id) is not { Recycled: false } note) return false;
-            WriteCurrentState(note with { Category = target });
-            if (Draft?.Id == id) Draft = Draft with { Category = target };
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
-        return true;
-    }
-
-    public bool RestoreRecycled(Guid id)
-    {
-        lock (storageGate)
-        {
-            if (documents!.GetValueOrDefault(id) is not { Recycled: true } note) return false;
-            WriteCurrentState(note with { Recycled = false });
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
-        return true;
-    }
-
-    void WriteCurrentState(NoteDocument note)
-    {
-        Write(note, PathFor(note.Id), overwrite: true);
-        documents![note.Id] = note;
-    }
-
-    public bool DeleteRecycled(Guid id)
-    {
-        lock (storageGate)
-        {
-            var loaded = documents!;
-            if (loaded.GetValueOrDefault(id) is not { Recycled: true }) return false;
-            if (IsLink(directory) || Directory.Exists(HistoryDirectory) && IsLink(HistoryDirectory)) throw new InvalidDataException();
-            var file = PathFor(id);
-            File.Delete(file + ".tmp");
-            foreach (var version in HistoryFiles(id, ".json.tmp")) File.Delete(version);
-            foreach (var version in HistoryFiles(id)) File.Delete(version);
-            File.Delete(file);
-            loaded.Remove(id);
-            PruneImages(id);
-        }
-        Changed?.Invoke(this, EventArgs.Empty);
-        return true;
-    }
-
-    internal string PathFor(Guid id) => Path.Combine(directory, $"{id:N}.json");
-
-    internal string VersionPath(Guid id, DateTimeOffset version) => Path.Combine(HistoryDirectory,
-        $"{id:N}-{version.UtcTicks.ToString("D19", CultureInfo.InvariantCulture)}.json");
-
-    IEnumerable<string> HistoryFiles(Guid id, string extension = ".json") => Directory.Exists(HistoryDirectory)
-        ? Directory.EnumerateFiles(HistoryDirectory, $"{id:N}-???????????????????{extension}") : [];
 
     static string NormalizeNewlines(string value) => value.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 

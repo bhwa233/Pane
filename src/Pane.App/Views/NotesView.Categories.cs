@@ -6,13 +6,12 @@ using Microsoft.UI.Xaml.Media;
 using Pane.Localization;
 using Pane.Services.Notes;
 using Pane.Views.Controls;
-using Microsoft.Windows.Storage.Pickers;
 using Windows.System;
 
 namespace Pane.Views;
 
-// 便签列表的分组、折叠、分类菜单和行菜单（复刻 galaxy NoteSidebar 的分组与右键能力）。
-// 分类由便签派生（无独立存储），改名/删除是元数据级批量操作；「新建分类」只在移动到分类时出现。
+// 便签列表的分组、折叠、分类菜单和行菜单（notes-mvp §3）。分类由便签派生（无独立存储），
+// 改名/删除是元数据级批量操作；行上显示「已贴到桌面」标记和提醒角标。编辑当前项期间不重排序。
 public sealed partial class NotesView
 {
     readonly Dictionary<string, bool> collapsedCategories = new(StringComparer.OrdinalIgnoreCase);
@@ -44,7 +43,7 @@ public sealed partial class NotesView
                     var row = NoteRow(note, note.Id);
                     RefreshReminderBadge(row, note.Id);
                     NoteList.Items.Add(row);
-                    if (store.Draft?.Id == note.Id) NoteList.SelectedItem = row;
+                    if (current?.Id == note.Id) NoteList.SelectedItem = row;
                 }
             }
             EmptyList.Text = matches.Length > 0 ? "" : query.Length == 0 && category == null ? Strings.Notes_Empty : Strings.Notes_NoResults;
@@ -56,9 +55,8 @@ public sealed partial class NotesView
     {
         var title = string.IsNullOrWhiteSpace(note.Title) ? Strings.Notes_Untitled : note.Title;
         var content = new StackPanel { Spacing = 2 };
-        content.Children.Add(NoteRowTitle(title));
-        // 搜索摘要（galaxy note.search 对齐）：标题 + 正文拼在一起找首个命中，
-        // 取命中处前 40 后 60 字的窗口做第二行，命中段加粗下划线（MatchText，不用主题色）。
+        content.Children.Add(NoteRowTitle(title, isPinned(note.Id)));
+        // 搜索摘要：标题 + 正文拼在一起找首个命中，取命中处前 40 后 60 字的窗口做第二行。
         var query = SearchBox.Text.Trim();
         if (query.Length > 0)
         {
@@ -75,8 +73,8 @@ public sealed partial class NotesView
                     Foreground = EmptyList.Foreground,
                     TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1, IsHitTestVisible = false,
                 };
-                Pane.Views.Controls.MatchText.SetSource(snippet,
-                    new Pane.Views.Controls.MatchedText(window, [new Pane.Contracts.TextSpan(at - start, query.Length)]));
+                MatchText.SetSource(snippet,
+                    new MatchedText(window, [new Pane.Contracts.TextSpan(at - start, query.Length)]));
                 content.Children.Add(snippet);
             }
         }
@@ -98,10 +96,27 @@ public sealed partial class NotesView
         return shell;
     }
 
-    static TextBlock NoteRowTitle(string title) => new()
+    /// <summary>标题行：已贴到桌面时带 pin 标记（notes-mvp §3「已贴到桌面」标签）。</summary>
+    StackPanel NoteRowTitle(string title, bool pinned)
     {
-        Text = title, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1, VerticalAlignment = VerticalAlignment.Center,
-    };
+        var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        if (pinned)
+        {
+            line.Children.Add(new PaneIcon { Glyph = "pin", Width = 11, Height = 11,
+                VerticalAlignment = VerticalAlignment.Center, Foreground = EmptyList.Foreground, IsHitTestVisible = false });
+        }
+        line.Children.Add(new TextBlock
+        {
+            Text = title, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1, VerticalAlignment = VerticalAlignment.Center,
+        });
+        return line;
+    }
+
+    static TextBlock? FindRowTitle(object content) =>
+        content is StackPanel panel
+            ? panel.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().FirstOrDefault()
+              ?? panel.Children.OfType<TextBlock>().FirstOrDefault()
+            : null;
 
     ListViewItem CategoryHeaderRow(string category, int count)
     {
@@ -171,10 +186,13 @@ public sealed partial class NotesView
         {
             var affected = store.ClearCategory(category);
             collapsedCategories.Remove(category);
-            if (store.Draft is { } draft && string.Equals(draft.Category, category, StringComparison.OrdinalIgnoreCase))
+            if (current is { Category.Length: > 0 } session && string.Equals(session.Category, category, StringComparison.OrdinalIgnoreCase))
+            {
                 updating = true;
-            try { if (store.Draft is { } current) CategoryBox.Text = current.Category; }
-            finally { updating = false; }
+                try { if (sessions.Find(session.Id) is { } live) live.Category = "";
+                    CategoryBox.Text = ""; }
+                finally { updating = false; }
+            }
             ReloadCategories();
             ReloadList();
             Status.Text = string.Format(Strings.Notes_CategoryUpdatedCount, (object?)affected);
@@ -209,11 +227,12 @@ public sealed partial class NotesView
 
     void RowTogglePin(Guid id)
     {
-        if (store.Draft?.Id == id && !TrySave(refresh: false)) { Status.Text = Strings.Notes_SaveFailed; return; }
+        if (!FlushIfEditing(id)) { Status.Text = Strings.Notes_SaveFailed; return; }
         try { togglePin(id); }
         catch (InvalidOperationException error) { Status.Text = error.Message; }
         catch (Exception error) when (NoteStore.IsStorageError(error)) { Status.Text = Strings.Notes_LayoutSaveFailed; }
         RefreshPin();
+        ReloadList();
     }
 
     MenuFlyoutSubItem RowReminderMenu(Guid id)
@@ -222,7 +241,15 @@ public sealed partial class NotesView
         void AddPreset(string text, Func<DateTimeOffset> due)
         {
             var item = new MenuFlyoutItem { Text = text };
-            item.Click += (_, _) => RowSetReminder(id, due());
+            item.Click += (_, _) =>
+            {
+                // 行菜单改任意便签的提醒；正编辑同一条时先保草稿，避免提醒和未保存内容脱节。
+                if (!FlushIfEditing(id)) { Status.Text = Strings.Notes_SaveFailed; return; }
+                if (store.Find(id) == null) return;
+                var time = due();
+                setReminder(id, time);
+                Status.Text = string.Format(Strings.Notes_ReminderAt, time.ToLocalTime());
+            };
             menu.Items.Add(item);
         }
         AddPreset(Strings.Notes_ReminderTenMinutes, () => DateTimeOffset.UtcNow.AddMinutes(10));
@@ -234,37 +261,29 @@ public sealed partial class NotesView
         AddPreset(Strings.Notes_ReminderNextEvening, NextReminderEvening);
         AddPreset(Strings.Notes_ReminderTomorrowMorning, TomorrowReminderMorning);
         var cancel = new MenuFlyoutItem { Text = Strings.Notes_ReminderCancel };
-        cancel.Click += (_, _) => RowSetReminder(id, null);
+        cancel.Click += (_, _) =>
+        {
+            if (!FlushIfEditing(id)) { Status.Text = Strings.Notes_SaveFailed; return; }
+            setReminder(id, null);
+            Status.Text = Strings.Notes_ReminderCancelled;
+        };
         menu.Items.Add(cancel);
         return menu;
     }
 
-    void RowSetReminder(Guid id, DateTimeOffset? due)
-    {
-        // 行菜单改任意便签的提醒；正编辑同一条时先保草稿，避免提醒和未保存内容脱节。
-        if (store.Draft?.Id == id && !TrySave(refresh: false)) { Status.Text = Strings.Notes_SaveFailed; return; }
-        if (store.Find(id) == null) return;
-        setReminder(id, null, due);
-        Status.Text = due is { } time ? string.Format(Strings.Notes_ReminderAt, time.ToLocalTime()) : Strings.Notes_ReminderCancelled;
-    }
-
     void OpenRowHistory(Guid id)
     {
-        if (!TrySave(refresh: false) || store.Find(id) == null) return;
-        if (store.Draft?.Id != id) store.Select(id);
-        PresentDraft();
+        if (!FlushIfEditing(id) || store.Find(id) == null) return;
+        try { Switch(sessions.Open(id)); }
+        catch (KeyNotFoundException) { return; }
+        PresentSession();
         HistoryClicked(this, new RoutedEventArgs());
     }
 
     async void ExportRowFile(Guid id) => await RunFileOperation(async token =>
     {
-        if (store.Find(id) is not { } note) return;
-        var picker = new FileSavePicker(XamlRoot.ContentIslandEnvironment.AppWindowId) { SuggestedFileName = Strings.Module_Notes_Name };
-        picker.FileTypeChoices.Add("Markdown", [".md"]);
-        picker.FileTypeChoices.Add(Strings.Notes_TextFile, [".txt"]);
-        if (await picker.PickSaveFileAsync() is not { } file || token.IsCancellationRequested) return;
-        await Task.Run(() => store.ExportFile(note, file.Path, token), token);
-        if (!token.IsCancellationRequested) Status.Text = Strings.Notes_ExportedFile;
+        if (!FlushIfEditing(id)) return;
+        await ExportBody(id, token);
     }, Strings.Notes_ExportFileFailed);
 
     MenuFlyoutSubItem RowMoveMenu(Guid id, ListViewItem row)
@@ -296,14 +315,15 @@ public sealed partial class NotesView
 
     void RowMove(Guid id, string category)
     {
-        if (store.Draft?.Id == id && !TrySave(refresh: false)) { Status.Text = Strings.Notes_SaveFailed; return; }
+        if (!FlushIfEditing(id)) { Status.Text = Strings.Notes_SaveFailed; return; }
         try
         {
             if (!store.MoveCategory(id, category)) return;
-            if (store.Draft?.Id == id)
+            if (sessions.Find(id) is { } live) live.Category = category;
+            if (current?.Id == id)
             {
                 updating = true;
-                try { CategoryBox.Text = store.Draft.Category; }
+                try { CategoryBox.Text = category; }
                 finally { updating = false; }
             }
             ReloadCategories();
@@ -313,19 +333,27 @@ public sealed partial class NotesView
         catch (Exception error) when (NoteStore.IsStorageError(error)) { Status.Text = Strings.Settings_SaveFailed; }
     }
 
+    /// <summary>正编辑该便签时先结清草稿（不切换选中项）。未落盘的会话拒绝操作。</summary>
+    bool FlushIfEditing(Guid id) => sessions.Find(id) is not { } session ? true
+        : session.Persisted ? sessions.Flush(session)
+        : false;
+
     void RecycleRowNote(Guid id)
     {
-        if (store.Draft?.Id == id)
+        // 正编辑的便签走编辑器删除路径（连同撤销提示一起处理并换选）。
+        if (current?.Id == id)
         {
-            // 正编辑的便签走编辑器删除路径（连同未保存改动一起处理并换选）。
             DeleteClicked(this, new RoutedEventArgs());
             return;
         }
-        try { if (!store.Recycle(id)) return; }
-        catch (Exception error) when (NoteStore.IsStorageError(error)) { Status.Text = Strings.Notes_DeleteFailed; return; }
-        removed(id);
+        if (!FlushIfEditing(id)) { Status.Text = Strings.Notes_SaveFailed; return; }
+        var snapshot = captureDelete(id);
+        if (snapshot == null) return;
+        recycleNote(id);
+        sessions.Forget(id);
         ReloadCategories();
         ReloadList();
+        ShowUndo(snapshot);
         Status.Text = Strings.Notes_Recycled;
     }
 
@@ -376,10 +404,12 @@ public sealed partial class NotesView
                     collapsedCategories.Remove(old);
                     collapsedCategories[name] = wasCollapsed;
                 }
-                if (store.Draft is { } draft && string.Equals(draft.Category, old, StringComparison.OrdinalIgnoreCase))
+                foreach (var live in sessions.List())
+                    if (string.Equals(live.Category, old, StringComparison.OrdinalIgnoreCase)) live.Category = name;
+                if (current is { } session && string.Equals(session.Category, old, StringComparison.OrdinalIgnoreCase))
                 {
                     updating = true;
-                    try { CategoryBox.Text = store.Draft.Category; }
+                    try { CategoryBox.Text = session.Category; }
                     finally { updating = false; }
                 }
                 ReloadCategories();

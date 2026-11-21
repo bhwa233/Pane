@@ -5,6 +5,8 @@ using Pane.Services.Notes;
 
 namespace Pane.Views;
 
+/// <summary>回收站（notes-mvp §4）：恢复还原文本、分类和历史，沿用现有规则，
+/// 不自动恢复提醒、不自动重新贴到桌面（桌面状态由「撤销删除」恢复）。</summary>
 public sealed partial class NotesView
 {
     bool ViewingRecycle => RecyclePane.Visibility == Visibility.Visible;
@@ -16,7 +18,7 @@ public sealed partial class NotesView
         if (ViewingRecycle) { RecycleBackClicked(sender, args); return; }
         if (!TrySave()) return;
         CloseHistory();
-        SetPreview(false);
+        HideUndo();
         NotesWorkspace.Visibility = Visibility.Collapsed;
         RecyclePane.Visibility = Visibility.Visible;
         ReloadRecycleList();
@@ -78,6 +80,7 @@ public sealed partial class NotesView
         if (SelectedRecycledNote is not { } note) return;
         try { if (!store.DeleteRecycled(note.Id)) return; }
         catch (Exception error) when (NoteStore.IsStorageError(error)) { RecycleStatus.Text = Strings.Notes_DeleteFailed; return; }
+        sessions.Forget(note.Id);
         ReloadRecycleList();
     }
 }

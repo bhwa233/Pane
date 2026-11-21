@@ -2,7 +2,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Pane.Hosting;
 using Pane.Localization;
 using Pane.Services.Notes;
@@ -25,30 +24,40 @@ internal interface IDesktopNoteHost
     void DeleteNote(Guid id);
 }
 
-// 桌面便签卡（galaxy NotePad 的 pad/tile 同窗双形态，040）：贴纸面只读展示，编辑面就地编辑并自动保存，
-// 玻璃外观不变。置顶 / 拖角缩放 / 右键菜单都挂在这张卡上；旧「打开主窗口编辑」路径已由双形态替代。
-public sealed partial class DesktopNoteView : UserControl, IPanelView
+/// <summary>桌面便签卡（galaxy NotePad 的 pad/tile 同窗双形态，notes-mvp §2）：与管理器共用
+/// NoteSessions 里的同一份草稿，任一处输入另一处立即更新；自动保存由会话中枢统一调度。</summary>
+public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposable
 {
     internal const double TileWidth = 256, TileHeight = 170;
     internal const double PadWidth = 260, PadHeight = 320;
     internal const double MinCardWidth = 220, MinCardHeight = 140;
-    readonly NoteStore store;
+    readonly NoteSessions hub;
+    readonly NoteSessions.Session session;
     readonly IDesktopNoteHost host;
-    Guid id;
-    Guid previewImage;
+    readonly Guid id;
     GlassPanel? panel;
     bool pad;
     bool restoring;
-    Microsoft.UI.Dispatching.DispatcherQueueTimer? autosave;
+    bool disposed;
 
-    internal DesktopNoteView(NoteDocument note, NoteStore store, IDesktopNoteHost host)
+    internal DesktopNoteView(NoteSessions hub, NoteDocument note, IDesktopNoteHost host)
     {
-        this.store = store;
+        this.hub = hub;
         this.host = host;
-        InitializeComponent();
         id = note.Id;
+        InitializeComponent();
+        session = hub.Open(id);
+        hub.Attach(session);
         RootGrid.RightTapped += RootRightTapped;
-        Apply(note);
+        hub.Changed += SessionChanged;
+        hub.Saved += SessionSaved;
+        hub.SaveFailed += SessionSaveFailed;
+        restoring = true;
+        try
+        {
+            Apply(session.Title, session.Body);
+        }
+        finally { restoring = false; }
     }
 
     public Size PreferredSize => new(TileWidth, TileHeight);
@@ -56,6 +65,16 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView
     event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
     event EventHandler? IPanelView.CloseRequested { add { } remove { } }
     internal event EventHandler? UnpinRequested;
+
+    public void Dispose()
+    {
+        if (disposed) return;
+        disposed = true;
+        hub.Changed -= SessionChanged;
+        hub.Saved -= SessionSaved;
+        hub.SaveFailed -= SessionSaveFailed;
+        hub.Detach(session);
+    }
 
     internal void AttachPanel(GlassPanel cardPanel)
     {
@@ -73,36 +92,55 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView
     public void OnShown() { }
     public void OnHidden() { }
 
-    internal void Apply(NoteDocument note)
+    /// <summary>共享草稿内容落到界面（贴纸面标题 / 正文，编辑面标题 / 正文）。</summary>
+    void Apply(string title, string body)
     {
-        if (id != note.Id) return;
-        var title = string.IsNullOrWhiteSpace(note.Title) ? Strings.Notes_Untitled : note.Title;
-        TitleText.Text = title;
-        BodyText.Text = note.Body;
-        BodyText.Visibility = note.Body.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        // 编辑面正有本地未落盘的改动（600ms 节流窗口内）时，Changed 事件回灌会打断输入、重置光标；
-        // 内容一致（自己刚保存的）或不在编辑面才回写，其余等下一次保存后的刷新。
-        if (!pad || (PadTitle.Text == note.Title && PadBody.Text == note.Body))
+        TitleText.Text = string.IsNullOrWhiteSpace(title) ? Strings.Notes_Untitled : title;
+        BodyText.Text = body;
+        BodyText.Visibility = body.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        // 内容一致（自己刚保存的）或不在编辑面才回写，避免打断输入、重置光标（notes-mvp §2）。
+        if (!pad || (PadTitle.Text == title && PadBody.Text == body))
         {
             restoring = true;
             try
             {
-                PadTitle.Text = note.Title;
-                PadBody.Text = note.Body;
+                PadTitle.Text = title;
+                PadBody.Text = body;
             }
             finally { restoring = false; }
         }
-        var markdown = note.EditorMode == 1;
-        PadFormatBold.Visibility = PadFormatHeading.Visibility = PadFormatList.Visibility =
-            markdown ? Visibility.Visible : Visibility.Collapsed;
-        PadStatus.Text = "";
-        var image = note.Images?.FirstOrDefault() ?? Guid.Empty;
-        if (image == previewImage) return;
-        previewImage = image;
-        var path = image == Guid.Empty ? null : store.FindImage(note.Id, image);
-        ImagePreview.Source = path == null ? null : new BitmapImage
-            { DecodePixelWidth = 320, DecodePixelType = DecodePixelType.Physical, UriSource = new Uri(path) };
-        ImagePreview.Visibility = path == null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>总览卡等内容投喂入口。</summary>
+    internal void Apply(NoteDocument note) => Apply(note.Title, note.Body);
+
+    // ---------------- 共享会话（notes-mvp §2 实时同步同一份草稿） ----------------
+
+    void SessionChanged(NoteSessions.Session changed, object? source)
+    {
+        if (disposed || changed.Id != id) return;
+        restoring = true;
+        try { Apply(changed.Title, changed.Body); }
+        finally { restoring = false; }
+    }
+
+    void SessionSaved(NoteSessions.Session changed)
+    {
+        if (disposed || changed.Id != id) return;
+        if (pad && PadStatus.Text == Strings.Common_NotSaved) PadStatus.Text = Strings.Notes_Saved;
+    }
+
+    void SessionSaveFailed(NoteSessions.Session changed)
+    {
+        if (disposed || changed.Id != id) return;
+        PadStatus.Text = Strings.Notes_SaveFailed;
+    }
+
+    void PadChanged(object sender, TextChangedEventArgs args)
+    {
+        if (restoring || !pad || disposed) return;
+        hub.Edit(session, PadTitle.Text, PadBody.Text, null, this);
+        PadStatus.Text = Strings.Common_NotSaved;
     }
 
     // ---------------- 形态切换（tile ⇄ pad，galaxy switchSurfaceMode） ----------------
@@ -122,6 +160,9 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView
         if (pad == value) return;
         pad = value;
         host.SaveSurface(id, value);
+        restoring = true;
+        try { Apply(session.Title, session.Body); }
+        finally { restoring = false; }
         ApplySurface();
         // 同窗双形态：请求目标尺寸，GlassPanel 的弹簧动画原地展开 / 收回（galaxy animateCurrentWindowBounds 对齐）。
         var persisted = host.GetSize(id);
@@ -133,7 +174,6 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView
         }
         else
         {
-            SaveCardNow();
             var size = persisted is { } current ? current : new Size(TileWidth, TileHeight);
             panel?.RequestSize(size);
         }
@@ -141,104 +181,6 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView
 
     void PadClicked(object sender, RoutedEventArgs args) => SetPad(!pad);
     void CollapseClicked(object sender, RoutedEventArgs args) => SetPad(false);
-
-    // ---------------- 编辑面自动保存 ----------------
-
-    void PadChanged(object sender, TextChangedEventArgs args) => SchedulePadSave();
-
-    void SchedulePadSave()
-    {
-        if (restoring || !pad) return;
-        autosave ??= DispatcherQueue.CreateTimer();
-        autosave.Interval = TimeSpan.FromMilliseconds(600);
-        autosave.IsRepeating = false;
-        autosave.Tick -= AutosaveTick;
-        autosave.Tick += AutosaveTick;
-        PadStatus.Text = Strings.Common_NotSaved;
-        autosave.Stop();
-        autosave.Start();
-    }
-
-    void AutosaveTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object? args) => SaveCardNow();
-
-    void SaveCardNow()
-    {
-        autosave?.Stop();
-        try
-        {
-            store.SaveCardEdit(id, PadTitle.Text, PadBody.Text);
-            PadStatus.Text = Strings.Notes_Saved;
-        }
-        catch (Exception error) when (NoteStore.IsStorageError(error)) { PadStatus.Text = Strings.Notes_SaveFailed; }
-    }
-
-    // ---------------- 精简格式按钮（仅 Markdown 便签） ----------------
-
-    void CardFormatBold(object sender, RoutedEventArgs args) => WrapSelection("**", "**", "粗体文本");
-    void CardFormatHeading(object sender, RoutedEventArgs args)
-    {
-        var box = PadBody;
-        var caret = box.SelectionStart;
-        var lineStart = box.Text.LastIndexOf('\n', Math.Max(0, caret - 1)) + 1;
-        var current = 0;
-        while (current < 5 && lineStart + current < box.Text.Length && box.Text[lineStart + current] == '#') current++;
-        if (current > 0 && lineStart + current < box.Text.Length && box.Text[lineStart + current] == ' ')
-        {
-            var next = current < 5 ? new string('#', current + 1) : "#";
-            restoring = true;
-            try
-            {
-                box.Text = box.Text[..lineStart] + next + " " + box.Text[(lineStart + current + 1)..];
-                box.Select(lineStart + next.Length + 1, 0);
-            }
-            finally { restoring = false; }
-            SchedulePadSave();
-            return;
-        }
-        restoring = true;
-        try
-        {
-            box.Text = box.Text[..lineStart] + "## " + box.Text[lineStart..];
-            box.Select(lineStart + 3, 0);
-        }
-        finally { restoring = false; }
-        SchedulePadSave();
-    }
-
-    void CardFormatList(object sender, RoutedEventArgs args)
-    {
-        var box = PadBody;
-        var caret = box.SelectionStart;
-        var lineStart = box.Text.LastIndexOf('\n', Math.Max(0, caret - 1)) + 1;
-        var lineEnd = box.Text.IndexOf('\n', lineStart);
-        if (lineEnd < 0) lineEnd = box.Text.Length;
-        var line = box.Text[lineStart..lineEnd];
-        if (line.StartsWith("- ", StringComparison.Ordinal)) return;
-        restoring = true;
-        try
-        {
-            box.Text = box.Text[..lineStart] + "- " + line + box.Text[lineEnd..];
-            box.Select(lineStart + 2, 0);
-        }
-        finally { restoring = false; }
-        SchedulePadSave();
-    }
-
-    void WrapSelection(string before, string after, string sample)
-    {
-        var box = PadBody;
-        var start = box.SelectionStart;
-        var selected = box.Text.Substring(start, box.SelectionLength);
-        var text = selected.Length > 0 ? selected : sample;
-        restoring = true;
-        try
-        {
-            box.Text = box.Text[..start] + before + text + after + box.Text[(start + box.SelectionLength)..];
-            box.Select(start + before.Length, text.Length);
-        }
-        finally { restoring = false; }
-        SchedulePadSave();
-    }
 
     // ---------------- 置顶 ----------------
 

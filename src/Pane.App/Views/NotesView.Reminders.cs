@@ -10,21 +10,19 @@ using Windows.System;
 
 namespace Pane.Views;
 
+/// <summary>整条便签提醒（notes-mvp §5）：管理器、桌面窗口和列表标记读同一条提醒，
+/// 新增或取消只走同一入口。无任务级提醒。</summary>
 public sealed partial class NotesView
 {
     const int MaximumReminderMinutes = 365 * 24 * 60;
     Guid? customReminderNote;
-    string? customReminderTask;
 
-    void ShowCustomReminder(Guid note, string? task, Button anchor)
+    void ShowCustomReminder(Guid note, Button anchor)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!CanChangeReminder(note) || (task is not null && !previewing)) return;
+            if (!CanChangeReminder(note)) return;
             customReminderNote = note;
-            customReminderTask = task;
-            CustomReminderScope.Text = task ?? "";
-            CustomReminderScope.Visibility = task is null ? Visibility.Collapsed : Visibility.Visible;
             CustomReminderMinutes.Text = "";
             CustomReminderStatus.Visibility = Visibility.Collapsed;
             CustomReminderFlyout.ShowAt(anchor);
@@ -32,11 +30,7 @@ public sealed partial class NotesView
         });
     }
 
-    void CustomReminderClosed(object sender, object args)
-    {
-        customReminderNote = null;
-        customReminderTask = null;
-    }
+    void CustomReminderClosed(object sender, object args) => customReminderNote = null;
 
     void CancelCustomReminder(object sender, RoutedEventArgs args) => CustomReminderFlyout.Hide();
 
@@ -51,7 +45,7 @@ public sealed partial class NotesView
 
     void ApplyCustomReminder()
     {
-        if (customReminderNote is not { } id || !CanChangeReminder(id) || (customReminderTask is not null && !previewing))
+        if (customReminderNote is not { } id || !CanChangeReminder(id))
         {
             CustomReminderFlyout.Hide();
             return;
@@ -63,7 +57,7 @@ public sealed partial class NotesView
             CustomReminderMinutes.Focus(FocusState.Programmatic);
             return;
         }
-        if (ChangeReminder(DateTimeOffset.UtcNow.AddMinutes(minutes), customReminderTask)) CustomReminderFlyout.Hide();
+        if (ChangeReminder(DateTimeOffset.UtcNow.AddMinutes(minutes))) CustomReminderFlyout.Hide();
         else
         {
             CustomReminderStatus.Text = Strings.Settings_SaveFailed;
@@ -72,15 +66,11 @@ public sealed partial class NotesView
     }
 
     bool CanChangeReminder(Guid note) => ready && !disposed && !ViewingRecycle && historyNoteId is null &&
-        store.DraftIsSaved && store.Draft?.Id == note;
+        current is { Persisted: true } session && session.Id == note;
 
     void RefreshReminderBadge(ListViewItem row, Guid id)
     {
         var due = getReminder(id);
-        if (getTaskReminders(id) is { } tasks)
-            foreach (var (task, time) in tasks)
-                if (task.Length is > 0 and <= NoteReminderSchedule.TaskLabelLimit && (due is null || time < due.Value)) due = time;
-
         var label = due is { } next ? string.Format(Strings.Notes_ReminderAt, next.ToLocalTime()) : "";
         if (label == (AutomationProperties.GetHelpText(row) ?? "")) return;
         AutomationProperties.SetHelpText(row, label);
@@ -100,40 +90,18 @@ public sealed partial class NotesView
         }
     }
 
-    void AddTaskReminderButton(Grid row, Guid note, string task)
-    {
-        if (task.Length is 0 or > NoteReminderSchedule.TaskLabelLimit || !store.DraftIsSaved) return;
-        var anchor = new Button
-        {
-            Style = ReminderButton.Style, Width = 28, Height = 28,
-            VerticalAlignment = VerticalAlignment.Top,
-            Content = new PaneIcon { Glyph = "timer", Width = 14, Height = 14 },
-        };
-        var label = string.Format(Strings.Notes_TaskReminderFor, task);
-        AutomationProperties.SetName(anchor, label);
-        ToolTipService.SetToolTip(anchor, Strings.Notes_TaskReminder);
-
-        var menu = new MenuFlyout();
-        menu.Opening += (_, _) => BuildReminderMenu(menu, note, task, anchor);
-        anchor.Flyout = menu;
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(anchor, 2);
-        row.Children.Add(anchor);
-    }
-
     void ReminderMenuOpening(object sender, object args)
     {
         if (sender is not MenuFlyout menu) return;
-        if (store.Draft is { } draft) BuildReminderMenu(menu, draft.Id, null, ReminderButton);
+        if (current is { } session) BuildReminderMenu(menu, session.Id, ReminderButton);
         else menu.Items.Clear();
     }
 
-    void BuildReminderMenu(MenuFlyout menu, Guid note, string? task, Button anchor)
+    void BuildReminderMenu(MenuFlyout menu, Guid note, Button anchor)
     {
         menu.Items.Clear();
-        if (!CanChangeReminder(note) || (task is not null && !previewing)) return;
-        var current = task is null ? getReminder(note) :
-            getTaskReminders(note)?.TryGetValue(task, out var taskTime) == true ? taskTime : (DateTimeOffset?)null;
+        if (!CanChangeReminder(note)) return;
+        var current = getReminder(note);
         if (current is { } time)
         {
             menu.Items.Add(new MenuFlyoutItem { IsEnabled = false, Text = string.Format(Strings.Notes_ReminderAt, time.ToLocalTime()) });
@@ -141,7 +109,7 @@ public sealed partial class NotesView
         }
         void AddPreset(string text, Func<DateTimeOffset> due) => menu.Items.Add(ReminderItem(text, () =>
         {
-            if (CanChangeReminder(note) && (task is null || previewing)) ChangeReminder(due(), task);
+            if (CanChangeReminder(note)) ChangeReminder(due());
         }));
 
         AddPreset(Strings.Notes_ReminderTenMinutes, () => DateTimeOffset.UtcNow.AddMinutes(10));
@@ -152,33 +120,13 @@ public sealed partial class NotesView
         menu.Items.Add(new MenuFlyoutSeparator());
         AddPreset(Strings.Notes_ReminderNextEvening, NextReminderEvening);
         AddPreset(Strings.Notes_ReminderTomorrowMorning, TomorrowReminderMorning);
-        menu.Items.Add(ReminderItem(Strings.Notes_ReminderCustom, () => ShowCustomReminder(note, task, anchor)));
+        menu.Items.Add(ReminderItem(Strings.Notes_ReminderCustom, () => ShowCustomReminder(note, anchor)));
         var cancel = ReminderItem(Strings.Notes_ReminderCancel, () =>
         {
-            if (CanChangeReminder(note) && (task is null || previewing)) ChangeReminder(null, task);
+            if (CanChangeReminder(note)) ChangeReminder(null);
         });
         cancel.IsEnabled = current.HasValue;
         menu.Items.Add(cancel);
-        if (task is null && getTaskReminders(note) is { Count: > 0 } tasks) AddScheduledTasks(menu, note, tasks);
-    }
-
-    void AddScheduledTasks(MenuFlyout menu, Guid note, IReadOnlyDictionary<string, DateTimeOffset> tasks)
-    {
-        var scheduled = new MenuFlyoutSubItem { Text = Strings.Notes_TaskReminders };
-        foreach (var (task, due) in tasks.OrderBy(entry => entry.Value))
-        {
-            if (task.Length is 0 or > NoteReminderSchedule.TaskLabelLimit) continue;
-            var shortTask = task.Length <= 32 ? task : task[..(char.IsHighSurrogate(task[31]) ? 31 : 32)] + "…";
-            var item = new MenuFlyoutSubItem { Text = shortTask };
-            AutomationProperties.SetName(item, task);
-            item.Items.Add(new MenuFlyoutItem { IsEnabled = false, Text = string.Format(Strings.Notes_ReminderAt, due.ToLocalTime()) });
-            item.Items.Add(ReminderItem(Strings.Notes_ReminderCancel, () =>
-            {
-                if (CanChangeReminder(note)) ChangeReminder(null, task);
-            }));
-            scheduled.Items.Add(item);
-        }
-        if (scheduled.Items.Count > 0) menu.Items.Add(scheduled);
     }
 
     static MenuFlyoutItem ReminderItem(string text, Action action)

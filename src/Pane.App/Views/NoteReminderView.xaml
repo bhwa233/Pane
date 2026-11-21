@@ -16,8 +16,6 @@
         </Grid>
         <TextBlock x:Name="NoteTitle" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
                    Foreground="{ThemeResource PaneText1Brush}"/>
-        <TextBlock x:Name="TaskLabel" Visibility="Collapsed" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
-                   FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText2Brush}"/>
         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
             <Button Style="{StaticResource PaneTextButton}" Content="{x:Bind loc:Strings.Common_Close}" Click="CloseClicked"/>
             <Button Style="{StaticResource PanePrimaryButton}" Content="{x:Bind loc:Strings.Common_Open}" Click="OpenClicked"/>
