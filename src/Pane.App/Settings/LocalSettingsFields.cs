@@ -10,6 +10,7 @@ internal static class LocalSettingsFields
         [nameof(PaneSettings.DesktopNotes)],[nameof(PaneSettings.DesktopScreenshots)],[nameof(PaneSettings.DesktopTraffic)],
         [nameof(PaneSettings.PauseInterfaceTraffic)],
         [nameof(PaneSettings.NoteReminders)],[nameof(PaneSettings.NoteTaskReminders)],
+        [nameof(PaneSettings.NoteCapsules)],[nameof(PaneSettings.NoteCapsuleQueues)],
         [nameof(PaneSettings.LimitScreenshotHistory)],[nameof(PaneSettings.RememberTranslations)],[nameof(PaneSettings.LookupTranslationSelection)]];
     internal static void Apply(JsonObject target,JsonObject? local)
     {

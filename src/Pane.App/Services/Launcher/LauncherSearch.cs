@@ -38,9 +38,9 @@ internal sealed partial class LauncherSearch:ILauncherItemActions,ILauncherSearc
     internal int CachedApps {get;private set;}
     internal string? CachedQuery {get;private set;}
     // 保留宿主已有接线；Shell 枚举只在子进程中调用。
-    public LauncherSearch(SettingsStore store,WindowsAppCatalog catalog,ILauncherFiles files,ILauncherExecutor executor)
-        :this(store,new ProcessLauncherIndex(store.DirectoryPath),files,executor) { }
-    public LauncherSearch(SettingsStore store,ILauncherIndex index,ILauncherFiles files,ILauncherExecutor executor,ILauncherEnvironment? environment=null,ILaunchProcess? process=null,TerminalPrograms? programs=null,LauncherActionPlatform? actionPlatform=null)
+    public LauncherSearch(SettingsStore store,WindowsAppCatalog catalog,ILauncherFiles files,ILauncherExecutor executor,NotesLauncherSource? notes=null)
+        :this(store,new ProcessLauncherIndex(store.DirectoryPath),files,executor,notes:notes) { }
+    public LauncherSearch(SettingsStore store,ILauncherIndex index,ILauncherFiles files,ILauncherExecutor executor,ILauncherEnvironment? environment=null,ILaunchProcess? process=null,TerminalPrograms? programs=null,LauncherActionPlatform? actionPlatform=null,NotesLauncherSource? notes=null)
     {
         var started=System.Diagnostics.Stopwatch.StartNew();
         this.store=store;this.index=index;this.executor=executor;lastFavorites=store.Current.Launcher.Favorites.ToArray();lastPortable=store.Current.Launcher.Portable.ToArray();
@@ -51,6 +51,7 @@ internal sealed partial class LauncherSearch:ILauncherItemActions,ILauncherSearc
         actions=new(portablePlatform,executor,process);
         quickLinks=new(executor,process);
         sources=[new DirectSource(executor),new PowerTimerSource(() => PowerTimerProvider()),quickLinks,new SystemSettingsSource(executor,process,environment,RecordUse),new ExtraCommandSource(executor,environment),new CalculationSource(executor),new ApplicationSource(executor,RecordUse),new FavoriteSource(executor),new FileSource(files,executor),new CommandSource(executor),new WebSource(executor)];
+        if(notes is {} notesSource)sources=[..sources,notesSource];
         var path=Path.Combine(store.DirectoryPath,"launcher-usage.json");
         try{if(File.Exists(path))uses=JsonSerializer.Deserialize(File.ReadAllText(path),LauncherJson.Default.DictionaryStringAppUse)??[];}
         catch(Exception e) when(e is IOException or JsonException or UnauthorizedAccessException){IndexError="usage:"+e.GetType().Name;}

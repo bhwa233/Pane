@@ -28,6 +28,7 @@ public sealed partial class NotesView
             NoteList.Items.Clear();
             var matches = store.Documents.Where(note =>
                 (category == null || string.Equals(category, note.Category, StringComparison.OrdinalIgnoreCase)) &&
+                (!filterHidden || isHidden(note.Id)) &&
                 (query.Length == 0 || note.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
                  note.Body.Contains(query, StringComparison.CurrentCultureIgnoreCase))).ToArray();
             // 分组：未分类排最后，其余按现有筛选下拉的文化序；搜索时忽略折叠（结果全展开）。
@@ -55,7 +56,7 @@ public sealed partial class NotesView
     {
         var title = string.IsNullOrWhiteSpace(note.Title) ? Strings.Notes_Untitled : note.Title;
         var content = new StackPanel { Spacing = 2 };
-        content.Children.Add(NoteRowTitle(title, isPinned(note.Id)));
+        content.Children.Add(NoteRowTitle(title, isPinned(note.Id), isHidden(note.Id)));
         // 搜索摘要：标题 + 正文拼在一起找首个命中，取命中处前 40 后 60 字的窗口做第二行。
         var query = SearchBox.Text.Trim();
         if (query.Length > 0)
@@ -96,10 +97,17 @@ public sealed partial class NotesView
         return shell;
     }
 
-    /// <summary>标题行：已贴到桌面时带 pin 标记（notes-mvp §3「已贴到桌面」标签）。</summary>
-    StackPanel NoteRowTitle(string title, bool pinned)
+    /// <summary>标题行：「已贴到桌面」pin 标记 + 「已隐藏」标记（notes-mvp §3）。</summary>
+    StackPanel NoteRowTitle(string title, bool pinned, bool hidden)
     {
         var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        if (hidden)
+        {
+            var hiddenIcon = new PaneIcon { Glyph = "eye-off", Width = 11, Height = 11,
+                VerticalAlignment = VerticalAlignment.Center, Foreground = EmptyList.Foreground, IsHitTestVisible = false };
+            AutomationProperties.SetAccessibilityView(hiddenIcon, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            line.Children.Add(hiddenIcon);
+        }
         if (pinned)
         {
             line.Children.Add(new PaneIcon { Glyph = "pin", Width = 11, Height = 11,
@@ -205,6 +213,13 @@ public sealed partial class NotesView
     void ShowNoteMenu(ListViewItem row, Guid id, RightTappedRoutedEventArgs args)
     {
         var menu = new MenuFlyout();
+        if (isHidden(id))
+        {
+            // 已隐藏的便签：先找回，再谈其他操作（notes-mvp §6「隐藏与找回」）。
+            var reveal = new MenuFlyoutItem { Text = Strings.Notes_RevealHidden };
+            reveal.Click += (_, _) => revealNote(id);
+            menu.Items.Add(reveal);
+        }
         var pinned = isPinned(id);
         var pin = new MenuFlyoutItem { Text = pinned ? Strings.Notes_UnpinDesktop : Strings.Notes_PinDesktop };
         pin.Click += (_, _) => RowTogglePin(id);

@@ -219,6 +219,11 @@ public sealed partial class GlassPanel : IDisposable
     [DllImport("user32.dll")] static extern nint SetWindowLongPtrW(nint window,int index,nint value);
     // 保险：面板开着却不在前台时（激活仍被拒绝），在面板外面按下鼠标左 / 右 / 中键也照常收起；只认新按下的那一下
     int outsideButtons;
+    /// <summary>当前显示器 DPI / 96（胶囊协调层换算本地 DIP 与物理像素用）。</summary>
+    internal float DpiScale => dpi;
+    /// <summary>自定义命中区域（notes-mvp §7 胶囊队列）：返回 HRGN，覆盖默认的圆角矩形；
+    /// 区域外的点击穿透到桌面。每次 Layout 都会重新调用。</summary>
+    internal Func<nint>? HitRegion { get; set; }
     static int MouseButtonsDown()=>((GetAsyncKeyState(1)&0x8000)!=0?1:0)|((GetAsyncKeyState(2)&0x8000)!=0?2:0)|((GetAsyncKeyState(4)&0x8000)!=0?4:0);
     void CheckOutsideClick()
     {
@@ -367,7 +372,9 @@ public sealed partial class GlassPanel : IDisposable
         {
             content.Offset=new Vector3((float)((ex-ix)/dpi),(float)((ey-iy)/dpi),0);
             MoveWindowsTogether(x,y,ix,iy,w,h);
-            var region=Native.CreateRoundRectRgn(0,0,w+1,h+1,(int)(2*parameters.Current.PanelRadius*dpi),(int)(2*parameters.Current.PanelRadius*dpi));if(Native.SetWindowRgn(Input,region,false)==0)Native.DeleteObject(region);
+            nint region=HitRegion is { } build?build():0;
+            if(region==0)region=Native.CreateRoundRectRgn(0,0,w+1,h+1,(int)(2*parameters.Current.PanelRadius*dpi),(int)(2*parameters.Current.PanelRadius*dpi));
+            if(Native.SetWindowRgn(Input,region,false)==0)Native.DeleteObject(region);
         }
         island.SiteBridge.MoveAndResize(new RectInt32(0,0,w,h));
     }

@@ -3,6 +3,7 @@
   <ItemGroup>
     <Compile Include="../../src/Pane.App/Services/Notes/NoteStore.cs" Link="NoteStore.cs"/>
     <Compile Include="../../src/Pane.App/Services/Notes/NoteSessions.cs" Link="NoteSessions.cs"/>
+    <Compile Include="../../src/Pane.App/Hosting/NoteCapsuleGeometry.cs" Link="NoteCapsuleGeometry.cs"/>
     <Compile Include="../../src/Pane.App/Services/Screenshots/*.cs" Link="Screenshots/%(Filename)%(Extension)"/>
     <Compile Include="../../src/Pane.App/Services/Clipboard/StorageLocation.cs" Link="StorageLocation.cs"/>
     <Compile Include="../../src/Pane.App/Contracts/DataStorage.cs" Link="DataStorage.cs"/>

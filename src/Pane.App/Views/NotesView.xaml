@@ -73,6 +73,10 @@
                             ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_New}" AutomationProperties.Name="{x:Bind loc:Strings.Notes_New}">
                         <c:PaneIcon Glyph="plus" Width="16" Height="16"/>
                     </Button>
+                    <Button x:Name="HiddenFilterButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="HiddenFilterClicked"
+                            AutomationProperties.Name="{x:Bind loc:Strings.Notes_FilterHidden}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_FilterHidden}">
+                        <c:PaneIcon x:Name="HiddenFilterIcon" Glyph="eye-off" Width="16" Height="16"/>
+                    </Button>
                 </StackPanel>
                 <ComboBox x:Name="CategoryFilter" Grid.Row="1" HorizontalAlignment="Stretch" MinWidth="0"
                           AutomationProperties.Name="{x:Bind loc:Strings.Notes_CategoryFilter}" SelectionChanged="CategoryFilterChanged"/>

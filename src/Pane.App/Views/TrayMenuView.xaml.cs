@@ -15,7 +15,7 @@ public sealed record TrayMenuState(string? UpdateVersion, IReadOnlyList<string> 
     bool GesturesAvailable, bool GesturesPaused, IReadOnlyList<string> PauseKeys, bool ClipboardAvailable = true,
     bool LauncherAvailable = true,
     bool TimerAvailable = false, string? TimerStatus = null, bool TrafficAvailable = false, bool NotesAvailable = false, bool ScreenshotsAvailable = false,
-    bool HasPinnedDesktopCards = false, bool DesktopCardsHidden = false, bool DictionaryAvailable = false);
+    bool HasPinnedDesktopCards = false, bool DesktopCardsHidden = false, bool DictionaryAvailable = false, bool HasHiddenDesktopNotes = false);
 
 public sealed partial class TrayMenuView : UserControl, IPanelView
 {
@@ -53,6 +53,8 @@ public sealed partial class TrayMenuView : UserControl, IPanelView
         TimerItem.Visibility = state.TimerAvailable ? Visibility.Visible : Visibility.Collapsed;
         TrafficItem.Visibility = state.TrafficAvailable ? Visibility.Visible : Visibility.Collapsed;
         NotesItem.Visibility = state.NotesAvailable ? Visibility.Visible : Visibility.Collapsed;
+        // 有已隐藏的桌面便签时提供「显示全部桌面便签」（notes-mvp §6「隐藏与找回」）。
+        ShowNotesItem.Visibility = state.NotesAvailable && state.HasHiddenDesktopNotes ? Visibility.Visible : Visibility.Collapsed;
         ScreenshotsItem.Visibility = state.ScreenshotsAvailable ? Visibility.Visible : Visibility.Collapsed;
         DictionaryItem.Visibility = state.DictionaryAvailable ? Visibility.Visible : Visibility.Collapsed;
         var cardsAvailable = state.TrafficAvailable || state.NotesAvailable || state.ScreenshotsAvailable;

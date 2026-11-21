@@ -13,6 +13,14 @@ public sealed record PaneSettings(int Version, GeneralSettings General, Launcher
     public Dictionary<Guid,bool>? DesktopNoteTopmost { get; init; }
     public Dictionary<Guid,DateTimeOffset>? NoteReminders { get; init; }
     public Dictionary<Guid,Dictionary<string,DateTimeOffset>>? NoteTaskReminders { get; init; }
+    /// <summary>胶囊布局（notes-mvp §6）：键为便签 id。Folded = 折叠成胶囊；Hidden = 单张隐藏（保留落点与置顶偏好）；
+    /// Slot = 胶囊落点，null = 未定（首次折叠按最近边缘推导）。展开矩形与胶囊落点互不覆盖。</summary>
+    public Dictionary<Guid,NoteCapsuleLayout>? NoteCapsules { get; init; }
+    /// <summary>每屏每条边的队列状态：键为 "{MonitorId}|{Edge}"。Start = 队列起点，Scroll = 溢出滚动偏移，
+    /// Collapsed = 主胶囊收起成员。重启按屏幕身份恢复，缺失屏幕回退可用屏幕并夹紧。</summary>
+    public Dictionary<string,NoteCapsuleQueue>? NoteCapsuleQueues { get; init; }
+    /// <summary>首次折叠的一次性提示已经显示过（notes-mvp §6）。</summary>
+    public bool NoteCapsuleHintShown { get; init; }
     public DesktopTrafficSettings? DesktopTraffic { get; init; }
     public bool PauseInterfaceTraffic { get; init; }
     public Dictionary<Guid,LauncherPosition?>? DesktopScreenshots { get; init; }
@@ -22,6 +30,11 @@ public sealed record PaneSettings(int Version, GeneralSettings General, Launcher
     // 能力模块的启用状态（设计加，2026-11-04，055）：键是 Pane.Contracts.ModuleIds，没写的用 ModuleInfo.DefaultEnabled。
     // 旧设置文件没有这项时，按旧的总开关迁移（Clipboard / SuperPanel / FolderJump 的 Enabled），见 docs/design.md「能力模块」
     Dictionary<string,bool>? modules; public Dictionary<string,bool>? Modules { get=>modules; init=>modules=value; } }
+// 胶囊（notes-mvp §6）：MonitorId 沿用 LauncherPosition 的屏幕身份；Edge 0 左 / 1 右 / 2 顶部 / 3 悬浮。
+// 停靠时 X / Y 是相对该屏工作区的 DIP（左右纵排沿边向下、顶部横排沿边向右），悬浮时是自由坐标；Order 是队内顺序。
+public sealed record NoteCapsuleLayout(bool Folded, bool Hidden, NoteCapsuleSlot? Slot);
+public sealed record NoteCapsuleSlot(string MonitorId, int Edge, double X, double Y, int Order);
+public sealed record NoteCapsuleQueue(double Start, bool Collapsed, double Scroll);
 // 文件对话框跳转（设计加，2026-11-01，046）：用户要能在设置里调。Ctrl+G / Ctrl+Shift+G 可改（null = 默认组合）；
 // AutoJump = 对话框刚打开时自动跳到最近用过的资源管理器文件夹（只跳一次）；ShowRecent = 菜单里列出最近用过的文件夹；MenuWhenMany（047）= 开着多个资源管理器时 Ctrl+G 改为弹菜单让用户选
 public sealed record FolderJumpSettings(bool Enabled=true, Hotkey? JumpHotkey=null, Hotkey? MenuHotkey=null, bool AutoJump=false, bool ShowRecent=true, bool MenuWhenMany=false)

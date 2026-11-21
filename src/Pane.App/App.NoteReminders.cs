@@ -88,7 +88,18 @@ public sealed partial class App
 
         if (note == null) return;
         sender.Stop();
-        var view = new NoteReminderView(note.Title, () => ShowNotes(note.Id));
-        ShowReminderPanel(SecondaryId.NoteReminder, Strings.Notes_Reminder, view, view, ScheduleNoteReminders);
+        // 胶囊到点短暂高亮（notes-mvp §5）；「打开」按贴桌面与否直达桌面窗口或管理器。
+        HighlightCapsuleReminder(next.NoteId);
+        void Open()
+        {
+            if (IsNotePinned(next.NoteId)) ExpandNoteFromCapsule(next.NoteId);
+            else ShowNotes(next.NoteId);
+        }
+        var view = new NoteReminderView(note.Title, Open);
+        ShowReminderPanel(SecondaryId.NoteReminder, Strings.Notes_Reminder, view, view, () =>
+        {
+            if (capsuleHighlightNote == next.NoteId) { capsuleHighlightNote = null; RefreshCapsules(); }
+            ScheduleNoteReminders();
+        });
     }
 }

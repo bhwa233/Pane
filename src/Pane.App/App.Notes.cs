@@ -23,10 +23,20 @@ public sealed partial class App
 
     void ShowNotes(Guid? id = null) => Present(SecondaryId.Notes, Strings.Module_Notes_Name,
         () => new NotesView(GetNotes(), GetNoteSessions(), IsNotePinned, ToggleNotePin,
-            CaptureNoteForDelete, RecycleNoteForDelete, UndoNoteDelete, GetNoteReminder, SetNoteReminder), view =>
+            CaptureNoteForDelete, RecycleNoteForDelete, UndoNoteDelete, GetNoteReminder, SetNoteReminder,
+            IsNoteHidden, RevealHiddenNote), view =>
         {
             if (id is { } noteId) ((NotesView)view).OpenNote(noteId);
         });
+
+    bool IsNoteHidden(Guid id) => Store.Current.NoteCapsules?.GetValueOrDefault(id) is { Hidden: true };
+
+    /// <summary>从便签列表 / 键盘弹层找回已隐藏的便签（notes-mvp §6「隐藏与找回」）。</summary>
+    void RevealHiddenNote(Guid id)
+    {
+        if (!IsNoteHidden(id)) return;
+        ExpandNoteFromCapsule(id);
+    }
 
     NoteStore GetNotes()
     {
@@ -91,6 +101,7 @@ public sealed partial class App
     {
         var view = new DesktopNoteView(GetNoteSessions(), note, new DesktopNoteHost(this));
         view.UnpinRequested += (_, _) => RemoveNotePin(note.Id);
+        view.FoldRequested += (_, id) => FoldNote(id);
         return view;
     }
 
@@ -213,7 +224,10 @@ public sealed partial class App
         }
         foreach (var id in desktopNotes.Keys.ToArray())
         {
-            if (layout?.ContainsKey(id) == true && notes?.Find(id) != null) continue;
+            // 折叠或隐藏的便签不留正文窗口（notes-mvp §6）；胶囊由协调层承载。
+            var capsule = Store.Current.NoteCapsules?.GetValueOrDefault(id);
+            if (layout?.ContainsKey(id) == true && notes?.Find(id) != null &&
+                capsule is not { Folded: true } and not { Hidden: true }) continue;
             if (desktopNotes.Remove(id, out var removed))
             {
                 (removed.View as IDisposable)?.Dispose();
@@ -225,6 +239,9 @@ public sealed partial class App
             foreach (var (id, position) in layout.Take(NoteStore.DesktopPinLimit))
             {
                 if (notes?.Find(id) is not { } note) continue;
+                // 折叠 / 隐藏的便签只保留胶囊入口，不展开正文窗口（notes-mvp §6）。
+                var capsule = Store.Current.NoteCapsules?.GetValueOrDefault(id);
+                if (capsule is { Folded: true } or { Hidden: true }) continue;
                 if (desktopNotes.TryGetValue(id, out var existing)) continue;
                 var view = CreateNoteCardView(note);
                 if (CreateDesktopCard(Strings.Notes_DesktopCard, view, view, position,
@@ -249,6 +266,15 @@ public sealed partial class App
     void RemoveNotePin(Guid id)
     {
         if (IsNotePinned(id)) HandleNoteLayout(() => { SaveNoteLayout(id, false, null); RefreshDesktopNotes(); });
+        // 取消贴到桌面同时清掉胶囊入口和落点（notes-mvp §6「模块停用／删除」）。
+        Store.Update(settings =>
+        {
+            if (settings.NoteCapsules?.ContainsKey(id) != true) return settings;
+            var capsules = new Dictionary<Guid, NoteCapsuleLayout>(settings.NoteCapsules);
+            capsules.Remove(id);
+            return settings with { NoteCapsules = capsules.Count == 0 ? null : capsules };
+        });
+        RefreshCapsules();
     }
 
     void NoteRemoved(Guid id)
@@ -267,6 +293,7 @@ public sealed partial class App
             card.Dispose();
         }
         desktopNotes.Clear();
+        ClearCapsuleHosts();
         RefreshDesktopCardsOverview();
     }
 
@@ -276,6 +303,9 @@ public sealed partial class App
         {
             App.desktopNotesEnabled = true;
             App.RefreshDesktopNotes();
+            // 重启恢复：可见未折叠的便签开窗，折叠 / 隐藏的按队列状态收成胶囊（notes-mvp §6）。
+            App.RefreshCapsules();
+            App.StartCapsuleFullscreenWatch();
             App.StartNoteReminders();
             return Task.CompletedTask;
         }
@@ -286,6 +316,7 @@ public sealed partial class App
             App.GetNoteSessions().FlushAll();
             App.RemoveSecondary(SecondaryId.Notes);
             App.StopNoteReminders();
+            App.StopCapsuleFullscreenWatch();
             App.ClearDesktopNotes();
             return Task.CompletedTask;
         }

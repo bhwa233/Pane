@@ -32,7 +32,8 @@ public sealed partial class App
             Modules.IsActive(ModuleIds.PowerTimer)&&PowerTimer!=null,
             PowerTimer?.Current is {} timer?string.Format(Strings.Tray_TimerStatus,(object?)PowerTimerText.State(timer),(object?)PowerTimerText.Span(timer.At-DateTimeOffset.Now)):null,
             Modules.IsActive(ModuleIds.Traffic),Modules.IsActive(ModuleIds.Notes),Modules.IsActive(ModuleIds.Screenshots),
-            DesktopCardPanels().Any(),desktopCardsHidden,DictionaryAvailable:Modules.IsActive(ModuleIds.Ai)));
+            DesktopCardPanels().Any(),desktopCardsHidden,DictionaryAvailable:Modules.IsActive(ModuleIds.Ai),
+            HasHiddenDesktopNotes:Modules.IsActive(ModuleIds.Notes) && (Store.Current.DesktopNotes ?? []).Keys.Any(IsNoteHidden)));
         foreach(var other in panels.Values)if(other!=trayPanel)other.Hide();
         current=trayPanel;
         trayPanel.Show(true,x,y,!demo);
@@ -47,6 +48,7 @@ public sealed partial class App
             case "timer":ShowTimer();break;   /* 058 */
             case "traffic":ShowTraffic();break;
             case "notes":ShowNotes();break;
+            case "show-desktop-notes":ShowAllDesktopNotes();break;
             case "screenshots":ShowScreenshots();break;
             case "dictionary":ShowTranslate(null,dictionary:true);break;
             case "desktop-cards":ShowDesktopCards();break;

@@ -50,6 +50,17 @@ public sealed partial class GlassPanel
         MonitorCallback callback=(nint h,nint dc,ref Native.Rect rect,nint data)=>{var m=ReadMonitor(h);if(m.Id==id)found=m;return true;};
         EnumDisplayMonitors(0,0,callback,0);GC.KeepAlive(callback);return found;
     }
+
+    /// <summary>按物理点取监视器（胶囊协调层用）：身份、工作区（物理像素）与 DPI。</summary>
+    internal static (string Id, Native.Rect Work, float Dpi)? MonitorAt(int x, int y)
+    {
+        try { var monitor = At(x, y); return (monitor.Id, monitor.Work, monitor.Dpi); }
+        catch (System.ComponentModel.Win32Exception) { return null; }
+    }
+
+    /// <summary>按监视器身份取工作区与 DPI；屏幕拔除时返回 null，由调用方回退可用屏幕。</summary>
+    internal static (string Id, Native.Rect Work, float Dpi)? MonitorById(string id) =>
+        FindMonitor(id) is { } monitor ? (monitor.Id, monitor.Work, monitor.Dpi) : null;
     Point PlaceForShow(int px,int py,bool near)
     {
         if(desktopCard)

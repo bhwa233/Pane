@@ -12,6 +12,7 @@ static class Program
   if(args is ["--ocr-history"]){int total=OcrHistoryTests.Run();Console.WriteLine($"PASS OCR history assertions={total}");TestResults.Pass();return;}
   if(args is ["--screenshot-export"]){int total=ScreenshotExportTests.Run();Console.WriteLine($"PASS screenshot export assertions={total}");TestResults.Pass();return;}
   if(args is ["--note-history"]){int total=NoteHistoryTests.Run();Console.WriteLine($"PASS note history assertions={total}");TestResults.Pass();return;}
+   if(args is ["--note-capsules"]){int total=NoteCapsuleGeometryTests.Run();Console.WriteLine($"PASS note capsule geometry assertions={total}");TestResults.Pass();return;}
   if(args is ["--traffic-trend"]){int total=InterfaceTrafficTrendTests.Run();Console.WriteLine($"PASS traffic trend assertions={total}");TestResults.Pass();return;}
   if(args is ["--traffic-app-run"]){ProcessTrafficTests.Run();Console.WriteLine("PASS traffic app run");TestResults.Pass();return;}
   if(args is ["--traffic-end-process-fixture"]){await Task.Delay(TimeSpan.FromSeconds(30));return;}
@@ -73,6 +74,7 @@ static class Program
   checks+=InterfaceTrafficTrendTests.Run();
   if(args is ["--settings"]){Console.WriteLine($"PASS settings assertions={checks}; realRegistry=0; systemClipboard=0");TestResults.Pass();return;}
   checks+=NoteHistoryTests.Run();
+   checks+=NoteCapsuleGeometryTests.Run();
   checks+=OcrResultTests.Run();
   checks+=OcrHistoryTests.Run();
   checks+=ScreenshotExportTests.Run();

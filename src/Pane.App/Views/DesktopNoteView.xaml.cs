@@ -46,6 +46,7 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
         this.host = host;
         id = note.Id;
         InitializeComponent();
+        RegisterFoldShortcuts();
         session = hub.Open(id);
         hub.Attach(session);
         RootGrid.RightTapped += RootRightTapped;
@@ -65,6 +66,27 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
     event EventHandler? IPanelView.CloseRequested { add { } remove { } }
     internal event EventHandler? UnpinRequested;
+    internal event EventHandler<Guid>? FoldRequested;
+
+    /// <summary>折叠入口（notes-mvp §3、§6）：Ctrl+W 走与纸片折叠按钮相同的保存 + 折叠流程。</summary>
+    void RegisterFoldShortcuts()
+    {
+        var fold = new KeyboardAccelerator { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control };
+        fold.Invoked += (_, args) => { args.Handled = true; FoldRequested?.Invoke(this, id); };
+        KeyboardAccelerators.Add(fold);
+    }
+
+    void FoldClicked(object sender, RoutedEventArgs args) => FoldRequested?.Invoke(this, id);
+
+    /// <summary>快速新建后的落点：光标进正文（notes-mvp §3）。</summary>
+    internal void FocusBody()
+    {
+        if (!pad) SetPad(true);
+        PadBody.Focus(FocusState.Programmatic);
+    }
+
+    /// <summary>折叠前保存失败：保留编辑窗并提示（notes-mvp §6「失败不关窗」）。</summary>
+    internal void ReportSaveFailed() => PadStatus.Text = Strings.Notes_SaveFailed;
 
     public void Dispose()
     {

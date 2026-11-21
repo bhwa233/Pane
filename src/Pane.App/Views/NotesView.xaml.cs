@@ -24,7 +24,10 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
     readonly Action<NoteDeleteSnapshot> undoDelete;
     readonly Func<Guid, DateTimeOffset?> getReminder;
     readonly Action<Guid, DateTimeOffset?> setReminder;
+    readonly Func<Guid, bool> isHidden;
+    readonly Action<Guid> revealNote;
     readonly DispatcherQueueTimer undoWindow;
+    bool filterHidden;
     NoteSessions.Session? current;
     Guid? historyNoteId;
     long historyRevision;
@@ -35,7 +38,8 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
 
     internal NotesView(NoteStore store, NoteSessions sessions, Func<Guid,bool> isPinned, Action<Guid> togglePin,
         Func<Guid, NoteDeleteSnapshot?> captureDelete, Action<Guid> recycleNote, Action<NoteDeleteSnapshot> undoDelete,
-        Func<Guid, DateTimeOffset?> getReminder, Action<Guid, DateTimeOffset?> setReminder)
+        Func<Guid, DateTimeOffset?> getReminder, Action<Guid, DateTimeOffset?> setReminder,
+        Func<Guid, bool> isHidden, Action<Guid> revealNote)
     {
         this.store = store;
         this.sessions = sessions;
@@ -46,6 +50,8 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
         this.undoDelete = undoDelete;
         this.getReminder = getReminder;
         this.setReminder = setReminder;
+        this.isHidden = isHidden;
+        this.revealNote = revealNote;
         InitializeComponent();
         TitleBox.MaxLength = NoteStore.TitleLimit;
         BodyBox.MaxLength = NoteStore.BodyLimit;
@@ -546,6 +552,15 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
 
     void SearchChanged(object sender, TextChangedEventArgs args) { if (ready && !updating) ReloadList(); }
     void CategoryFilterChanged(object sender, SelectionChangedEventArgs args) { if (ready && !updating) ReloadList(); }
+
+    /// <summary>「只看已隐藏」筛选（notes-mvp §3：行上显示「已隐藏」，可按其筛选）。</summary>
+    void HiddenFilterClicked(object sender, RoutedEventArgs args)
+    {
+        filterHidden = !filterHidden;
+        HiddenFilterIcon.Glyph = filterHidden ? "eye" : "eye-off";
+        ReloadList();
+    }
+
     void SaveClicked(object sender, RoutedEventArgs args) => TrySave();
     void NewClicked(object sender, RoutedEventArgs args) => NewNote();
     void CloseClicked(object sender, RoutedEventArgs args) => CloseRequested?.Invoke(this, EventArgs.Empty);

@@ -92,6 +92,11 @@
                 <c:PaneIcon Glyph="pencil" Style="{StaticResource ItemIcon}"/>
                 <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Module_Notes_Name}" Style="{StaticResource ItemText}"/>
             </Grid>
+            <Grid x:Name="ShowNotesItem" Tag="show-desktop-notes" Style="{StaticResource ItemRow}" Visibility="Collapsed">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <c:PaneIcon Glyph="eye" Style="{StaticResource ItemIcon}"/>
+                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Notes_ShowDesktopNotes}" Style="{StaticResource ItemText}"/>
+            </Grid>
             <Grid x:Name="ScreenshotsItem" Tag="screenshots" Style="{StaticResource ItemRow}" Visibility="Collapsed">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <c:PaneIcon Glyph="scissors" Style="{StaticResource ItemIcon}"/>

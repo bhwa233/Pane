@@ -13,6 +13,8 @@ internal static partial class Native
     [DllImport("user32.dll")] internal static extern bool IsChild(nint parent,nint child);
     [DllImport("user32.dll")] internal static extern int SetWindowRgn(nint h,nint region,bool redraw);
     [DllImport("gdi32.dll")] internal static extern nint CreateRoundRectRgn(int l,int t,int r,int b,int ew,int eh);
+    [DllImport("gdi32.dll")] internal static extern nint CreateRectRgn(int l,int t,int r,int b);
+    [DllImport("gdi32.dll")] internal static extern int CombineRgn(nint target,nint first,nint second,int mode);
     [DllImport("gdi32.dll")] internal static extern bool DeleteObject(nint obj);
     [DllImport("user32.dll")] internal static extern bool SystemParametersInfoW(uint action,uint param,out Rect value,uint flags);
     [StructLayout(LayoutKind.Sequential)] internal struct Rect { public int Left, Top, Right, Bottom; }

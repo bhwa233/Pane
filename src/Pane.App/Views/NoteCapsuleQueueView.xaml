@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Pane.Views.NoteCapsuleQueueView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False">
+    <Grid>
+        <Canvas x:Name="Surface" Background="Transparent"/>
+        <StackPanel Visibility="Collapsed">
+            <!-- 主题画刷原型：代码构建的胶囊条从这里取主题资源 -->
+            <Border x:Name="FillProto" Background="{ThemeResource PaneFillControlBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}"/>
+            <TextBlock x:Name="TextProto" Foreground="{ThemeResource PaneText1Brush}"/>
+            <TextBlock x:Name="Text2Proto" Foreground="{ThemeResource PaneText2Brush}"/>
+            <TextBlock x:Name="AccentProto" Foreground="{ThemeResource PaneAccentBrush}"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

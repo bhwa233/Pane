@@ -159,7 +159,12 @@ public sealed partial class App
             var everything = new Pane.Services.Launcher.EverythingSearch(); a.FileSearchStatus = everything;
             if (!a.demo)
             {
-                a.launcherSearch = new(a.Store, new Pane.Services.Launcher.WindowsAppCatalog(a.Store.DirectoryPath), everything, new Pane.Services.Launcher.WindowsLauncherExecutor(c => a.queue.TryEnqueue(() => a.Command(c))));
+                a.launcherSearch = new(a.Store, new Pane.Services.Launcher.WindowsAppCatalog(a.Store.DirectoryPath), everything, new Pane.Services.Launcher.WindowsLauncherExecutor(c => a.queue.TryEnqueue(() => a.Command(c))),
+                    notes: new Pane.Services.Launcher.NotesLauncherSource(
+                        () => a.Modules.IsActive(ModuleIds.Notes) && !a.closing,
+                        () => a.queue.TryEnqueue(() => a.ShowNotes()),
+                        () => a.queue.TryEnqueue(a.QuickNewDesktopNote),
+                        () => a.queue.TryEnqueue(a.ShowDesktopNotesPanel)));
                 a.launcherSearch.PowerTimerProvider = () => a.PowerTimer; a.WebSuggestions = new Pane.Services.Launcher.WebSuggestions(() => a.Store.Current.Launcher.WebSuggestions);
                 a.TerminalHistory = a.launcherSearch.TerminalHistory;
                 a.WebSearchHistory = a.launcherSearch.WebSearchHistory;
