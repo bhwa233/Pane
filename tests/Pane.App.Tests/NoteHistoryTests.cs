@@ -125,6 +125,36 @@ static class NoteHistoryTests
         Check(settingsStore.Current.NoteTaskReminders?.ContainsKey(created.Id) != true,
             "removing a note also clears its legacy task entries");
 
+        // ---------------- 旧格式目录实测（notes-mvp §1 读取规则 + §8 第 5 步回归） ----------------
+        // 构造一份升级前的真实数据目录：正文带 Images / EditorMode 字段、.history 版本同样带旧字段、
+        // .images 目录原样存在；升级后的 Pane 必须忽略旧字段、正文按纯文本加载、旧字段不参与任何判断。
+        var legacyRoot = Path.Combine(directory, "legacy-notes");
+        Directory.CreateDirectory(Path.Combine(legacyRoot, ".history"));
+        Directory.CreateDirectory(Path.Combine(legacyRoot, ".images"));
+        var legacyId = Guid.NewGuid();
+        File.WriteAllText(Path.Combine(legacyRoot, $"{legacyId:N}.json"),
+            $$"""{"Id":"{{legacyId}}","Title":"旧格式","Body":"# 旧正文\n","Updated":"2026-11-01T08:00:00Z","Category":"归档","Images":["d41d8cd98f00b204e9800998ecf8427e"],"EditorMode":1,"Recycled":false}""",
+            System.Text.Encoding.UTF8);
+        File.WriteAllBytes(Path.Combine(legacyRoot, ".images", $"{legacyId:N}-d41d8cd98f00b204e9800998ecf8427e.png"),
+            Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY/j///8/AAn7A/0FQ0XKAAAAAElFTkSuQmCC"));
+        var legacyVersionStamp = new DateTimeOffset(2026, 10, 31, 8, 0, 0, TimeSpan.Zero);
+        File.WriteAllText(Path.Combine(legacyRoot, ".history",
+                $"{legacyId:N}-{legacyVersionStamp.UtcTicks.ToString("D19", System.Globalization.CultureInfo.InvariantCulture)}.json"),
+            $$"""{"Id":"{{legacyId}}","Title":"旧格式旧版","Body":"旧正文旧版","Updated":"2026-10-31T08:00:00+00:00","Category":"","Images":null,"EditorMode":0}""",
+            System.Text.Encoding.UTF8);
+        var legacy = new NoteStore(legacyRoot);
+        legacy.Load();
+        var legacyNote = legacy.Find(legacyId);
+        Check(legacyNote is { Title: "旧格式", Body: "# 旧正文\n", Category: "归档" } && legacy.UnreadableCount == 0,
+            "an upgraded store ignores legacy Images/EditorMode fields and loads the body as plain text");
+        Check(legacy.Versions(legacyId).Count == 1 && legacy.ReadVersion(legacyId, legacy.Versions(legacyId).Single()).Body == "旧正文旧版",
+            "legacy history versions remain readable");
+        // 旧字段不参与保存判断：下次正文提交写出 MVP 模型后不再保留。
+        legacy.Save(legacyNote! with { Body = "# 旧正文\n已改" }, history: false);
+        Check(!File.ReadAllText(Path.Combine(legacyRoot, $"{legacyId:N}.json")).Contains("EditorMode") &&
+            Directory.GetFiles(Path.Combine(legacyRoot, ".images")).Length == 1,
+            "the next body commit writes the MVP model and leaves the .images directory untouched");
+
         // ---------------- NoteSessions：共享草稿的保存顺序（notes-mvp §2） ----------------
 
         var sessionDirectory = Path.Combine(directory, "sessions");
@@ -212,3 +242,4 @@ static class NoteHistoryTests
         public void Fire() => Tick?.Invoke(this, EventArgs.Empty);
     }
 }
+
