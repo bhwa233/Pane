@@ -19,7 +19,11 @@ internal sealed record CapsuleQueueState(string QueueKey, NoteEdge Edge, bool Co
     double Start, double Scroll, IReadOnlyList<CapsuleMember> Members);
 
 /// <summary>拖动松手结果：协调层把本地 DIP 坐标换算到工作区后决定重排 / 换边 / 悬浮 / 整队迁移。</summary>
-internal sealed record CapsuleDragResult(Guid Id, bool Master, double LocalX, double LocalY);
+internal sealed record CapsuleDragResult(Guid Id, bool Master, double LocalX, double LocalY, double ScreenX, double ScreenY);
+
+/// <summary>超过阈值的全局拖动（notes-mvp §7「独立的临时拖动胶囊」）：队列视图就此交出控制权，
+/// 协调层用幽灵胶囊 + GetCursorPos 轮询接管，跨屏拖动不丢捕获。</summary>
+internal sealed record CapsuleDragStart(Guid Id, bool Master);
 
 /// <summary>贴边胶囊队列（notes-mvp §6–7）：主胶囊 + 成员条。点击展开、×隐藏、右键换边与悬浮、
 /// 拖动重排（5px 阈值，松手才提交，取消 / 丢捕获恢复原布局）、滚轮滚动溢出、悬停请求只读预览。
@@ -27,12 +31,10 @@ internal sealed record CapsuleDragResult(Guid Id, bool Master, double LocalX, do
 public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
 {
     readonly Dictionary<Guid, Border> strips = [];
-    readonly Dictionary<Guid, double> stripAlong = [];
-    Border? master;
     CapsuleQueueState? state;
-    bool dragging, dragMaster;
+    bool dragging, dragMaster, externalDrag;
     Guid dragId;
-    double pressX, pressY, pressAlong;
+    double pressX, pressY;
 
     public event Action<Guid>? ExpandRequested;
     public event Action<Guid>? HideRequested;
@@ -40,8 +42,8 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
     public event Action<Guid>? FloatRequested;
     public event Action<Guid>? DeleteRequested;
     public event Action? MasterToggleRequested;
-    public event Action<double>? MasterDragAlong;
     internal event Action<CapsuleDragResult>? DragCompleted;
+    internal event Action<CapsuleDragStart>? DragStartedExternal;
     public event Action<double>? ScrollDelta;
     public event Action<Guid, int?>? HoverChanged;
     public event Action? OpenManagerRequested;
@@ -66,11 +68,12 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
     internal void Apply(CapsuleQueueState next)
     {
         state = next;
+        externalDrag = false;
+        dragging = false;
+        dragId = Guid.Empty;
         Surface.Children.Clear();
         strips.Clear();
-        stripAlong.Clear();
-        master = BuildMaster(next);
-        Surface.Children.Add(master);
+        Surface.Children.Add(BuildMaster(next));
         if (next.Collapsed) return;
         var index = 0;
         foreach (var member in next.Members)
@@ -81,7 +84,6 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
             Canvas.SetLeft(strip, next.Edge == NoteEdge.Top ? along : 0);
             Canvas.SetTop(strip, next.Edge == NoteEdge.Top ? 0 : along);
             strips[member.Id] = strip;
-            stripAlong[member.Id] = along;
             Surface.Children.Add(strip);
             index++;
         }
@@ -250,7 +252,6 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
             dragMaster = master;
             pressX = point.Position.X;
             pressY = point.Position.Y;
-            pressAlong = master ? queue.Start : stripAlong.GetValueOrDefault(id);
             dragging = false;
             pill.CapturePointer(args.Pointer);
             args.Handled = true;
@@ -261,10 +262,17 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
             var point = args.GetCurrentPoint(Surface);
             if (!point.Properties.IsLeftButtonPressed) return;
             var delta = NoteCapsuleGeometry.IsVertical(queue.Edge) ? point.Position.Y - pressY : point.Position.X - pressX;
-            if (!dragging && Math.Abs(delta) > 5) dragging = true;
-            if (!dragging) return;
-            if (dragMaster) MasterDragAlong?.Invoke(pressAlong + delta);
-            else if (sender is Border strip) MoveStrip(strip, delta);
+            if (!dragging)
+            {
+                if (Math.Abs(delta) <= 5) return;
+                // 超过阈值即交出控制权（galaxy 独立临时拖动胶囊）：释放捕获，改由协调层的幽灵胶囊全局跟手。
+                dragging = true;
+                externalDrag = true;
+                (sender as UIElement)?.ReleasePointerCapture(args.Pointer);
+                DragStartedExternal?.Invoke(new CapsuleDragStart(id, dragMaster));
+                args.Handled = true;
+                return;
+            }
             args.Handled = true;
         };
         pill.PointerReleased += (sender, args) =>
@@ -273,6 +281,13 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
             var point = args.GetCurrentPoint(Surface);
             (sender as UIElement)?.ReleasePointerCapture(args.Pointer);
             dragId = Guid.Empty;
+            if (externalDrag)
+            {
+                // 外部拖动引擎接管落点：这里只吞掉松手，避免误触展开（notes-mvp §7）。
+                dragging = false;
+                args.Handled = true;
+                return;
+            }
             if (!dragging)
             {
                 if (dragMaster) MasterToggleRequested?.Invoke();
@@ -280,7 +295,8 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
                 return;
             }
             dragging = false;
-            DragCompleted?.Invoke(new CapsuleDragResult(id, dragMaster, point.Position.X, point.Position.Y));
+            Native.GetCursorPos(out var screen);
+            DragCompleted?.Invoke(new CapsuleDragResult(id, dragMaster, point.Position.X, point.Position.Y, screen.X, screen.Y));
             args.Handled = true;
         };
         pill.PointerCaptureLost += (_, _) => CancelDrag();
@@ -310,17 +326,11 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
     public (double X, double Y)? MemberOffset(Guid id) =>
         strips.TryGetValue(id, out var strip) ? (Canvas.GetLeft(strip), Canvas.GetTop(strip)) : null;
 
-    void MoveStrip(Border strip, double delta)
-    {
-        if (state is not { } queue) return;
-        var along = pressAlong + delta;
-        if (NoteCapsuleGeometry.IsVertical(queue.Edge)) Canvas.SetTop(strip, along);
-        else Canvas.SetLeft(strip, along);
-    }
-
-    /// <summary>拖动取消 / 丢失捕获：恢复原布局，无意外点击（notes-mvp §7）。</summary>
+    /// <summary>拖动取消 / 丢失捕获：恢复原布局，无意外点击（notes-mvp §7）。
+    /// 外部拖动已由协调层的幽灵胶囊接管时不在此处重置。</summary>
     void CancelDrag()
     {
+        if (externalDrag) { dragId = Guid.Empty; return; }
         var active = dragging;
         dragging = false;
         dragId = Guid.Empty;

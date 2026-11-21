@@ -249,6 +249,12 @@ public sealed partial class App
                 {
                     // 形态 / 尺寸 / 置顶在卡挂到窗口之后应用（galaxy surface_state 的恢复路径）。
                     view.AttachPanel(panel);
+                    panel.DesktopResized += (_, size) =>
+                    {
+                        if (desktopNotes.TryGetValue(id, out var current) && ReferenceEquals(current, panel))
+                            Store.Update(settings => settings with
+                            { DesktopNoteSizes = new(settings.DesktopNoteSizes ?? []) { [id] = [Math.Round(size.Width, 1), Math.Round(size.Height, 1)] } });
+                    };
                     desktopNotes.Add(id,panel);
                 }
             }

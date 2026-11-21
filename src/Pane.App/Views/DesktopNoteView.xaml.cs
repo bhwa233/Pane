@@ -106,6 +106,9 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
         var size = host.GetSize(id);
         if (size is { } current && current.Width > 0) panel.RequestSize(current);
         else if (pad) panel.RequestSize(new(PadWidth, PadHeight));
+        // 原生四角缩放：边界（220×140 … 720×900）与四角斜向光标。
+        panel.NativeResizeBounds = (MinCardWidth, MinCardHeight, 720, 900);
+        panel.CornerResizeCursors = true;
         ApplySurface();
         ApplyTopmost(host.IsTopmost(id));
     }
@@ -222,42 +225,15 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
         ApplyTopmost(on);
     }
 
-    // ---------------- 拖角缩放 ----------------
+    // ---------------- 四角原生缩放（galaxy startResizeDragging 对齐） ----------------
 
-    bool dragging;
-    double gripOriginX, gripOriginY, gripStartWidth, gripStartHeight;
-
-    void GripPressed(object sender, PointerRoutedEventArgs args)
+    /// <summary>角柄按下：交给系统原生缩放循环（WM_NCLBUTTONDOWN + HT*），Esc 由系统取消；
+    /// WM_SIZING 期间 GlassPanel 夹紧尺寸并让玻璃跟随，尺寸经 DesktopResized 持续落盘。</summary>
+    void CornerPressed(object sender, PointerRoutedEventArgs args)
     {
-        if (panel == null) return;
-        dragging = true;
-        var point = args.GetCurrentPoint(null);
-        gripOriginX = point.Position.X;
-        gripOriginY = point.Position.Y;
-        gripStartWidth = panel.Width;
-        gripStartHeight = panel.Height;
-        (sender as UIElement)?.CapturePointer(args.Pointer);
+        if (sender is not FrameworkElement { Tag: string tag } || !int.TryParse(tag, out var corner)) return;
         args.Handled = true;
-    }
-
-    void GripMoved(object sender, PointerRoutedEventArgs args)
-    {
-        if (!dragging || panel == null) return;
-        var point = args.GetCurrentPoint(null);
-        // 手拖期间直接请求目标尺寸，弹簧跟进；松手时按最终尺寸落盘。
-        var width = Math.Clamp(gripStartWidth + point.Position.X - gripOriginX, MinCardWidth, 720);
-        var height = Math.Clamp(gripStartHeight + point.Position.Y - gripOriginY, MinCardHeight, 900);
-        panel.RequestSize(new(width, height));
-        args.Handled = true;
-    }
-
-    void GripReleased(object sender, PointerRoutedEventArgs args)
-    {
-        if (!dragging) return;
-        dragging = false;
-        (sender as UIElement)?.ReleasePointerCapture(args.Pointer);
-        if (panel != null) host.SaveSize(id, panel.Width, panel.Height);
-        args.Handled = true;
+        panel?.BeginNativeResize(corner);
     }
 
     // ---------------- 右键菜单 ----------------

@@ -16,7 +16,13 @@ public sealed partial class NoteCapsulePreviewView : UserControl, IPanelView
     public NoteCapsulePreviewView()
     {
         InitializeComponent();
+        // 走廊悬停（notes-mvp §7）：预览卡自身被悬停时向协调层续命，离开时进入收回宽限。
+        PointerEntered += (_, _) => HoverChanged?.Invoke(true);
+        PointerExited += (_, _) => HoverChanged?.Invoke(false);
     }
+
+    /// <summary>预览卡自身的悬停状态变化（胶囊 → 预览卡走廊的两端之一）。</summary>
+    public event Action<bool>? HoverChanged;
 
     public Size PreferredSize => new(PreviewWidth, PreviewHeight);
     public UIElement DragRegion => this;

@@ -66,12 +66,19 @@
             </Grid>
         </Grid>
 
-        <!-- 拖角缩放：两种形态都在右下角（跨全部行） -->
-        <Border x:Name="ResizeGrip" Grid.RowSpan="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="16" Height="16"
-                Background="Transparent" PointerPressed="GripPressed" PointerMoved="GripMoved" PointerReleased="GripReleased"
-                AutomationProperties.Name="{x:Bind loc:Strings.Notes_ResizeCard}">
-            <TextBlock Text="◦" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                       Foreground="{ThemeResource PaneText3Brush}" IsHitTestVisible="False"/>
-        </Border>
+        <!-- 四角 resize handle（galaxy startResizeDragging 对齐）：透明角柄进入系统原生缩放循环；
+             光标由 GlassPanel 的 WM_SETCURSOR 四角斜向光标提供 -->
+        <Border x:Name="CornerTopLeft" HorizontalAlignment="Left" VerticalAlignment="Top" Width="16" Height="16"
+                Background="Transparent" PointerPressed="CornerPressed" Tag="0"
+                AutomationProperties.Name="{x:Bind loc:Strings.Notes_ResizeCard}"/>
+        <Border x:Name="CornerTopRight" HorizontalAlignment="Right" VerticalAlignment="Top" Width="16" Height="16"
+                Background="Transparent" PointerPressed="CornerPressed" Tag="1"
+                AutomationProperties.Name="{x:Bind loc:Strings.Notes_ResizeCard}"/>
+        <Border x:Name="CornerBottomLeft" HorizontalAlignment="Left" VerticalAlignment="Bottom" Width="16" Height="16"
+                Background="Transparent" PointerPressed="CornerPressed" Tag="2"
+                AutomationProperties.Name="{x:Bind loc:Strings.Notes_ResizeCard}"/>
+        <Border x:Name="CornerBottomRight" HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="16" Height="16"
+                Background="Transparent" PointerPressed="CornerPressed" Tag="3"
+                AutomationProperties.Name="{x:Bind loc:Strings.Notes_ResizeCard}"/>
     </Grid>
 </UserControl>

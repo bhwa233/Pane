@@ -33,6 +33,9 @@ internal static partial class Native
     [DllImport("user32.dll",SetLastError=true)] internal static extern bool SetWindowPos(nint h, nint after, int x, int y, int w, int height, uint flags);
     [DllImport("user32.dll")] internal static extern bool SetLayeredWindowAttributes(nint h, uint key, byte alpha, uint flags);
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(nint h, out Rect r);
+    [DllImport("user32.dll")] internal static extern nint SendMessageW(nint h,uint m,nuint w,nint l);
+    [DllImport("user32.dll")] internal static extern nint SetCursor(nint cursor);
+    [DllImport("user32.dll")] internal static extern nint LoadCursorW(nint instance,int resource);
     [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(nint h);
     [DllImport("dwmapi.dll")] internal static extern int DwmSetWindowAttribute(nint h, int a, ref int v, int s);
 

@@ -25,6 +25,10 @@ public sealed partial class App
     DispatcherQueueTimer? capsuleScrollCommit;
     DispatcherQueueTimer? capsuleFullscreenWatch;
     Guid? capsulePreviewNote, capsuleHoverNote, capsuleHighlightNote;
+    bool capsulePreviewHovered;
+    DispatcherQueueTimer? capsuleHideTimer;
+    /// <summary>拖动期间临时从队列里隐藏的成员（galaxy 独立临时拖动胶囊：队列里不再显示原位条）。</summary>
+    Guid? capsuleDragHidden;
     (string QueueKey, double Scroll)? pendingScrollCommit;
     readonly HashSet<string> capsuleDemotedMonitors = [];
 
@@ -82,7 +86,8 @@ public sealed partial class App
             }
             var key = NoteCapsuleGeometry.QueueKey(group.Key.MonitorId, group.Key.Edge);
             active.Add(key);
-            var members = group.OrderBy(pair => pair.Value.Slot!.Order)
+            var members = group.Where(pair => pair.Key != capsuleDragHidden)
+                .OrderBy(pair => pair.Value.Slot!.Order)
                 .Select(pair => CapsuleMember(pair.Key)).ToList();
             EnsureQueueHost(key, group.Key.MonitorId, group.Key.Edge, members);
         }
@@ -241,10 +246,14 @@ public sealed partial class App
     {
         if (capsuleFloats.ContainsKey(id)) return;
         var view = new NoteCapsuleQueueView();
-        // 悬浮胶囊单独承载：一个成员的独立队列视图，换边 / 隐藏 / 展开走同一套交互。
+        // 悬浮胶囊单独承载：一个成员的独立队列视图，换边 / 隐藏 / 展开走同一套交互；
+        // 阈值拖动同样交给全局幽灵胶囊（notes-mvp §7）。
+        var floatKey = NoteCapsuleGeometry.QueueKey(slot.MonitorId, NoteEdge.Float);
         view.ExpandRequested += ExpandNoteFromCapsule;
         view.HideRequested += HideNote;
         view.DeleteRequested += DeleteNoteFromCapsule;
+        view.DragStartedExternal += start => StartCapsuleDrag(floatKey, start.Id, start.Master);
+        view.DragCompleted += result => DragCompleted(floatKey, result);
         view.HoverChanged += (noteId, index) => HoverCapsule(noteId, index);
         view.OpenManagerRequested += () => ShowNotes();
         view.NewNoteRequested += QuickNewDesktopNote;
@@ -289,7 +298,7 @@ public sealed partial class App
         view.FloatRequested += FloatNote;
         view.MoveEdgeRequested += MoveNoteToEdge;
         view.MasterToggleRequested += () => ToggleQueue(key);
-        view.MasterDragAlong += along => DragQueueStart(key, along);
+        view.DragStartedExternal += start => StartCapsuleDrag(key, start.Id, start.Master);
         view.DragCompleted += result => DragCompleted(key, result);
         view.ScrollDelta += delta => ScrollQueue(key, delta);
         view.HoverChanged += HoverCapsule;
@@ -419,60 +428,160 @@ public sealed partial class App
         return DefaultStartFor(monitorId, edge);
     }
 
-    void DragQueueStart(string key, double along)
-    {
-        // 主胶囊沿边拖动：整队跟手（宿主窗口实时重摆），松手才提交布局（notes-mvp §6）。
-        var (monitorId, edge) = SplitQueueKey(key);
-        var monitor = GlassPanel.MonitorById(monitorId);
-        var work = monitor is { } area ? WorkDip(area) : new RectangleF(0, 0, 1920, 1040);
-        var members = QueueMembers(monitorId, edge).Count;
-        var start = NoteCapsuleGeometry.ClampStart(work, edge, along, members, members);
-        if (!capsuleQueues.TryGetValue(key, out var host)) return;
-        var length = NoteCapsuleGeometry.HostLength(work, edge, start, members, members);
-        var rect = NoteCapsuleGeometry.HostRect(work, edge, start, length);
-        host.DesktopAnchor = new(monitorId, rect.X - work.X, rect.Y - work.Y);
-        host.RequestSize(QueueHostSize(key, edge, members));
-        GlassPanel.RestoreDesktopCards([host]);
-    }
+    void DragCompleted(string key, CapsuleDragResult result) =>
+        DropCapsule(key, result.Id, result.Master, (int)result.ScreenX, (int)result.ScreenY);
 
-    void DragCompleted(string key, CapsuleDragResult result)
+    /// <summary>拖动落点（屏幕物理坐标）：换屏 / 换边停靠、远离边缘悬浮、队内重排、主胶囊改队列起点。
+    /// 供 XAML 捕获路径和全局幽灵胶囊路径共用。</summary>
+    void DropCapsule(string key, Guid id, bool master, int screenX, int screenY)
     {
         var (monitorId, edge) = SplitQueueKey(key);
         var monitor = GlassPanel.MonitorById(monitorId);
         var work = monitor is { } area ? WorkDip(area) : new RectangleF(0, 0, 1920, 1040);
-        if (result.Master)
+        if (master)
         {
             var members = QueueMembers(monitorId, edge).Count;
-            CommitQueueStart(key, NoteCapsuleGeometry.ClampStart(work, edge, result.LocalY, members, members));
+            var alongMaster = NoteCapsuleGeometry.IsVertical(edge) ? screenY : screenX;
+            var origin = monitor is { } masterArea
+                ? (NoteCapsuleGeometry.IsVertical(edge) ? masterArea.Work.Top : masterArea.Work.Left) / masterArea.Dpi
+                : 0;
+            CommitQueueStart(key, NoteCapsuleGeometry.ClampStart(work, edge,
+                alongMaster / (monitor?.Dpi ?? 1) - origin, members, members));
             return;
         }
-        var along = NoteCapsuleGeometry.IsVertical(edge) ? result.LocalY : result.LocalX;
-        var target = NoteCapsuleGeometry.NearestEdge(work, new PointF((float)result.LocalX, (float)result.LocalY));
-        if (target != edge)
+        var targetMonitor = GlassPanel.MonitorAt(screenX, screenY);
+        if (targetMonitor is not { } targetArea) return;
+        var targetWork = WorkDip(targetArea);
+        var targetPoint = new PointF(
+            (screenX - targetArea.Work.Left) / targetArea.Dpi,
+            (screenY - targetArea.Work.Top) / targetArea.Dpi);
+        var target = NoteCapsuleGeometry.NearestEdge(targetWork, targetPoint);
+        var edgeDistance = Math.Min(Math.Abs(targetPoint.X - targetWork.Left),
+            Math.Min(Math.Abs(targetWork.Right - targetPoint.X), Math.Abs(targetPoint.Y - targetWork.Top)));
+        if (edgeDistance > 72)
         {
-            // 拖近另一边重新停靠（notes-mvp §6）。
-            MoveNoteToEdge(result.Id, target);
-            return;
-        }
-        var queue = QueueState(key, edge, []);
-        var interior = NoteCapsuleGeometry.IsVertical(edge) ? result.LocalX : result.LocalY;
-        if (interior > NoteCapsuleGeometry.CapsuleWidth + 80 || interior < -80)
-        {
-            // 拖离边缘可悬浮；悬浮坐标换算到工作区 DIP（notes-mvp §7）。
-            var dpi = monitor?.Dpi ?? 1;
-            var workLeft = monitor?.Work.Left ?? 0;
-            var workTop = monitor?.Work.Top ?? 0;
-            var originX = capsuleQueues.TryGetValue(key, out var host) ? host.Origin.X : (int)(workLeft + work.X * dpi);
-            var originY = capsuleQueues.TryGetValue(key, out var host2) && ReferenceEquals(host2, host) ? host.Origin.Y : (int)(workTop + work.Y * dpi);
-            var x = (result.LocalX * dpi - originX + workLeft) / dpi - work.X;
-            var y = (result.LocalY * dpi - originY + workTop) / dpi - work.Y;
-            SetCapsuleState(result.Id, new(true, false, new(monitorId, (int)NoteEdge.Float, x, y, QueueMembersFromKey(key).Count)));
+            var x = targetPoint.X - NoteCapsuleGeometry.CapsuleWidth / 2;
+            var y = targetPoint.Y - NoteCapsuleGeometry.CapsuleHeight / 2;
+            SetCapsuleState(id, new(true, false,
+                new(targetArea.Id, (int)NoteEdge.Float, x, y, QueueMembers(targetArea.Id, NoteEdge.Float).Count)));
             RefreshCapsules();
             return;
         }
+        if (target != edge || targetArea.Id != monitorId)
+        {
+            var order = QueueMembers(targetArea.Id, target).Count;
+            SetCapsuleState(id, new(true, false,
+                new(targetArea.Id, (int)target, 0, 0, order)));
+            RefreshCapsules();
+            return;
+        }
+        var queue = QueueState(key, edge, []);
+        var along = NoteCapsuleGeometry.IsVertical(edge) ? targetPoint.Y : targetPoint.X;
         var index = NoteCapsuleGeometry.InsertIndex(edge, queue.Start, queue.Scroll, along, QueueMembers(monitorId, edge).Count);
-        ReorderNote(key, result.Id, index);
+        ReorderNote(key, id, index);
     }
+
+    // ---------------- 全局拖动胶囊（notes-mvp §7「独立的临时拖动胶囊」） ----------------
+
+    GlassPanel? capsuleDragGhost;
+    NoteCapsuleGhostView? capsuleDragGhostView;
+    DispatcherQueueTimer? capsuleDragPoll;
+    (string Key, Guid Id, bool Master)? capsuleDrag;
+
+    /// <summary>阈值拖动开始：队列视图交出控制权，幽灵胶囊 + GetCursorPos 轮询接管，
+    /// 跨屏拖动不丢捕获；Esc 取消，左键松开提交落点。</summary>
+    void StartCapsuleDrag(string key, Guid id, bool master)
+    {
+        if (closing) return;
+        HideCapsulePreview();
+        EndCapsuleDrag();
+        var member = CapsuleMember(id);
+        var title = master
+            ? string.Format(Strings.Notes_CapsuleCount, (object?)QueueMembersFromKey(key).Count)
+            : member.Title.Length > 0 ? member.Title : Strings.Notes_Untitled;
+        NoteCapsuleGhostView? ghostView = null;
+        GlassPanel? ghost = null;
+        try
+        {
+            ghostView = new NoteCapsuleGhostView();
+            ghostView.Apply(title);
+            ghost = new GlassPanel(Strings.Notes_DesktopCard, ghostView, ghostView, Glass, desktopCard: true)
+            { EscapeHides = false };
+            WatchFrames(ghost);
+            Native.GetCursorPos(out var cursor);
+            ghost.RequestSize(ghostView.PreferredSize);
+            ghost.Show(activate: false);
+            ghost.SetTopmost(true);
+            ghost.MoveTo(cursor.X + 12, cursor.Y + 10);
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or System.Runtime.InteropServices.COMException)
+        {
+            (ghost?.View as IDisposable)?.Dispose();
+            ghost?.Dispose();
+            ReportFailure(Strings.Notes_DesktopCard, error);
+            return;
+        }
+        capsuleDragGhostView = ghostView;
+        capsuleDragGhost = ghost;
+        capsuleDrag = (key, id, master);
+        // 队列里临时隐藏被拖成员，只留幽灵胶囊跟手（galaxy 独立临时拖动胶囊）。
+        capsuleDragHidden = master ? null : id;
+        RefreshCapsules();
+        capsuleDragPoll ??= CreateCapsuleDragPoll();
+        capsuleDragPoll.Stop();
+        capsuleDragPoll.Start();
+    }
+
+    DispatcherQueueTimer CreateCapsuleDragPoll()
+    {
+        var timer = queue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(12);
+        timer.IsRepeating = true;
+        timer.Tick += (_, _) =>
+        {
+            if (capsuleDrag is not { } drag || closing || capsuleDragGhost is not { } ghost)
+            {
+                EndCapsuleDrag();
+                return;
+            }
+            Native.GetCursorPos(out var cursor);
+            ghost.MoveTo(cursor.X + 12, cursor.Y + 10);
+            if ((GetAsyncKeyStateForDrag(0x1B) & 0x8000) != 0)
+            {
+                // Esc 取消：恢复原布局，不误触任何动作（notes-mvp §7）。
+                var state = capsuleDrag;
+                EndCapsuleDrag();
+                if (state is { } cancelled) RefreshCapsules();
+                return;
+            }
+            if ((GetAsyncKeyStateForDrag(1) & 0x8000) == 0)
+            {
+                var key = drag.Key;
+                var id = drag.Id;
+                var master = drag.Master;
+                EndCapsuleDrag();
+                DropCapsule(key, id, master, cursor.X, cursor.Y);
+            }
+        };
+        return timer;
+    }
+
+    void EndCapsuleDrag()
+    {
+        capsuleDragPoll?.Stop();
+        capsuleDrag = null;
+        capsuleDragHidden = null;
+        if (capsuleDragGhost is { } ghost)
+        {
+            (ghost.View as IDisposable)?.Dispose();
+            ghost.Dispose();
+            capsuleDragGhost = null;
+            capsuleDragGhostView = null;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetAsyncKeyState")]
+    static extern short GetAsyncKeyStateForDrag(int key);
 
     void CommitQueueStart(string key, float start)
     {
@@ -695,7 +804,7 @@ public sealed partial class App
         if (focusBody && panel.View is DesktopNoteView view) view.FocusBody();
     }
 
-    // ---------------- 悬停预览 ----------------
+    // ---------------- 悬停预览（含胶囊 ↔ 预览卡之间的走廊，notes-mvp §7） ----------------
 
     void HoverCapsule(Guid id, int? index)
     {
@@ -704,10 +813,43 @@ public sealed partial class App
         capsuleHoverTimer.Stop();
         if (capsuleHoverNote is { } note)
         {
+            // 再进入走廊即续命：取消待收回，重新起显示延迟。
+            capsuleHideTimer?.Stop();
             capsulePreviewNote = note;
             capsuleHoverTimer.Start();
         }
-        else HideCapsulePreview();
+        else ScheduleHideCapsulePreview();
+    }
+
+    /// <summary>离开胶囊不立即收回：胶囊与预览卡分属两个窗口，二者间的窄通道不在任何岛内，
+    /// 宽限期覆盖跨窗移动；只有胶囊与预览都不再悬停时才真正关闭。</summary>
+    void ScheduleHideCapsulePreview()
+    {
+        capsuleHideTimer ??= CreateHideTimer();
+        capsuleHideTimer.Stop();
+        capsuleHideTimer.Start();
+    }
+
+    DispatcherQueueTimer CreateHideTimer()
+    {
+        var timer = queue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(250);
+        timer.IsRepeating = false;
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (capsuleHoverNote != null) return;
+            if (capsulePreviewHovered) { ScheduleHideCapsulePreview(); return; }
+            HideCapsulePreview();
+        };
+        return timer;
+    }
+
+    void PreviewHoverChanged(bool hovered)
+    {
+        capsulePreviewHovered = hovered;
+        if (hovered) capsuleHideTimer?.Stop();
+        else ScheduleHideCapsulePreview();
     }
 
     DispatcherQueueTimer CreateHoverTimer()
@@ -741,6 +883,8 @@ public sealed partial class App
         var host2 = new GlassPanel(Strings.Notes_DesktopCard, view, view, Glass, desktopCard: true) { EscapeHides = false };
         WatchFrames(host2);
         capsulePreviewPanel = host2;
+        // 预览卡自身的悬停参与走廊判定（notes-mvp §7）。
+        view.HoverChanged += PreviewHoverChanged;
         if (PreviewPlacement(id, host2) is not { } placement) { HideCapsulePreview(); return; }
         host2.DesktopScreenPoint = placement.Screen;
         host2.DesktopAnchor = placement.Anchor;
@@ -784,6 +928,8 @@ public sealed partial class App
 
     void HideCapsulePreview()
     {
+        capsuleHideTimer?.Stop();
+        capsulePreviewHovered = false;
         if (capsulePreviewPanel is { } host)
         {
             (host.View as IDisposable)?.Dispose();
@@ -924,6 +1070,9 @@ public sealed partial class App
 
     void ClearCapsuleHosts()
     {
+        EndCapsuleDrag();
+        HideCapsulePreview();
+        capsuleHoverTimer?.Stop();
         foreach (var host in capsuleQueues.Values.Concat(capsuleFloats.Values))
         {
             (host.View as IDisposable)?.Dispose();
@@ -931,7 +1080,6 @@ public sealed partial class App
         }
         capsuleQueues.Clear();
         capsuleFloats.Clear();
-        HideCapsulePreview();
         StopCapsuleFullscreenWatch();
     }
 
