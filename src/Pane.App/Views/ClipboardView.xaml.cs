@@ -23,7 +23,7 @@ using Windows.UI.Core;
 
 namespace Pane.Views;
 
-public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowActions
+public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowActions, IDisposable
 {
     static readonly (string key, string label, string glyph)[] Filters =
     [
@@ -58,6 +58,9 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     bool activate;
     bool visible;
     nint previousWindow;
+    internal Func<nint>? WorkspacePasteTarget { get; init; }
+    internal Action? WorkspacePasteStarting { get; init; }
+    bool workspaceInitialized;
 
     public ClipboardView() : this(new ClipboardSample()) { }
 
@@ -70,7 +73,7 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         chipHighlight = new SlidingHighlight(ChipHighlightLayer, size => size.Height / 2);
         Chips.ItemsSource = chips;
         // 面板收起时不跟着历史变化重建列表，下次呼出（OnShowing）再渲染
-        history.Changed += (_, _) => DispatcherQueue.TryEnqueue(() => { if (visible) Render(keepSelection: true); });
+        history.Changed += HistoryChanged;
         Scroller.ViewChanged += (_, _) => { if (NearBottom()) AppendMore(); };
         Sections.PointerMoved += OnListPointerMoved;
         Sections.Tapped += OnListTapped;
@@ -89,6 +92,37 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     public event EventHandler<Size>? SizeRequested { add { } remove { } } // 固定尺寸，不请求改尺寸
     public event EventHandler? CloseRequested;
     public UIElement DragRegion => SearchRow;
+    internal FrameworkElement WorkspaceCaption => WorkspaceGrip;
+    // Reserve the existing search, filters and footer when the native window is shortened.
+    internal double WorkspaceMinimumHeight => Root.RowDefinitions.Where(row => row.Height.IsAuto)
+        .Sum(row => row.ActualHeight);
+
+    void HistoryChanged(object? sender, EventArgs args) =>
+        DispatcherQueue.TryEnqueue(() => { if (visible) Render(keepSelection: true); });
+
+    public void Dispose()
+    {
+        history.Changed -= HistoryChanged;
+        OnHidden();
+    }
+
+    internal void ResumeWorkspace()
+    {
+        if (visible) return;
+        if (!workspaceInitialized)
+        {
+            workspaceInitialized = true;
+            Root.Width = Root.Height = double.NaN;
+            WorkspaceGrip.Height = SearchRow.Padding.Top;
+            OnShowing(new(0, null, false));
+        }
+        else
+        {
+            visible = true;
+            if (IsLoaded) BuildFoot();
+            Render(keepSelection: false);
+        }
+    }
 
     public void OnShowing(PanelShowContext context)
     {
@@ -437,9 +471,13 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         if (ForLauncher) Add(Strings.Clipboard_FillLauncher, () => Send(row));
         else
         {
-            Add(Strings.Common_Paste, () => _ = Paste(row, plainText: false));
-            if (row.Entry.Kind is not (ClipKind.Image or ClipKind.Files))
-                Add(Strings.Clipboard_PlainText, () => _ = Paste(row, plainText: true));
+            if (WorkspacePasteTarget != null) Add(Strings.Common_Copy, () => _ = CopyWorkspaceEntry(row.Entry, false));
+            if (WorkspacePasteTarget == null || WorkspacePasteTarget() != 0)
+            {
+                Add(WorkspacePasteTarget == null ? Strings.Common_Paste : Strings.CardDesktop_PasteBack, () => _ = Paste(row, plainText: false));
+                if (row.Entry.Kind is not (ClipKind.Image or ClipKind.Files))
+                    Add(Strings.Clipboard_PlainText, () => _ = Paste(row, plainText: true));
+            }
             if (ModuleGate.On(ModuleIds.Launcher)) Add(Strings.Clipboard_SendToLauncher, () => Send(row));
         }
         if (row.CanSplit) Add(Strings.Words_Open, () => Words(row));
@@ -509,9 +547,28 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         // 叠在启动器上打开的：不粘贴，交给启动器（宿主收起剪贴板、焦点回启动器）
         if (ForLauncher) { UseInLauncher?.Invoke(this, entry); return; }
         var id = entry.Id;
-        CloseRequested?.Invoke(this, EventArgs.Empty);
-        try { await history.PasteAsync(id, plainText, previousWindow, CancellationToken.None); }
+        var target = WorkspacePasteTarget?.Invoke() ?? previousWindow;
+        if (WorkspacePasteTarget != null)
+        {
+            if (target == 0) { await CopyWorkspaceEntry(entry, plainText); return; }
+            WorkspacePasteStarting?.Invoke();
+        }
+        else CloseRequested?.Invoke(this, EventArgs.Empty);
+        try { await history.PasteAsync(id, plainText, target, CancellationToken.None); }
         catch (Exception e) { ((App)Application.Current).ReportFailure(Strings.Common_Paste, e); } // 面板已收起：屏幕中间提示
+    }
+
+    async Task CopyWorkspaceEntry(ClipEntry entry, bool plainText)
+    {
+        try
+        {
+            await Pane.Services.Sta.Run(() =>
+            {
+                WindowsClipboardWriter.Write(entry, ClipboardWriteMode.UserCopy, plainText);
+                return true;
+            });
+        }
+        catch (Exception error) { ((App)Application.Current).ReportFailure(Strings.Common_Copy, error); }
     }
 
     /// <summary>启动器开着时按剪贴板热键，剪贴板叠在启动器上打开（2026-11-08 用户定）：选中条目交给启动器，不粘贴。宿主在显示前设。</summary>
@@ -563,13 +620,15 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
     // ---------------- 底部快捷键提示 ----------------
 
     // 启动器停用时不列「Tab 交给启动器」（055）；启动器状态变了下次呼出时重建
-    bool footSend, footLauncher;
+    bool footSend, footLauncher, footCopy;
     void BuildFoot()
     {
         bool send = ModuleGate.On(Contracts.ModuleIds.Launcher);
-        if (Foot.Children.Count > 0 && send == footSend && ForLauncher == footLauncher) return;
+        bool copy = WorkspacePasteTarget != null && WorkspacePasteTarget() == 0;
+        if (Foot.Children.Count > 0 && send == footSend && ForLauncher == footLauncher && copy == footCopy) return;
         footSend = send;
         footLauncher = ForLauncher;
+        footCopy = copy;
         Foot.Children.Clear();
         if (ForLauncher)
         {
@@ -578,8 +637,9 @@ public sealed partial class ClipboardView : UserControl, IPanelView, IClipRowAct
         }
         KeyHints.Fill(Foot,
         [
-            (["↑", "↓"], Strings.Clipboard_Select), (["Enter"], Strings.Common_Paste), (["Shift", "+", "Enter"], Strings.Clipboard_PlainText),
-            (["Alt", "+", "1~9"], Strings.Clipboard_QuickPaste), .. send ? new[] { (new[] { "Tab" }, Strings.Clipboard_SendToLauncher) } : [],
+            (["↑", "↓"], Strings.Clipboard_Select), (["Enter"], copy ? Strings.Common_Copy : WorkspacePasteTarget == null ? Strings.Common_Paste : Strings.CardDesktop_PasteBack),
+            (["Shift", "+", "Enter"], Strings.Clipboard_PlainText),
+            (["Alt", "+", "1~9"], copy ? Strings.Common_Copy : Strings.Clipboard_QuickPaste), .. send ? new[] { (new[] { "Tab" }, Strings.Clipboard_SendToLauncher) } : [],
             (["Ctrl", "+", "P"], Strings.Clipboard_Pin),
         ], HintLabelProto, KbdProto);
     }

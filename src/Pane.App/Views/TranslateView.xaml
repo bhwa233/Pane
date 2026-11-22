@@ -38,7 +38,7 @@
             <StackPanel x:Name="LanguagesBar" Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="4,0,0,0" VerticalAlignment="Center">
                 <TextBlock x:Name="FromText" Text="{x:Bind loc:Strings.Translate_AutoDetect}" VerticalAlignment="Center" Margin="10,0,6,0"
                            FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}" Foreground="{ThemeResource PaneText2Brush}"/>
-                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}" CornerRadius="14" Click="OnSwap" ToolTipService.ToolTip="{x:Bind loc:Strings.Translate_SwapHint}">
+                <Button x:Name="SwapButton" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlSm}" Height="{StaticResource PaneControlSm}" CornerRadius="14" Click="OnSwap" ToolTipService.ToolTip="{x:Bind loc:Strings.Translate_SwapHint}">
                     <Viewbox Width="14" Height="14">
                         <Path Data="M8,3 L4,7 L8,11 M4,7 H20 M16,21 L20,17 L16,13 M20,17 H4" Stroke="{ThemeResource PaneText2Brush}" StrokeThickness="1.75"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="24" Height="24"/>
@@ -53,7 +53,7 @@
             <Button x:Name="PinButton" Grid.Column="3" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="OnPin" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_AlwaysOnTop}">
                 <c:PaneIcon x:Name="PinIcon" Glyph="pin" Width="16" Height="16"/>
             </Button>
-            <Button Grid.Column="4" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="OnClose" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_CloseWindowHint}">
+            <Button x:Name="CloseButton" Grid.Column="4" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="OnClose" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_CloseWindowHint}">
                 <c:PaneIcon Glyph="close" Width="16" Height="16"/>
             </Button>
         </Grid>

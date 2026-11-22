@@ -1821,10 +1821,15 @@
   <data name="Notes_PinDesktop" xml:space="preserve"><value>釘選到桌面</value></data>
   <data name="Notes_PinnedDesktop" xml:space="preserve"><value>已釘選到桌面</value></data>
   <data name="DesktopCards_Title" xml:space="preserve"><value>桌面卡片</value></data>
-  <data name="CardDesktop_Add" xml:space="preserve"><value>新增面板</value></data>
+  <data name="CardDesktop_Add" xml:space="preserve"><value>新增卡片</value></data>
   <data name="CardDesktop_OpenWindow" xml:space="preserve"><value>用獨立視窗開啟</value></data>
-  <data name="CardDesktop_Locate" xml:space="preserve"><value>定位面板</value></data>
+  <data name="CardDesktop_Locate" xml:space="preserve"><value>定位卡片</value></data>
+  <data name="CardDesktop_ShowCards" xml:space="preserve"><value>顯示卡片</value></data>
+  <data name="CardDesktop_HideCards" xml:space="preserve"><value>隱藏卡片</value></data>
+  <data name="CardDesktop_RemoveCard" xml:space="preserve"><value>從卡片桌面移除</value></data>
+  <data name="CardDesktop_NoCardsToAdd" xml:space="preserve"><value>沒有可新增的卡片</value></data>
   <data name="CardDesktop_Trigger" xml:space="preserve"><value>桌面頂部入口</value></data>
+  <data name="CardDesktop_PasteBack" xml:space="preserve"><value>貼回原視窗</value></data>
   <data name="DesktopCards_Hide" xml:space="preserve"><value>隱藏桌面卡片</value></data>
   <data name="DesktopCards_Show" xml:space="preserve"><value>顯示桌面卡片</value></data>
   <data name="DesktopCards_Arrange" xml:space="preserve"><value>編輯版面</value></data>

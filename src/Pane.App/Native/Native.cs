@@ -30,6 +30,7 @@ internal static partial class Native
     [DllImport("user32.dll")] internal static extern nint DefWindowProcW(nint h, uint m, nuint w, nint l);
     [DllImport("user32.dll")] internal static extern bool DestroyWindow(nint h);
     [DllImport("user32.dll")] internal static extern bool ShowWindow(nint h, int cmd);
+    [DllImport("user32.dll", SetLastError = true)] internal static extern nint SetWindowLongPtrW(nint h, int index, nint value);
     [DllImport("user32.dll",SetLastError=true)] internal static extern bool SetWindowPos(nint h, nint after, int x, int y, int w, int height, uint flags);
     [DllImport("user32.dll")] internal static extern bool SetLayeredWindowAttributes(nint h, uint key, byte alpha, uint flags);
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(nint h, out Rect r);

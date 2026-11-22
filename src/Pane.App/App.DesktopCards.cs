@@ -1,7 +1,9 @@
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Pane.Hosting;
+using Pane.Contracts;
 using Pane.Localization;
 using Pane.Services.Notes;
 using Pane.Settings;
@@ -18,8 +20,32 @@ public sealed partial class App
     bool desktopReflowQueued, desktopCardsHidden;
     CardDesktopOverlay? cardDesktopWindow;
     DesktopCardsView? cardDesktopView;
-    bool cardDesktopShown;
-    ContentControl? cardDesktopTraffic;
+    bool cardDesktopShown, cardDesktopCardsVisible;
+    RectInt32 cardDesktopWorkArea;
+    readonly Dictionary<string, Window> cardToolWindows = [];
+    ClipboardView? cardClipboard;
+    TranslateView? retainedTranslate;
+    bool restoreTranslateWindow;
+    (nint Window, uint Process) cardPasteTarget;
+    record CardTool(string Key, string Title, string Icon, Windows.Foundation.Size Size, Action Attach, Action Detach, Action OpenOutside);
+
+    IEnumerable<CardTool> CardTools()
+    {
+        if (desktopTrafficEnabled)
+            yield return new("traffic", Strings.Module_Traffic_Name, "globe", TrafficHistoryView.PreferredSize,
+                BorrowCardDesktopTraffic, HideCardTraffic, OpenCardTrafficOutside);
+        if (Modules?.IsActive(ModuleIds.Ai) == true)
+            yield return new("translate", Strings.Common_Translate, "translate", new(760, 460),
+                BorrowCardTranslate, HideCardTranslate, () =>
+                {
+                    HideCardDesktop();
+                    ReturnCardTranslate();
+                    Present(SecondaryId.Translate, Strings.Common_Translate, TakeTranslateView, _ => { });
+                });
+        if (panels.ContainsKey("clipboard"))
+            yield return new("clipboard", Strings.Common_Clipboard, "clipboard", new(372, 640),
+                ShowCardClipboard, HideCardClipboard, () => { HideCardDesktop(); Command("show-clipboard"); });
+    }
     DesktopCardTrigger? desktopTrigger;
 
     void StartCardDesktopTrigger()
@@ -39,6 +65,8 @@ public sealed partial class App
     void CloseCardDesktop()
     {
         ReturnCardDesktopTraffic();
+        ReleaseCardTranslate();
+        ReleaseCardClipboard();
         cardDesktopView?.Dispose();
         cardDesktopWindow?.Dispose();
         desktopTrigger?.Dispose();
@@ -54,12 +82,23 @@ public sealed partial class App
     void ShowCardDesktopAt(Native.Point point)
     {
         if (closing) return;
+        if (!cardDesktopShown)
+        {
+            var window = Native.GetForegroundWindow();
+            GetWindowThreadIdForProcess(window, out uint pid);
+            var kind = new Pane.Services.Clipboard.WindowsPastePlatform().Class(window);
+            cardPasteTarget = pid != 0 && pid != Environment.ProcessId && kind is not ("Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
+                ? (window, pid) : default;
+        }
         foreach (var panel in panels.Values) panel.Hide();
         var display = DisplayArea.GetFromPoint(new PointInt32(point.X, point.Y), DisplayAreaFallback.Nearest);
         if (cardDesktopWindow == null)
         {
             var view = new DesktopCardsView(CardDesktopCatalog, CreateCardDesktopContent, SaveCardDesktopPlacement,
-                HideCardDesktop, OpenCardTrafficOutside, () => { HideCardDesktop(); OpenSettings(null); });
+                HideCardDesktop, OpenCardOutside, SetCardDesktopCardsVisible,
+                key => CardTools().FirstOrDefault(tool => tool.Key == key)?.Size,
+                CardDesktopButtons, CreateCardDesktopNote,
+                () => { HideCardDesktop(); OpenSettings(null); }, LocateCardTool);
             cardDesktopView = view;
             cardDesktopWindow = new(view, HideCardDesktop);
         }
@@ -74,10 +113,13 @@ public sealed partial class App
             void Seed(string key) => layout[key] = new(16 + 24 * layout.Count, 16 + 24 * layout.Count, 256, 202);
         }
         cardDesktopShown = true;
+        cardDesktopCardsVisible = true;
+        cardDesktopWorkArea = display.WorkArea;
         cardDesktopView!.RequestedTheme = Glass.Dark ? ElementTheme.Dark : ElementTheme.Light;
-        RefreshDesktopCardsOverview();
         cardDesktopWindow.Show(display.WorkArea, activate: !demo);
+        RefreshDesktopCardsOverview();
         cardDesktopView.SetVisible(true);
+        cardDesktopView.SetCardsVisible(true);
         cardDesktopView.FocusEntry();
         desktopTrigger?.Refresh();
     }
@@ -87,21 +129,60 @@ public sealed partial class App
         if (!cardDesktopShown) return;
         cardDesktopShown = false;
         cardDesktopView!.SetVisible(false);
+        foreach (var tool in CardTools()) tool.Detach();
         cardDesktopWindow!.Hide();
-        ReturnCardDesktopTraffic();
+        if (restoreOrdinaryTraffic) ReturnCardDesktopTraffic();
+        if (restoreTranslateWindow) ReturnCardTranslate();
         desktopTrigger?.Refresh();
+    }
+
+    void SetCardDesktopCardsVisible(bool visible)
+    {
+        if (cardDesktopCardsVisible == visible) return;
+        cardDesktopCardsVisible = visible;
+        cardDesktopView!.SetCardsVisible(visible);
+        foreach (var tool in CardTools())
+        {
+            if (!visible) tool.Detach();
+            else if (Store.Current.CardDesktopLayout!.ContainsKey(tool.Key)) tool.Attach();
+        }
     }
 
     void RefreshDesktopCardsOverview()
     {
         if (closing || cardDesktopView == null || Store.Current.CardDesktopLayout is not { } layout) return;
-        if (cardDesktopTraffic != null && (!layout.ContainsKey("traffic") || !desktopTrafficEnabled))
-        {
-            ReturnCardDesktopTraffic();
-            cardDesktopTraffic = null;
-        }
+        var tools = CardTools().ToDictionary(tool => tool.Key);
+        if (!layout.ContainsKey("traffic") || !tools.ContainsKey("traffic")) ReturnCardDesktopTraffic();
+        if (!layout.ContainsKey("translate") || !tools.ContainsKey("translate")) ReturnCardTranslate();
+        if (!layout.ContainsKey("clipboard") || !tools.ContainsKey("clipboard")) ReleaseCardClipboard();
         cardDesktopView.Apply(layout);
-        if (cardDesktopShown) BorrowCardDesktopTraffic();
+        if (cardDesktopShown && cardDesktopCardsVisible)
+            foreach (var tool in tools.Values.Where(tool => layout.ContainsKey(tool.Key))) tool.Attach();
+    }
+
+    IEnumerable<(string Key, string Icon, string Title)> CardDesktopButtons()
+    {
+        if (desktopNotesEnabled) yield return ("note:", "pencil", Strings.Module_Notes_Name);
+        if (desktopScreenshotsEnabled) yield return ("screenshot:", "image", Strings.Module_Screenshots_Name);
+        if (desktopTrafficEnabled) yield return ("hud", "pulse", Strings.Traffic_DesktopCard);
+        foreach (var tool in CardTools()) yield return (tool.Key, tool.Icon, tool.Title);
+    }
+
+    void OpenCardOutside(string key)
+    {
+        if (key == "hud") ShowTraffic();
+        else if (key == "screenshot:") ShowScreenshots();
+        else if (key == "note:") ShowNotes();
+        else if (key.StartsWith("note:", StringComparison.Ordinal)) ShowNotes(Guid.Parse(key.AsSpan(5)));
+        else if (key.StartsWith("screenshot:", StringComparison.Ordinal)) ShowScreenshots(Guid.Parse(key.AsSpan(11)));
+        else CardTools().Single(tool => tool.Key == key).OpenOutside();
+    }
+
+    Guid? CreateCardDesktopNote()
+    {
+        Guid? id = null;
+        HandleNoteLayout(() => id = GetNotes().Create("", "").Id);
+        return id;
     }
 
     IEnumerable<(string Key, string Title)> CardDesktopCatalog()
@@ -109,11 +190,15 @@ public sealed partial class App
         if (desktopTrafficEnabled)
         {
             yield return ("hud", Strings.Traffic_DesktopCard);
-            yield return ("traffic", Strings.Module_Traffic_Name);
         }
+        foreach (var tool in CardTools()) yield return (tool.Key, tool.Title);
         if (desktopNotesEnabled)
-            foreach (var note in GetNotes().Documents)
+        {
+            var store = GetNotes();
+            store.Load();
+            foreach (var note in store.Documents)
                 yield return ($"note:{note.Id:D}", string.IsNullOrWhiteSpace(note.Title) ? Strings.Notes_New : note.Title);
+        }
         if (desktopScreenshotsEnabled)
             foreach (var screenshot in GetScreenshots().List())
                 yield return ($"screenshot:{screenshot.Id:D}", $"{Strings.Module_Screenshots_Name} · {screenshot.CreatedUtc.ToLocalTime():g}");
@@ -121,8 +206,6 @@ public sealed partial class App
 
     FrameworkElement? CreateCardDesktopContent(string key)
     {
-        if (key == "traffic") return cardDesktopTraffic = new ContentControl
-        { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
         if (key == "hud")
         {
             var hud = new DesktopTrafficView(GetInterfaceTraffic(), processTraffic!);
@@ -146,6 +229,232 @@ public sealed partial class App
         }
         if (!key.StartsWith("screenshot:", StringComparison.Ordinal)) return null;
         return CreateScreenshotCardView(id, () => SaveCardDesktopPlacement(key, null));
+    }
+
+    nint CardPasteWindow()
+    {
+        var (window, process) = cardPasteTarget;
+        GetWindowThreadIdForProcess(window, out uint current);
+        return current != 0 && current == process && Native.IsWindowVisible(window) ? window : 0;
+    }
+
+    void ShowCardClipboard()
+    {
+        if (cardToolWindows.TryGetValue("clipboard", out var existing) && existing.AppWindow.IsVisible) return;
+        if (cardClipboard == null)
+        {
+            var view = new ClipboardView(clipboardBridge) { WorkspacePasteTarget = CardPasteWindow, WorkspacePasteStarting = HideCardDesktop };
+            view.CloseRequested += (_, _) => SaveCardDesktopPlacement("clipboard", null);
+            view.SendToLauncher += (_, entry) =>
+            {
+                HideCardDesktop();
+                if (AllowModule(ModuleIds.Launcher)) { launcherView?.AttachNext(entry); Command("show-launcher"); }
+            };
+            cardClipboard = view;
+        }
+        var clipboard = cardClipboard;
+        var minimum = new Windows.Foundation.Size(clipboard.PreferredSize.Width, 0);
+        var window = existing ?? CreateCardToolWindow("clipboard", Strings.Common_Clipboard, clipboard, clipboard.WorkspaceCaption, minimum);
+        clipboard.ResumeWorkspace();
+        ShowCardToolWindow("clipboard", window, minimum);
+        clipboard.OnShown();
+    }
+
+    void HideCardClipboard()
+    {
+        if (cardToolWindows.TryGetValue("clipboard", out var window) && window.AppWindow.IsVisible)
+        {
+            window.AppWindow.Hide();
+            cardClipboard!.OnHidden();
+        }
+    }
+
+    void ReleaseCardClipboard()
+    {
+        CloseCardToolWindow("clipboard");
+        cardClipboard?.Dispose();
+        cardClipboard = null;
+    }
+
+    TranslateView TakeTranslateView()
+    {
+        var view = retainedTranslate;
+        retainedTranslate = null;
+        return view ?? CreateTranslateView();
+    }
+
+    void BorrowCardTranslate()
+    {
+        if (cardToolWindows.TryGetValue("translate", out var existing))
+        {
+            if (existing.AppWindow.IsVisible) return;
+            if (!secondaries.ContainsKey(SecondaryId.Translate))
+            {
+                var cached = (TranslateView)((Border)existing.Content).Child;
+                ShowCardToolWindow("translate", existing, cached.MinimumSize);
+                return;
+            }
+            ReleaseCardTranslate();
+        }
+        TranslateView view;
+        if (secondaries.Remove(SecondaryId.Translate, out var panel))
+        {
+            view = (TranslateView)panel.View;
+            restoreTranslateWindow = panel.Shown;
+            secondaryBounds[SecondaryId.Translate] = (panel.Origin.X, panel.Origin.Y, panel.Width, panel.Height);
+            if (secondaryRelease.Remove(SecondaryId.Translate, out var release)) release();
+            if (current == panel) current = null;
+            panel.Dispose(releaseView: false);
+        }
+        else view = TakeTranslateView();
+        view.CloseRequested += CloseCardTranslate;
+        view.SetWorkspaceMode(true);
+        var window = CreateCardToolWindow("translate", Strings.Common_Translate, view, view.WorkspaceCaption, view.MinimumSize);
+        ShowCardToolWindow("translate", window, view.MinimumSize);
+    }
+
+    void HideCardTranslate()
+    {
+        if (cardToolWindows.TryGetValue("translate", out var window)) window.AppWindow.Hide();
+    }
+
+    void ReturnCardTranslate()
+    {
+        if (CloseCardToolWindow("translate") is not TranslateView view) return;
+        view.CloseRequested -= CloseCardTranslate;
+        view.SetWorkspaceMode(false);
+        retainedTranslate = view;
+        if (restoreTranslateWindow && !closing)
+            Present(SecondaryId.Translate, Strings.Common_Translate, TakeTranslateView, _ => { }, activateWindow: false);
+        restoreTranslateWindow = false;
+    }
+
+    void CloseCardTranslate(object? sender, EventArgs args)
+    {
+        SaveCardDesktopPlacement("translate", null);
+        retainedTranslate?.Dispose();
+        retainedTranslate = null;
+    }
+
+    void ReleaseCardTranslate()
+    {
+        restoreTranslateWindow = false;
+        ReturnCardTranslate();
+        retainedTranslate?.Dispose();
+        retainedTranslate = null;
+    }
+
+    void LocateCardTool(string key)
+    {
+        if (key == "traffic") LocateCardTraffic();
+        else cardToolWindows[key].Activate();
+    }
+
+    Window CreateCardToolWindow(string key, string title, UserControl content, FrameworkElement grip, Windows.Foundation.Size minimum)
+    {
+        var frame = new Border { Child = content, Style = (Style)Resources["PaneCardSurface"] };
+        var window = new Window { Title = title, Content = frame };
+        var appWindow = window.AppWindow;
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        var presenter = PrepareCardToolWindow(appWindow, hwnd);
+        var caption = InputNonClientPointerSource.GetForWindowId(appWindow.Id);
+        void UpdateCaption(object? sender, object? args)
+        {
+            if (grip.XamlRoot is not { } root) return;
+            var scale = root.RasterizationScale;
+            RectInt32 Region(FrameworkElement element)
+            {
+                var rect = element.TransformToVisual(frame).TransformBounds(new(0, 0, element.ActualWidth, element.ActualHeight));
+                return new((int)Math.Round(rect.X * scale), (int)Math.Round(rect.Y * scale),
+                    (int)Math.Round(rect.Width * scale), (int)Math.Round(rect.Height * scale));
+            }
+            List<RectInt32> dragRegions = [Region(grip)];
+            if (content is TranslateView translate)
+            {
+                // Explicit caption rectangles must stay disjoint from interactive controls.
+                foreach (var control in translate.WorkspaceCaptionControls)
+                {
+                    var blocked = Region(control);
+                    for (int i = dragRegions.Count - 1; i >= 0; i--)
+                    {
+                        var rect = dragRegions[i];
+                        var right = rect.X + rect.Width;
+                        var bottom = rect.Y + rect.Height;
+                        var leftCut = Math.Max(rect.X, blocked.X);
+                        var topCut = Math.Max(rect.Y, blocked.Y);
+                        var rightCut = Math.Min(right, blocked.X + blocked.Width);
+                        var bottomCut = Math.Min(bottom, blocked.Y + blocked.Height);
+                        if (leftCut >= rightCut || topCut >= bottomCut) continue;
+                        dragRegions.RemoveAt(i);
+                        AddRegion(rect.X, rect.Y, leftCut, bottom);
+                        AddRegion(rightCut, rect.Y, right, bottom);
+                        AddRegion(leftCut, rect.Y, rightCut, topCut);
+                        AddRegion(leftCut, bottomCut, rightCut, bottom);
+                    }
+                }
+            }
+            caption.SetRegionRects(NonClientRegionKind.Caption, dragRegions.ToArray());
+            presenter.PreferredMinimumWidth = (int)Math.Ceiling(minimum.Width * scale);
+            var height = content is ClipboardView clip ? clip.WorkspaceMinimumHeight : minimum.Height;
+            if (height > 0) presenter.PreferredMinimumHeight = (int)Math.Ceiling(height * scale);
+
+            void AddRegion(int left, int top, int right, int bottom)
+            {
+                if (left < right && top < bottom) dragRegions.Add(new(left, top, right - left, bottom - top));
+            }
+        }
+        grip.LayoutUpdated += UpdateCaption;
+        Native.SubclassProc subclass = (h, message, w, l, id, data) =>
+        {
+            if (message == 0x232) // WM_EXITSIZEMOVE
+            {
+                var work = cardDesktopWorkArea;
+                var scale = CardWorkspaceScale;
+                queue.TryEnqueue(() =>
+                {
+                    if (cardToolWindows.GetValueOrDefault(key) == window)
+                        SaveCardToolBounds(key, appWindow, work, scale);
+                });
+            }
+            return Native.DefSubclassProc(h, message, w, l);
+        };
+        if (!Native.SetWindowSubclass(hwnd, subclass, 1, 0)) throw new System.ComponentModel.Win32Exception();
+        appWindow.Closing += (_, args) =>
+        {
+            if (cardToolWindows.GetValueOrDefault(key) != window) return;
+            args.Cancel = true;
+            queue.TryEnqueue(() => SaveCardDesktopPlacement(key, null));
+        };
+        window.Closed += (_, _) =>
+        {
+            grip.LayoutUpdated -= UpdateCaption;
+            Native.RemoveWindowSubclass(hwnd, subclass, 1);
+        };
+        cardToolWindows.Add(key, window);
+        return window;
+    }
+
+    void ShowCardToolWindow(string key, Window window, Windows.Foundation.Size minimum)
+    {
+        ((Border)window.Content).RequestedTheme = cardDesktopView!.RequestedTheme;
+        var appWindow = window.AppWindow;
+        var presenter = (OverlappedPresenter)appWindow.Presenter;
+        var scale = CardWorkspaceScale;
+        presenter.PreferredMinimumWidth = (int)Math.Ceiling(minimum.Width * scale);
+        if (minimum.Height > 0) presenter.PreferredMinimumHeight = (int)Math.Ceiling(minimum.Height * scale);
+        PositionCardToolWindow(appWindow, cardDesktopWorkArea, scale, Store.Current.CardDesktopLayout![key], minimum);
+        CardDesktopOverlay.ShowToolWindow(window);
+        SetCardToolZOrder(WinRT.Interop.WindowNative.GetWindowHandle(window), true);
+    }
+
+    UserControl? CloseCardToolWindow(string key)
+    {
+        if (!cardToolWindows.Remove(key, out var window)) return null;
+        var frame = (Border)window.Content;
+        var view = (UserControl)frame.Child;
+        frame.Child = null;
+        window.Close();
+        return view;
     }
 
     void SaveCardDesktopPlacement(string key, CardDesktopPlacement? placement)

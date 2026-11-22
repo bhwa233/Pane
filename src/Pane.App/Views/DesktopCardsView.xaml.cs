@@ -2,6 +2,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Pane.Hosting;
 using Pane.Localization;
 using Pane.Settings;
@@ -17,21 +19,37 @@ public sealed partial class DesktopCardsView : UserControl, IDisposable
     readonly Func<string, FrameworkElement?> create;
     readonly Action<string, CardDesktopPlacement?> save;
     readonly Action close;
-    readonly Action openTrafficOutside;
+    readonly Action<string> openToolOutside;
+    readonly Action<bool> setCardsVisible;
+    readonly Func<string, Windows.Foundation.Size?> toolSize;
+    readonly Func<IEnumerable<(string Key, string Icon, string Title)>> tools;
+    readonly Func<Guid?> createNote;
     readonly Action openSettings;
+    readonly Action<string> locateTool;
+    readonly HashSet<string> activeTools = [];
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer clockTimer;
     bool visible;
+    bool cardsVisible = true;
 
     internal DesktopCardsView(Func<IEnumerable<(string Key, string Title)>> catalog, Func<string, FrameworkElement?> create,
-        Action<string, CardDesktopPlacement?> save, Action close, Action openTrafficOutside, Action openSettings)
+        Action<string, CardDesktopPlacement?> save, Action close, Action<string> openToolOutside, Action<bool> setCardsVisible,
+        Func<string, Windows.Foundation.Size?> toolSize, Func<IEnumerable<(string Key, string Icon, string Title)>> tools,
+        Func<Guid?> createNote, Action openSettings, Action<string> locateTool)
     {
         this.catalog = catalog;
         this.create = create;
         this.save = save;
         this.close = close;
-        this.openTrafficOutside = openTrafficOutside;
+        this.openToolOutside = openToolOutside;
+        this.setCardsVisible = setCardsVisible;
+        this.toolSize = toolSize;
+        this.tools = tools;
+        this.createNote = createNote;
         this.openSettings = openSettings;
+        this.locateTool = locateTool;
         InitializeComponent();
+        PaneLogo.Source = new SvgImageSource(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "pane-app.svg")));
+        SetCardsVisible(true);
         clockTimer = DispatcherQueue.CreateTimer();
         clockTimer.Interval = TimeSpan.FromSeconds(1);
         clockTimer.Tick += (_, _) => UpdateClock();
@@ -40,11 +58,14 @@ public sealed partial class DesktopCardsView : UserControl, IDisposable
     internal void Apply(IReadOnlyDictionary<string, CardDesktopPlacement> layout)
     {
         var entries = catalog().ToDictionary(entry => entry.Key, entry => entry.Title);
+        activeTools.Clear();
+        foreach (var (key, _, _) in tools())
+            if (layout.ContainsKey(key) && toolSize(key) != null) activeTools.Add(key);
         foreach (var key in cards.Keys.Where(key => !layout.ContainsKey(key) || !entries.ContainsKey(key)).ToArray())
             Remove(key);
         foreach (var (key, bounds) in layout)
         {
-            if (!entries.ContainsKey(key)) continue;
+            if (activeTools.Contains(key) || !entries.ContainsKey(key)) continue;
             if (cards.TryGetValue(key, out var current))
             {
                 if (current.Bounds.Equals(bounds)) continue;
@@ -55,18 +76,18 @@ public sealed partial class DesktopCardsView : UserControl, IDisposable
             }
             if (create(key) is not { } content) continue;
             // The border supplies the card surface only; all controls belong to the plugin.
-            var frame = new Border { Child = content };
-            if (content is DesktopNoteView || key == "traffic")
+            var frame = new Border { Child = content, Visibility = cardsVisible ? Visibility.Visible : Visibility.Collapsed };
+            if (content is DesktopNoteView)
             {
                 frame.CornerRadius = new(8);
-                frame.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SolidBackgroundFillColorBaseBrush"];
+                frame.Style = (Style)Application.Current.Resources["PaneCardSurface"];
             }
             cards.Add(key, (frame, content, bounds));
             Tiles.Children.Add(frame);
             WireDrag(key, frame, content);
             UpdateSurface(key, frame, content, bounds);
             Raise(frame);
-            if (visible && content is DesktopTrafficView hud) hud.OnShown();
+            if (visible && cardsVisible && content is DesktopTrafficView hud) hud.OnShown();
         }
         UpdatePanelTools(entries);
     }
@@ -79,9 +100,27 @@ public sealed partial class DesktopCardsView : UserControl, IDisposable
         foreach (var (_, content, _) in cards.Values)
             if (content is DesktopTrafficView hud)
             {
+                if (value && cardsVisible) hud.OnShown();
+                else hud.OnHidden();
+            }
+    }
+
+    internal void SetCardsVisible(bool value)
+    {
+        cardsVisible = value;
+        var label = value ? Strings.CardDesktop_HideCards : Strings.CardDesktop_ShowCards;
+        AutomationProperties.SetName(PaneButton, $"Pane · {label}");
+        ToolTipService.SetToolTip(PaneButton, label);
+        PaneLogo.Opacity = value ? 1 : 0.55;
+        foreach (var (frame, content, _) in cards.Values)
+        {
+            frame.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            if (content is DesktopTrafficView hud && visible)
+            {
                 if (value) hud.OnShown();
                 else hud.OnHidden();
             }
+        }
     }
 
     internal void FocusEntry() => CloseButton.Focus(FocusState.Programmatic);
@@ -133,8 +172,7 @@ public sealed partial class DesktopCardsView : UserControl, IDisposable
         frame.AddHandler(PointerPressedEvent, new PointerEventHandler((_, args) =>
         {
             if (args.GetCurrentPoint(Tiles).Properties.IsLeftButtonPressed) Raise(frame);
-            var region = content is IPanelView panel ? panel.DragRegion
-                : (content as ContentControl)?.Content is TabView tabs ? tabs.TabStripFooter as UIElement : null;
+            var region = (content as IPanelView)?.DragRegion;
             var source = args.OriginalSource as DependencyObject;
             bool canDrag = content is DesktopNoteView note ? note.CanStartWorkspaceDrag(source) : GlassPanel.CanDragFrom(region, source);
             if (pointer != null || !args.GetCurrentPoint(Tiles).Properties.IsLeftButtonPressed || !canDrag) return;
@@ -218,68 +256,131 @@ public sealed partial class DesktopCardsView : UserControl, IDisposable
 
     void UpdateClock() => Clock.Text = DateTime.Now.ToString("HH:mm");
 
+    bool IsAdded(string key) => activeTools.Contains(key) || cards.ContainsKey(key);
+
     void UpdatePanelTools(Dictionary<string, string> entries)
     {
         PanelTools.Children.Clear();
-        AddTool("note:", "pencil", Strings.Module_Notes_Name);
-        AddTool("screenshot:", "image", Strings.Module_Screenshots_Name);
-        AddTool("hud", "pulse", Strings.Traffic_DesktopCard);
-        AddTool("traffic", "globe", Strings.Module_Traffic_Name);
-
-        void AddTool(string prefix, string glyph, string label)
+        foreach (var (tool, glyph, label) in tools())
         {
-            var matching = entries.Where(entry => entry.Key.StartsWith(prefix, StringComparison.Ordinal)).ToArray();
-            if (matching.Length == 0) return;
-            bool active = matching.Any(entry => cards.ContainsKey(entry.Key));
-            var button = new Button { Style = (Style)Application.Current.Resources["PaneIconButton"],
-                Content = new PaneIcon { Glyph = glyph, Width = 16, Height = 16 } };
-            if (active) button.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 76, 81, 89));
+            bool multiple = tool.EndsWith(':');
+            var matching = entries.Where(entry => multiple ? entry.Key.StartsWith(tool, StringComparison.Ordinal) : entry.Key == tool).ToArray();
+            var icon = new PaneIcon { Glyph = glyph, Width = 16, Height = 16 };
+            var button = new Button { Style = (Style)Application.Current.Resources["PaneIconButton"], IsTabStop = true, Content = icon };
+            if (matching.Any(entry => IsAdded(entry.Key)))
+                button.Content = new Border { Width = PaneTokens.ControlSm, Height = PaneTokens.ControlSm, CornerRadius = new(8),
+                    Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 76, 81, 89)), Child = icon };
             AutomationProperties.SetName(button, label);
             ToolTipService.SetToolTip(button, label);
-            var menu = new MenuFlyout();
-            foreach (var (key, title) in matching.Where(entry => cards.ContainsKey(entry.Key)))
-            {
-                var item = new MenuFlyoutSubItem { Text = title };
-                var locate = new MenuFlyoutItem { Text = Strings.CardDesktop_Locate };
-                locate.Click += (_, _) => Raise(cards[key].Frame);
-                item.Items.Add(locate);
-                if (key == "traffic" || cards[key].Content is DesktopScreenshotView)
-                {
-                    var external = new MenuFlyoutItem { Text = Strings.CardDesktop_OpenWindow };
-                    external.Click += (_, _) =>
-                    {
-                        if (key == "traffic") openTrafficOutside();
-                        else ((DesktopScreenshotView)cards[key].Content).OpenImage();
-                    };
-                    item.Items.Add(external);
-                }
-                var remove = new MenuFlyoutItem { Text = Strings.Common_Remove };
-                remove.Click += (_, _) => save(key, null);
-                item.Items.Add(remove);
-                menu.Items.Add(item);
-            }
-            button.IsEnabled = active;
-            button.Flyout = menu;
             PanelTools.Children.Add(button);
+            if (!multiple)
+            {
+                var menu = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom };
+                menu.Opening += (_, _) =>
+                {
+                    menu.Items.Clear();
+                    bool added = IsAdded(tool);
+                    var action = new MenuFlyoutItem { Text = added ? Strings.CardDesktop_Locate : Strings.CardDesktop_Add };
+                    action.Click += (_, _) => ShowCard(tool);
+                    menu.Items.Add(action);
+                    AddManagement(menu, tool);
+                };
+                button.Flyout = menu;
+                continue;
+            }
+
+            var list = new StackPanel();
+            var flyout = new Flyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom,
+                Content = new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+            flyout.Opening += (_, _) =>
+            {
+                list.Children.Clear();
+                foreach (var (key, title) in matching.Where(entry => tool != "screenshot:" || IsAdded(entry.Key))
+                    .OrderByDescending(entry => IsAdded(entry.Key)))
+                {
+                    var row = new Grid { ColumnSpacing = 4 };
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                    var added = IsAdded(key);
+                    var select = new Button { Content = added ? title : $"+  {title}", HorizontalAlignment = HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment = HorizontalAlignment.Left, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                        BorderThickness = new(0) };
+                    ToolTipService.SetToolTip(select, added ? Strings.CardDesktop_Locate : Strings.CardDesktop_Add);
+                    select.Click += (_, _) => { flyout.Hide(); ShowCard(key); };
+                    row.Children.Add(select);
+                    var actions = new MenuFlyout();
+                    AddManagement(actions, key, flyout.Hide);
+                    var more = new Button { Style = (Style)Application.Current.Resources["PaneIconButton"], IsTabStop = true,
+                        Content = new TextBlock { Text = "⋯" }, Flyout = actions };
+                    var name = string.Format(Strings.Launcher_MenuTarget, Strings.Launcher_MoreActions, title);
+                    AutomationProperties.SetName(more, name);
+                    ToolTipService.SetToolTip(more, Strings.Launcher_MoreActions);
+                    Grid.SetColumn(more, 1);
+                    row.Children.Add(more);
+                    list.Children.Add(row);
+                }
+                var open = new Button { Content = Strings.CardDesktop_OpenWindow, HorizontalAlignment = HorizontalAlignment.Stretch };
+                open.Click += (_, _) => { flyout.Hide(); openToolOutside(tool); };
+                list.Children.Add(open);
+            };
+            button.Flyout = flyout;
         }
+    }
+
+    void AddManagement(MenuFlyout menu, string key, Action? dismiss = null)
+    {
+        var external = new MenuFlyoutItem { Text = Strings.CardDesktop_OpenWindow };
+        external.Click += (_, _) =>
+        {
+            dismiss?.Invoke();
+            openToolOutside(key);
+        };
+        menu.Items.Add(external);
+        if (!IsAdded(key)) return;
+        var remove = new MenuFlyoutItem { Text = Strings.CardDesktop_RemoveCard };
+        remove.Click += (_, _) => { dismiss?.Invoke(); save(key, null); };
+        menu.Items.Add(remove);
+    }
+
+    void ShowCard(string key)
+    {
+        if (!IsAdded(key)) AddCard(key);
+        setCardsVisible(true);
+        if (activeTools.Contains(key)) locateTool(key);
+        else if (cards.TryGetValue(key, out var card)) Raise(card.Frame);
     }
 
     void AddOpening(object sender, object args)
     {
         var menu = (MenuFlyout)sender;
         menu.Items.Clear();
-        foreach (var (key, title) in catalog().Where(entry => !cards.ContainsKey(entry.Key)))
+        if (tools().Any(tool => tool.Key == "note:"))
+        {
+            var note = new MenuFlyoutItem { Text = Strings.Notes_New };
+            note.Click += (_, _) =>
+            {
+                if (createNote() is not { } id) return;
+                var key = $"note:{id:D}";
+                ShowCard(key);
+                if (cards.TryGetValue(key, out var card) && card.Content is DesktopNoteView view)
+                    DispatcherQueue.TryEnqueue(view.FocusBody);
+            };
+            menu.Items.Add(note);
+        }
+        foreach (var (key, title) in catalog().Where(entry => !entry.Key.StartsWith("screenshot:", StringComparison.Ordinal) && !IsAdded(entry.Key)))
         {
             var entry = new MenuFlyoutItem { Text = title };
-            entry.Click += (_, _) =>
-            {
-                var step = cards.Count * 24;
-                var size = key == "traffic" ? TrafficHistoryView.PreferredSize :
-                    key == "hud" ? new Windows.Foundation.Size(126, 78) : new Windows.Foundation.Size(256, 206);
-                save(key, new(step + 16, step + 16, size.Width, size.Height));
-            };
+            entry.Click += (_, _) => ShowCard(key);
             menu.Items.Add(entry);
         }
+        if (menu.Items.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = Strings.CardDesktop_NoCardsToAdd, IsEnabled = false });
+    }
+
+    void AddCard(string key)
+    {
+        var step = (cards.Count + activeTools.Count) * 24;
+        var size = toolSize(key) ?? (key == "hud" ? new Windows.Foundation.Size(126, 78) : new Windows.Foundation.Size(256, 206));
+        save(key, new(step + 16, step + 16, size.Width, size.Height));
     }
 
     void OnKeyDown(object sender, KeyRoutedEventArgs args)
@@ -300,6 +401,7 @@ public sealed partial class DesktopCardsView : UserControl, IDisposable
         if (ReferenceEquals(args.OriginalSource, Tiles)) close();
     }
 
+    void ToggleCardsClicked(object sender, RoutedEventArgs args) => setCardsVisible(!cardsVisible);
     void CloseClicked(object sender, RoutedEventArgs args) => close();
     void SettingsClicked(object sender, RoutedEventArgs args) => openSettings();
 }

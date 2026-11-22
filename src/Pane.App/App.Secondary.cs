@@ -39,14 +39,25 @@ public sealed partial class App
     /// <summary>打开设置并跳到某个分区（各处「去设置」，issue 11）。</summary>
     public void OpenSettings(string? section){Command("show-settings");if(section!=null&&settings?.View is SettingsView v)v.ShowSection(section);}
     public void ShowTranslate(string? text)=>ShowTranslate(text,false);
-    void ShowTranslate(string? text,bool dictionary)=>Present(SecondaryId.Translate, Strings.Common_Translate,()=>{var v=new TranslateView(Ai,secondaryActions!,Store,SaveToolResultAsNote);v.OpenSettings+=(_,_)=>OpenSettings("ai");return v;},v=>((TranslateView)v).Open(text,dictionary));
+    TranslateView CreateTranslateView()
+    {
+        var view = new TranslateView(Ai,secondaryActions!,Store,SaveToolResultAsNote);
+        view.OpenSettings += (_,_) => { HideCardDesktop(); OpenSettings("ai"); };
+        return view;
+    }
+    void ShowTranslate(string? text,bool dictionary)
+    {
+        HideCardDesktop();
+        ReturnCardTranslate();
+        Present(SecondaryId.Translate, Strings.Common_Translate, TakeTranslateView, v=>((TranslateView)v).Open(text,dictionary));
+    }
     public void ShowChat(string? question,IReadOnlyList<AiChatMessage>? history)=>Present(SecondaryId.Chat, Strings.Common_AiChat,()=>new ChatView(Ai,secondaryActions!),v=>((ChatView)v).Open(question,history));
     public void ShowChatDraft(string draft)=>Present(SecondaryId.Chat, Strings.Common_AiChat,()=>new ChatView(Ai,secondaryActions!),v=>((ChatView)v).SetDraft(draft));
 
     void WireSuper(SuperView super){super.OpenTranslate+=text=>ShowTranslate(text);super.OpenChat+=text=>ShowChatDraft(text);}
 
     /// <param name="at">新建窗口时放到这里（物理像素，玻璃左上角），代替上次记下的位置（分词：剪贴板原来的位置、鼠标附近）。</param>
-    void Present(SecondaryId id,string name,Func<Microsoft.UI.Xaml.Controls.UserControl> make,Action<IPanelView> open,(int X,int Y)? at=null)
+    void Present(SecondaryId id,string name,Func<Microsoft.UI.Xaml.Controls.UserControl> make,Action<IPanelView> open,(int X,int Y)? at=null,bool activateWindow=true)
     {
         if(closing)return;
         var owner=id switch { SecondaryId.Files=>ModuleIds.Launcher, SecondaryId.Timer=>ModuleIds.PowerTimer, SecondaryId.Words=>ModuleIds.Words, SecondaryId.TrafficConnections=>ModuleIds.Traffic, SecondaryId.Screenshots=>ModuleIds.Screenshots, _=>ModuleIds.Ai };
@@ -71,8 +82,9 @@ public sealed partial class App
         foreach(var p in panels.Values)p.Hide();
         open(panel.View);
         current=panel;
-        var activate=!demo&&Environment.GetEnvironmentVariable("PANE_VERIFY")!="1";
+        var activate=activateWindow&&!demo&&Environment.GetEnvironmentVariable("PANE_VERIFY")!="1";
         panel.BringToFront(activate:activate);
+        if(panel.View is TranslateView { IsTopmost: true })panel.SetTopmost(true);
     }
 
     void HideSecondaries(){HideCardDesktop();foreach(var w in secondaries.Values.ToArray())w.Hide();notesWindow?.Close();trafficWindow?.Close();}

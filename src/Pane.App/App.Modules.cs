@@ -69,7 +69,7 @@ public sealed partial class App
             new SuperModule(this), new AiModule(this), new FolderJumpModule(this), new PowerTimerModule(this), new WordsModule(this), new TrafficModule(this), new NotesModule(this), new ScreenshotsModule(this)], Store,
             () => WinVService?.State is WinVState.On or WinVState.Pending, OnUi);
         Modules = host;
-        host.Changed += (_, _) => { shell?.Apply(ModuleShellSettings()); WakeFrames(); };
+        host.Changed += (_, _) => { shell?.Apply(ModuleShellSettings()); RefreshDesktopCardsOverview(); WakeFrames(); };
         await host.InitializeAsync(cancellation.Token);
     }
     Pane.Settings.PaneSettings ModuleShellSettings()
@@ -260,7 +260,13 @@ public sealed partial class App
     sealed class AiModule(App app) : Capability(app, ModuleIds.Ai, ModuleCategory.Ai, "sparkles")
     {
         public override Task StartAsync(CancellationToken token) { App.aiService?.SetModuleEnabled(true); return Task.CompletedTask; }
-        public override Task StopAsync(CancellationToken token) { App.aiService?.SetModuleEnabled(false); App.RemoveSecondary(SecondaryId.Translate, SecondaryId.Chat); return Task.CompletedTask; }
+        public override Task StopAsync(CancellationToken token)
+        {
+            App.aiService?.SetModuleEnabled(false);
+            App.RemoveSecondary(SecondaryId.Translate, SecondaryId.Chat);
+            App.ReleaseCardTranslate();
+            return Task.CompletedTask;
+        }
     }
     sealed class FolderJumpModule(App app) : Capability(app, ModuleIds.FolderJump, ModuleCategory.Files, "folder-input")
     {

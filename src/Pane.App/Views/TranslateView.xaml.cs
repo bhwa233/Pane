@@ -63,7 +63,6 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
         ModeHost.Content = mode;
         PreviewKeyDown += OnKeyDown;
         ai.StatusChanged += OnStatusChanged;
-        Unloaded += (_, _) => ai.StatusChanged -= OnStatusChanged;
         SelectionDictionaryToggle.IsChecked = settings.Current.LookupTranslationSelection;
         ApplyMode();
     }
@@ -119,6 +118,11 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
     public event EventHandler? CloseRequested;
     public event EventHandler<bool>? TopmostChanged;
     public UIElement? DragRegion => Head;
+    internal FrameworkElement WorkspaceCaption => Head;
+    internal FrameworkElement[] WorkspaceCaptionControls => LanguagesBar.Visibility == Visibility.Visible
+        ? [SwapButton, ToButton, ModeHost, CloseButton] : [ModeHost, CloseButton];
+    internal bool IsTopmost => topmost;
+    internal void SetWorkspaceMode(bool workspace) => PinButton.Visibility = workspace ? Visibility.Collapsed : Visibility.Visible;
     public void OnShowing(PanelShowContext context) { }
     public void OnShown() => Source.Focus(FocusState.Programmatic);
     public void OnHidden() { CancelPending(); ClearSelectionLookup(); }

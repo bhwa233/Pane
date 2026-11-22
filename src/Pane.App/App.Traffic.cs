@@ -1,4 +1,6 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -27,6 +29,9 @@ public sealed partial class App
     TrafficView? trafficLive;
     TrafficHistoryView? trafficHistory;
     RectInt32? trafficBounds;
+    bool trafficInWorkspace, restoreOrdinaryTraffic;
+    RectInt32 trafficWorkspaceArea;
+    double trafficWorkspaceScale;
 
     InterfaceTrafficMonitor GetInterfaceTraffic() => interfaceTraffic ??= new(queue, Store.Current.PauseInterfaceTraffic);
 
@@ -41,18 +46,21 @@ public sealed partial class App
     void OpenTrafficWindow(bool history, TrafficProcessIdentity? process = null, bool activate = true)
     {
         if (closing || !AllowModule(ModuleIds.Traffic)) return;
+        if (!cardDesktopShown || !cardDesktopCardsVisible) ReturnCardDesktopTraffic();
         foreach (var panel in panels.Values) panel.Hide();
         if (trafficWindow == null)
         {
             var live = new TrafficView(GetInterfaceTraffic(), processTraffic!, SetInterfaceTrafficPaused, ToggleTrafficPin, ShowTrafficHistory, ShowTrafficConnections);
             var ledger = new TrafficHistoryView();
-            var tabs = new TabView { IsAddTabButtonVisible = false, CanDragTabs = false, CanReorderTabs = false, TabWidthMode = TabViewWidthMode.SizeToContent };
+            var tabs = new TabView { IsAddTabButtonVisible = false, CanDragTabs = false, CanReorderTabs = false,
+                TabWidthMode = TabViewWidthMode.SizeToContent, VerticalAlignment = VerticalAlignment.Stretch };
             tabs.TabItems.Add(new TabViewItem { Header = Strings.Traffic_Live, Content = live, IsClosable = false });
             tabs.TabItems.Add(new TabViewItem { Header = Strings.Traffic_History, Content = ledger, IsClosable = false });
             if (history) ledger.Open(process);
             tabs.SelectedIndex = history ? 1 : 0;
             live.Prepare();
-            var window = new Window { Title = Strings.Module_Traffic_Name, Content = tabs };
+            var surface = new Border { Child = tabs, Style = (Style)Resources["PaneCardSurface"] };
+            var window = new Window { Title = Strings.Module_Traffic_Name, Content = surface };
             var appWindow = window.AppWindow;
             var presenter = (OverlappedPresenter)appWindow.Presenter;
             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
@@ -79,10 +87,10 @@ public sealed partial class App
             window.SizeChanged += (_, _) => ApplyMinimum();
             appWindow.Changed += (_, args) =>
             {
-                if (presenter.State == OverlappedPresenterState.Restored && (args.DidPositionChange || args.DidSizeChange))
+                if (!trafficInWorkspace && presenter.State == OverlappedPresenterState.Restored && (args.DidPositionChange || args.DidSizeChange))
                     trafficBounds = new(appWindow.Position.X, appWindow.Position.Y, appWindow.Size.Width, appWindow.Size.Height);
             };
-            void ApplyTheme(object? sender, EventArgs args) => tabs.RequestedTheme = Glass.Dark ? ElementTheme.Dark : ElementTheme.Light;
+            void ApplyTheme(object? sender, EventArgs args) => surface.RequestedTheme = Glass.Dark ? ElementTheme.Dark : ElementTheme.Light;
             ApplyTheme(null, EventArgs.Empty);
             Glass.Changed += ApplyTheme;
             void ActivatePage()
@@ -95,12 +103,43 @@ public sealed partial class App
             close.Invoked += (_, args) =>
             {
                 args.Handled = true;
-                if (ReferenceEquals(cardDesktopTraffic?.Content, tabs)) SaveCardDesktopPlacement("traffic", null);
+                if (trafficInWorkspace) SaveCardDesktopPlacement("traffic", null);
                 else window.Close();
             };
             tabs.KeyboardAccelerators.Add(close);
+            var escape = new KeyboardAccelerator { Key = Windows.System.VirtualKey.Escape };
+            escape.Invoked += (_, args) =>
+            {
+                if (!trafficInWorkspace) return;
+                args.Handled = true;
+                HideCardDesktop();
+            };
+            tabs.KeyboardAccelerators.Add(escape);
+            appWindow.Closing += (_, args) =>
+            {
+                if (!trafficInWorkspace) return;
+                args.Cancel = true;
+                queue.TryEnqueue(() => SaveCardDesktopPlacement("traffic", null));
+            };
+            var caption = InputNonClientPointerSource.GetForWindowId(appWindow.Id);
+            tabs.LayoutUpdated += (_, _) =>
+            {
+                if (tabs.TabStripFooter is not FrameworkElement { XamlRoot: { } root } footer) return;
+                var rect = footer.TransformToVisual(null).TransformBounds(new(0, 0, footer.ActualWidth, footer.ActualHeight));
+                var scale = root.RasterizationScale;
+                caption.SetRegionRects(NonClientRegionKind.Caption, [new((int)Math.Round(rect.X * scale),
+                    (int)Math.Round(rect.Y * scale), (int)Math.Round(rect.Width * scale), (int)Math.Round(rect.Height * scale))]);
+            };
+            Native.SubclassProc subclass = (h, message, w, l, id, data) =>
+            {
+                if (message == 0x232 && trafficInWorkspace) // WM_EXITSIZEMOVE
+                    queue.TryEnqueue(() => SaveTrafficWorkspaceBounds(appWindow));
+                return Native.DefSubclassProc(h, message, w, l);
+            };
+            if (!Native.SetWindowSubclass(hwnd, subclass, 1, 0)) throw new System.ComponentModel.Win32Exception();
             window.Closed += (_, _) =>
             {
+                Native.RemoveWindowSubclass(hwnd, subclass, 1);
                 Glass.Changed -= ApplyTheme;
                 live.Dispose();
                 ledger.Dispose();
@@ -108,12 +147,13 @@ public sealed partial class App
                 trafficTabs = null;
                 trafficLive = null;
                 trafficHistory = null;
+                trafficInWorkspace = restoreOrdinaryTraffic = false;
             };
             trafficWindow = window;
             trafficTabs = tabs;
             trafficLive = live;
             trafficHistory = ledger;
-            ActivatePage();
+            if (activate) ActivatePage();
         }
         else
         {
@@ -121,18 +161,21 @@ public sealed partial class App
             trafficTabs!.SelectedIndex = history ? 1 : 0;
         }
         trafficLive!.RefreshPin(Store.Current.DesktopTraffic is { Hidden: false });
-        if (!activate || ReferenceEquals(cardDesktopTraffic?.Content, trafficTabs)) return;
+        if (!activate) return;
+        if (trafficInWorkspace) { LocateCardTraffic(); return; }
         if (trafficWindow.AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } minimized)
             minimized.Restore();
         trafficWindow.Activate();
+        if (trafficTabs!.SelectedIndex == 0) trafficLive!.OnShown();
     }
 
-    bool restoreOrdinaryTraffic;
+    void LocateCardTraffic() => trafficWindow?.Activate();
 
     void OpenCardTrafficOutside()
     {
-        if (trafficWindow is not { } window) return;
         HideCardDesktop();
+        ReturnCardDesktopTraffic();
+        if (trafficWindow is not { } window) { OpenTrafficWindow(false); return; }
         if (window.AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } minimized)
             minimized.Restore();
         window.Activate();
@@ -141,30 +184,137 @@ public sealed partial class App
 
     void BorrowCardDesktopTraffic()
     {
-        if (cardDesktopTraffic is not { Content: null } host) return;
+        if (trafficInWorkspace && trafficWorkspaceArea == cardDesktopWorkArea)
+        {
+            var active = trafficWindow!.AppWindow;
+            if (!active.IsVisible)
+            {
+                CardDesktopOverlay.ShowToolWindow(trafficWindow);
+                SetCardToolZOrder(WinRT.Interop.WindowNative.GetWindowHandle(trafficWindow), true);
+                if (trafficTabs!.SelectedIndex == 0) trafficLive!.OnShown();
+            }
+            return;
+        }
+        ReturnCardDesktopTraffic();
         if (trafficWindow == null) OpenTrafficWindow(false, activate: false);
         if (trafficWindow is not { } window || trafficTabs is not { } tabs) return;
-        restoreOrdinaryTraffic = window.AppWindow.IsVisible;
-        if (restoreOrdinaryTraffic) window.AppWindow.Hide();
-        window.Content = null;
+        var placement = Store.Current.CardDesktopLayout!["traffic"];
+        var appWindow = window.AppWindow;
+        var presenter = (OverlappedPresenter)appWindow.Presenter;
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        restoreOrdinaryTraffic = appWindow.IsVisible;
+        trafficInWorkspace = true;
+        appWindow.Hide();
+        if (presenter.State != OverlappedPresenterState.Restored) presenter.Restore(false);
+        PrepareCardToolWindow(appWindow, hwnd);
         tabs.TabStripFooter = new Border
         {
             MinWidth = 32,
             Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent)
         };
-        host.Content = tabs;
+        trafficWorkspaceArea = cardDesktopWorkArea;
+        trafficWorkspaceScale = CardWorkspaceScale;
+        PositionCardToolWindow(appWindow, trafficWorkspaceArea, trafficWorkspaceScale, placement, TrafficHistoryView.MinimumSize);
+        CardDesktopOverlay.ShowToolWindow(window);
+        SetCardToolZOrder(hwnd, true);
         if (tabs.SelectedIndex == 0) trafficLive!.OnShown();
+    }
+
+    void HideCardTraffic()
+    {
+        if (!trafficInWorkspace) return;
+        trafficWindow!.AppWindow.Hide();
+        trafficLive!.OnHidden();
     }
 
     void ReturnCardDesktopTraffic()
     {
-        if (cardDesktopTraffic is not { Content: TabView tabs } host || trafficWindow is not { } window) return;
-        host.Content = null;
+        if (!trafficInWorkspace) return;
+        var window = trafficWindow!;
+        var tabs = trafficTabs!;
+        var appWindow = window.AppWindow;
+        var presenter = (OverlappedPresenter)appWindow.Presenter;
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        appWindow.Hide();
+        SetTrafficWorkspaceOwner(hwnd, 0);
+        SetCardToolZOrder(hwnd, false);
+        appWindow.IsShownInSwitchers = true;
+        presenter.SetBorderAndTitleBar(true, true);
+        presenter.IsMaximizable = presenter.IsMinimizable = true;
+        SetTrafficWorkspaceBorder(hwnd, false);
         tabs.TabStripFooter = null;
-        window.Content = tabs;
-        if (restoreOrdinaryTraffic) window.AppWindow.Show(activateWindow: false);
+        InputNonClientPointerSource.GetForWindowId(appWindow.Id).ClearRegionRects(NonClientRegionKind.Caption);
+        if (trafficBounds is { } saved) appWindow.MoveAndResize(saved);
+        trafficInWorkspace = false;
+        if (restoreOrdinaryTraffic && !closing)
+        {
+            appWindow.Show(activateWindow: false);
+            if (tabs.SelectedIndex == 0) trafficLive!.OnShown();
+        }
         else trafficLive?.OnHidden();
+        CardDesktopOverlay.SetTransitionsDisabled(hwnd, false);
         restoreOrdinaryTraffic = false;
+    }
+
+    double CardWorkspaceScale => Native.GetDpiForWindow(cardDesktopWindow!.Handle) / 96.0;
+
+    OverlappedPresenter PrepareCardToolWindow(AppWindow window, nint hwnd)
+    {
+        SetTrafficWorkspaceOwner(hwnd, cardDesktopWindow!.Handle);
+        window.IsShownInSwitchers = false;
+        var presenter = (OverlappedPresenter)window.Presenter;
+        presenter.SetBorderAndTitleBar(true, false);
+        presenter.IsResizable = true;
+        presenter.IsMaximizable = presenter.IsMinimizable = false;
+        SetTrafficWorkspaceBorder(hwnd, true);
+        CardDesktopOverlay.SetTransitionsDisabled(hwnd, true);
+        return presenter;
+    }
+
+    static void PositionCardToolWindow(AppWindow window, RectInt32 work, double scale, CardDesktopPlacement placement, Windows.Foundation.Size minimum)
+    {
+        var width = (int)Math.Ceiling(Math.Max(placement.Width, minimum.Width) * scale);
+        var height = (int)Math.Ceiling(Math.Max(placement.Height, minimum.Height) * scale);
+        var x = work.X + (int)Math.Clamp(Math.Round(placement.X * scale), 0, Math.Max(0, work.Width - width));
+        var y = work.Y + (int)Math.Clamp(Math.Round(placement.Y * scale), 0, Math.Max(0, work.Height - height));
+        if (window.Position == new PointInt32(x, y) && window.Size == new SizeInt32(width, height)) return;
+        window.Move(new(work.X, work.Y));
+        window.MoveAndResize(new(x, y, width, height));
+    }
+
+    static void SetTrafficWorkspaceOwner(nint window, nint owner)
+    {
+        // GWLP_HWNDPARENT sets the owner of this top-level window, keeping it above the overlay.
+        if (Native.SetWindowLongPtrW(window, -8, owner) == 0 && Marshal.GetLastWin32Error() != 0)
+            throw new System.ComponentModel.Win32Exception();
+    }
+
+    static void SetTrafficWorkspaceBorder(nint window, bool workspace)
+    {
+        // Keep the native sizing frame and suppress only its visible DWM outline in the workspace.
+        int color = workspace ? -2 : -1; // DWMWA_COLOR_NONE, DWMWA_COLOR_DEFAULT
+        Marshal.ThrowExceptionForHR(Native.DwmSetWindowAttribute(window, 34, ref color, sizeof(int)));
+    }
+
+    static void SetCardToolZOrder(nint window, bool workspace)
+    {
+        // The overlay is topmost; showing a reused window must raise it without activating or reordering its owner.
+        const uint flags = 0x0213; // SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
+        if (!Native.SetWindowPos(window, workspace ? -1 : -2, 0, 0, 0, 0, flags)) // HWND_TOPMOST / HWND_NOTOPMOST
+            throw new System.ComponentModel.Win32Exception();
+    }
+
+    void SaveTrafficWorkspaceBounds(AppWindow window)
+    {
+        if (trafficInWorkspace) SaveCardToolBounds("traffic", window, trafficWorkspaceArea, trafficWorkspaceScale);
+    }
+
+    void SaveCardToolBounds(string key, AppWindow window, RectInt32 work, double scale)
+    {
+        if (Store.Current.CardDesktopLayout?.GetValueOrDefault(key) is not { } placement) return;
+        var updated = placement with { X = (window.Position.X - work.X) / scale, Y = (window.Position.Y - work.Y) / scale,
+            Width = window.Size.Width / scale, Height = window.Size.Height / scale };
+        if (updated != placement) SaveCardDesktopPlacement(key, updated);
     }
 
     void SetInterfaceTrafficPaused(bool paused)

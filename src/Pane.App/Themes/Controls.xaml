@@ -71,6 +71,10 @@
         <Setter Property="Foreground" Value="{ThemeResource PaneText3Brush}"/>
     </Style>
 
+    <Style x:Key="PaneCardSurface" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}"/>
+    </Style>
+
     <!-- 图标按钮（原型 .icon-btn）：透明底，悬停中性填充；按下缩小 0.9 由代码做 -->
     <Style x:Key="PaneIconButton" TargetType="Button">
         <Setter Property="Width" Value="{StaticResource PaneControlSm}"/>

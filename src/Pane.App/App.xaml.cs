@@ -58,6 +58,8 @@ public sealed partial class App : Application
             if(previewLog!=null)UnhandledException+=(_,e)=>File.WriteAllText(previewLog+".error",e.Exception.ToString());
             try{setupHost=new SetupHost(this);}catch(Exception e) when(previewLog!=null){File.WriteAllText(previewLog+".error",e.ToString());throw;}
             return;}
+        // Pane keeps its tray and XAML islands alive after the last WinUI window closes.
+        DispatcherShutdownMode=Microsoft.UI.Xaml.DispatcherShutdownMode.OnExplicitShutdown;
         if(controlsEnabled)Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         AppDomain.CurrentDomain.UnhandledException+=(_,e)=>{if(e.ExceptionObject is Exception error)ReportCrash(error);if(queue.HasThreadAccess)Shutdown(waitForCapture:false);else {var done=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);if(queue.TryEnqueue(()=>{try{Shutdown(waitForCapture:false);}finally{done.TrySetResult();}}))done.Task.Wait(TimeSpan.FromSeconds(8));}};
         UnhandledException+=(_,e)=>{ReportCrash(e.Exception);Shutdown();e.Handled=true;};

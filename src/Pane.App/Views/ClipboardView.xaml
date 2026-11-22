@@ -165,6 +165,8 @@
             </Border>
         </Grid>
 
+        <Border x:Name="WorkspaceGrip" Grid.Row="1" VerticalAlignment="Top" IsHitTestVisible="False"/>
+
         <!-- 类型筛选：选中项高亮滑动 -->
         <Grid Grid.Row="2" Padding="16,0,16,8">
             <Grid.ColumnDefinitions>
