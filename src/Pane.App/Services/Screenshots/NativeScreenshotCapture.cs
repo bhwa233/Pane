@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Pane.Services.Screenshots;
 
-internal sealed class NativeScreenshotCapture(ScreenshotStore store, string workDirectory, Func<Guid, bool> pin, Func<Guid, bool> unpin, SemaphoreSlim pinSync)
+internal sealed class NativeScreenshotCapture(ScreenshotStore store, string workDirectory, Func<Guid, (int X, int Y, int Width, int Height)?, bool> pin, Func<Guid, bool> unpin, SemaphoreSlim pinSync)
 {
     static readonly string executable = Path.Combine(AppContext.BaseDirectory, "NativeCapture", "ScreenCapture.exe");
     internal static bool Available => File.Exists(executable);
@@ -113,7 +113,7 @@ internal sealed class NativeScreenshotCapture(ScreenshotStore store, string work
         await exited.ConfigureAwait(false);
     }
 
-    readonly record struct PinRequest(int Attempt, (uint Width, uint Height)? Size);
+    readonly record struct PinRequest(int Attempt, (uint Width, uint Height)? Size, (int X, int Y, int Width, int Height)? Bounds);
 
     static PinRequest? ReadPin(string directory, string session, int pid, int previousAttempt)
     {
@@ -127,8 +127,10 @@ internal sealed class NativeScreenshotCapture(ScreenshotStore store, string work
         if (attempt <= previousAttempt) return null;
         if (data.GetProperty("action").GetString() != "pin" || data.GetProperty("image").GetString() != "pin.png" ||
             data.GetProperty("source").GetString() != "pin-source.png" || data.GetProperty("document").GetString() != "pin-document.json")
-            return new(attempt, null);
-        return new(attempt, (data.GetProperty("width").GetUInt32(), data.GetProperty("height").GetUInt32()));
+            return new(attempt, null, null);
+        (int X, int Y, int Width, int Height)? bounds = data.TryGetProperty("bounds", out var rect) ?
+            (rect.GetProperty("x").GetInt32(), rect.GetProperty("y").GetInt32(), rect.GetProperty("width").GetInt32(), rect.GetProperty("height").GetInt32()) : null;
+        return new(attempt, (data.GetProperty("width").GetUInt32(), data.GetProperty("height").GetUInt32()), bounds);
     }
 
     async Task<Guid?> HandlePinAsync(string directory, string session, Process process, PinRequest request, Guid? editId, CancellationToken token)
@@ -155,7 +157,7 @@ internal sealed class NativeScreenshotCapture(ScreenshotStore store, string work
                     else
                     {
                         id = await Task.Run(() => store.ImportEditable(directory, size), token);
-                        if (!token.IsCancellationRequested && !process.HasExited) saved = pin(id.Value);
+                        if (!token.IsCancellationRequested && !process.HasExited) saved = pin(id.Value, request.Bounds);
                     }
                 }
             }

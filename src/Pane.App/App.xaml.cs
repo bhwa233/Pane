@@ -88,7 +88,7 @@ public sealed partial class App : Application
     }
     SetupHost? setupHost;
     // 显示、动画和诊断控制仍逐帧推进；完全收起后等事件重新叫醒。
-    bool VisualFrames=>panels.Values.Any(p=>p.Active)||(settings?.Active??false)||secondaries.Values.Any(p=>p.Active)||(gestures?.Active??false)||desktopTrafficCard is {Settled:false}||desktopScreenshots.Values.Any(p=>!p.Settled)||capsuleQueues.Values.Any(p=>!p.Settled);
+    bool VisualFrames=>panels.Values.Any(p=>p.Active)||(settings?.Active??false)||secondaries.Values.Any(p=>p.Active)||(gestures?.Active??false)||desktopTrafficCard is {Settled:false}||capsuleQueues.Values.Any(p=>!p.Settled);
     bool NeedsFrames=>!closing&&(!ready||controlsEnabled||pendingAck!=null||cycleIndex>=0||VisualFrames);
     void WatchFrames(GlassPanel panel)=>panel.TickRequested+=WakeFrames;
     void WakeFrames(){if(!queue.HasThreadAccess){queue.TryEnqueue(WakeFrames);return;}if(!closing&&timer is {IsRunning:false})timer.Start();}
@@ -103,6 +103,7 @@ public sealed partial class App : Application
         if(moduleId!=null&&Modules!=null&&Modules.Modules.Any(m=>m.Id==moduleId)&&!AllowModule(moduleId))return;
         if(command=="hotkey-words"){_ = ReadWordsSelection();return;}
         if(command=="hotkey-screenshots"){_ = CaptureFromHotkeyAsync();return;}
+        if(command=="show-screenshots"){ShowScreenshots(temporaryTopmost:true);return;}
         if(command=="hotkey-super-panel"){ToggleSuperFromHotkey();return;}
         if(command=="hotkey-notes"){temporaryNoteTopmost=!temporaryNoteTopmost;foreach(var id in desktopNotes.Keys)ApplyDesktopNoteTopmost(id);return;}
         if(command=="hotkey-card-desktop"){if(cardDesktopShown)HideCardDesktop();else ShowDesktopCards();return;}
@@ -148,7 +149,6 @@ public sealed partial class App : Application
         DrainTrail();
         foreach(var panel in panels.Values)panel.Tick();settings?.Tick();TickSecondaries();gestures?.Tick();
         if(desktopTrafficCard is {Settled:false} trafficCard)trafficCard.Tick();
-        foreach(var card in desktopScreenshots.Values)if(!card.Settled)card.Tick();
         foreach(var capsule in capsuleQueues.Values)if(!capsule.Settled)capsule.Tick();
         if(!ready&&panels.Values.All(p=>p.Prepared)&&(gestures?.Panel.Prepared??true)&&wallpaperReady&&(clipboardService?.Ready.IsCompletedSuccessfully??true)){ready=true;if(!demo&&Environment.GetEnvironmentVariable("PANE_VERIFY")!="1"&&Environment.GetEnvironmentVariable("PANE_OBSERVE")!="1"&&LaunchArguments.Parse(Environment.GetCommandLineArgs().Skip(1).ToArray())==LaunchCommand.Show)Command("show-launcher");_ = NotifyPreviousCrashAsync();ShowImportResult();if(controlsEnabled)File.WriteAllText(output+".ready",$"pid={Environment.ProcessId};panels={panels.Count};prepared=1;demo={(demo?1:0)};hotkeys={shell?.RegisteredCount??0};tray={(shell?.TrayCreated==true?1:0)};theme={(Glass.Dark?"Dark":"Light")}\n"+(shell==null?"":string.Join("\n",shell.Diagnostics))+"\n"+ModuleDiagnostics());}
         if(ready)DesignOpen();
@@ -209,6 +209,7 @@ public sealed partial class App : Application
         Clean(()=>notesWindow?.Close());
         Clean(ClearDesktopNotes);
         Clean(ClearDesktopTraffic);
+        Clean(()=>screenshotHistoryWindow?.Close());
         Clean(ClearDesktopScreenshots);
         Clean(()=>trailListener?.GetAwaiter().GetResult());
         Clean(()=>releaseProbe?.GetAwaiter().GetResult());Clean(()=>listener?.GetAwaiter().GetResult());

@@ -109,7 +109,8 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
         var words=settings.Words.Hotkey;
         if(words!=null)words=Override("words",words);
         bool wordsEnabled=settings.Modules?.GetValueOrDefault("words",true)??true;
-        var screenshot = settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.Screenshots) == true && Pane.Services.Screenshots.NativeScreenshotCapture.Available
+        bool screenshotsEnabled = settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.Screenshots) == true;
+        var screenshot = screenshotsEnabled && Pane.Services.Screenshots.NativeScreenshotCapture.Available
             ? Override("screenshots", ShellHotkeyBindings.DefaultScreenshot) : null;
         var super = settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.SuperPanel) == true ? Override("super-panel", settings.SuperPanel.Hotkey) : null;
         bool active=ShellHotkeyBindings.Rebind(registered,id=>Native.UnregisterHotKey(shellWindow,id),Register,a,b,settings.Modules?.GetValueOrDefault("clipboard",settings.Clipboard.Enabled)??settings.Clipboard.Enabled,suspended,settings.Modules?.GetValueOrDefault("launcher",true)??true,settings.Clipboard.KeepHotkeyWithWinV,ApplyWinV,words,wordsEnabled,screenshot,super);
@@ -117,6 +118,8 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
         if(!suspended&&(settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.Notes,true)??true))
             Register(7,"notes",new Hotkey(KeyModifiers.Ctrl|KeyModifiers.Alt,'N'));
         if(!suspended)Register(8,"card-desktop",Override("card-desktop",ShellHotkeyBindings.DefaultCardDesktop));
+        if (!suspended && screenshotsEnabled)
+            Register(9, "screenshot-history", Override("screenshot-history", ShellHotkeyBindings.DefaultScreenshotHistory));
         var keys=ShellHotkeyBindings.DoubleTapKeys(a,b,!OriginalClipboardHotkeySuppressed&&(settings.Modules?.GetValueOrDefault("clipboard",settings.Clipboard.Enabled)??settings.Clipboard.Enabled),suspended,settings.Modules?.GetValueOrDefault("launcher",true)??true);
         uint wordsKey=wordsEnabled&&!suspended&&words?.IsValidDoubleTap==true?words.VirtualKey:0u;
         if(wordsKey!=0&&(wordsKey==keys.Launcher||wordsKey==keys.Clipboard)){RegistrationResult("words",words!,false,1409);wordsKey=0;}
@@ -144,8 +147,10 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
             // 设计加（2026-10-30）：注册失败时提示一次，否则按了没反应也不知道为什么
             var shortcut=Pane.Views.Controls.HotkeyBox.Text(key).Replace("Space",Strings.Common_SpaceKey);
             var what=name switch{"launcher"=>Strings.Common_Launcher,"words"=>Strings.Module_Words_Name,"super-panel"=>Strings.Common_SuperPanel,"card-desktop"=>Strings.DesktopCards_Title,_=>Strings.Common_Clipboard};
-            NotifyOnce(name=="screenshots"?string.Format(Strings.Setup_ScreenshotHotkeyConflict,(object?)shortcut):
-                string.Format(Strings.Setup_HotkeyConflict,(object?)shortcut,(object?)what,(object?)what));}
+            NotifyOnce(name switch {
+                "screenshots" => string.Format(Strings.Setup_ScreenshotHotkeyConflict, (object?)shortcut),
+                "screenshot-history" => string.Format(Strings.Settings_Hotkey_Occupied, (object?)shortcut),
+                _ => string.Format(Strings.Setup_HotkeyConflict, (object?)shortcut, (object?)what, (object?)what) });}
     }
     nint WndProc(nint h,uint m,nuint w,nint l){
         // 在广播线程直接清标记，不依赖 UI 调度在系统结束会话前执行。

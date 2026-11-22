@@ -2,7 +2,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
-using Pane.Hosting;
 using Pane.Localization;
 using Pane.Services.Clipboard;
 using Pane.Services.Notes;
@@ -16,7 +15,7 @@ using SystemClipboard = Windows.ApplicationModel.DataTransfer.Clipboard;
 
 namespace Pane.Views;
 
-public sealed partial class ScreenshotsView : UserControl, ISecondaryView, IDisposable
+public sealed partial class ScreenshotsView : UserControl, IDisposable
 {
     readonly ScreenshotStore store;
     readonly NativeScreenshotCapture capture;
@@ -55,14 +54,7 @@ public sealed partial class ScreenshotsView : UserControl, ISecondaryView, IDisp
 
     public Size PreferredSize => new(620, 430);
     public Size MinimumSize => new(480, 320);
-    public UIElement DragRegion => Header;
-    event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
-    event EventHandler<bool>? ISecondaryView.TopmostChanged { add { } remove { } }
-    public event EventHandler? CloseRequested;
-
-    public void OnShowing(PanelShowContext context) { if (!viewingOcrHistory && History.Items.Count == 0) LoadHistory(selected); }
-    public void OnShown() { }
-    public void OnHidden() => Dispose();
+    internal void EnsureHistoryLoaded() { if (!viewingOcrHistory && History.Items.Count == 0) LoadHistory(selected); }
     public void Dispose()
     {
         if (disposed) return;
@@ -426,5 +418,4 @@ public sealed partial class ScreenshotsView : UserControl, ISecondaryView, IDisp
 
     void ImageOpened(object sender, RoutedEventArgs args) { previewReady = true; RefreshPin(); }
     void ImageFailed(object sender, ExceptionRoutedEventArgs args) { previewReady = false; Status.Text = Strings.Screenshots_LoadFailed; RefreshPin(); }
-    void CloseClicked(object sender, RoutedEventArgs args) => CloseRequested?.Invoke(this, EventArgs.Empty);
 }

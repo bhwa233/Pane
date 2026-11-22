@@ -8,6 +8,8 @@ internal static class LocalSettingsFields
     internal static readonly string[][] Paths=[["Storage"],["General","StartWithWindows"],["Launcher","Position"],
         [nameof(PaneSettings.Clipboard),nameof(ClipboardSettings.ExcludedText)],
         [nameof(PaneSettings.DesktopNotes)],[nameof(PaneSettings.DesktopScreenshots)],[nameof(PaneSettings.DesktopTraffic)],
+        [nameof(PaneSettings.DesktopScreenshotSizes)],
+        [nameof(PaneSettings.DesktopScreenshotTopmost)],
         [nameof(PaneSettings.CardDesktopLayout)],
         [nameof(PaneSettings.PauseInterfaceTraffic)],
         [nameof(PaneSettings.NoteReminders)],[nameof(PaneSettings.NoteTaskReminders)],

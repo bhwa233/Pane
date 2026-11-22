@@ -27,46 +27,53 @@ public sealed partial class App
             RefreshDesktopScreenshots();
         }
 
-        var cards = DesktopCardPanels().ToArray();
-        if (cards.Length != 3) throw new InvalidOperationException("Expected pinned traffic, note and screenshot cards.");
+        var traffic = desktopTrafficCard ?? throw new InvalidOperationException("Expected pinned traffic.");
+        var note = desktopNotes.Values.Single();
+        var screenshot = desktopScreenshots.Values.Single().AppWindow;
+        (int X, int Y)[] Origins() =>
+            [traffic.Origin, (note.Bounds.X, note.Bounds.Y), (screenshot.Position.X, screenshot.Position.Y)];
         if (!string.IsNullOrWhiteSpace(source))
         {
             ShowDesktopCards();
             var originalFile = File.ReadAllBytes(settingsPath);
-            var origins = cards.Select(card => card.Origin).ToArray();
-            var traffic = desktopTrafficCard!;
+            var origins = Origins();
+            var screenshotSize = screenshot.Size;
             var trafficAnchor = traffic.DesktopAnchor!;
             var workArea = trafficAnchor with { MonitorId = "Pane.Probe.UnavailableDisplay" };
             traffic.DesktopAnchor = workArea;
-            GlassPanel.RestoreDesktopCards(cards);
+            GlassPanel.RestoreDesktopCards([traffic]);
             if (traffic.DesktopAnchor != workArea || traffic.DesktopPlacement?.MonitorId == workArea.MonitorId ||
-                cards.Select(card => card.DesktopPlacement?.MonitorId).Distinct().Count() != 1 ||
-                !origins.SequenceEqual(cards.Select(card => card.Origin)) ||
+                !origins.SequenceEqual(Origins()) ||
                 !originalFile.SequenceEqual(File.ReadAllBytes(settingsPath)))
                 throw new InvalidOperationException("Saved monitor IDs must not affect placement on the selected screen or alter the saved layout.");
             traffic.DesktopAnchor = trafficAnchor;
-            GlassPanel.RestoreDesktopCards(cards);
+            GlassPanel.RestoreDesktopCards([traffic]);
             MoveAllCards();
             CancelDesktopArrangement();
-            if (!origins.SequenceEqual(cards.Select(card => card.Origin)) || !originalFile.SequenceEqual(File.ReadAllBytes(settingsPath)))
+            if (!origins.SequenceEqual(Origins()) || screenshot.Size != screenshotSize || !originalFile.SequenceEqual(File.ReadAllBytes(settingsPath)))
                 throw new InvalidOperationException("Cancel did not restore the live layout without writing settings.");
 
             MoveAllCards();
             if (SaveDesktopArrangement() is { } error) throw new InvalidOperationException(error);
-            if (originalFile.SequenceEqual(File.ReadAllBytes(settingsPath)) || cards.Any(card => card.DesktopArranging))
+            var screenshotId = desktopScreenshots.Keys.Single();
+            if (originalFile.SequenceEqual(File.ReadAllBytes(settingsPath)) || traffic.DesktopArranging ||
+                screenshot.Size == screenshotSize || Store.Current.DesktopScreenshotSizes?.ContainsKey(screenshotId) != true)
                 throw new InvalidOperationException("Save did not commit the staged layout and finish editing.");
 
             void MoveAllCards()
             {
                 if (!BeginDesktopArrangement()) throw new InvalidOperationException("Layout editor did not open.");
-                foreach (var card in cards) card.SimulateDrag(-48, 24);
-                if (cards.Select((card, index) => card.Origin != origins[index]).Any(moved => !moved) ||
+                traffic.SimulateDrag(-48, 24);
+                note.AppWindow.Move(new(note.Bounds.X - 48, note.Bounds.Y + 24));
+                screenshot.MoveAndResize(new(screenshot.Position.X - 48, screenshot.Position.Y + 24,
+                    screenshot.Size.Width + 48, screenshot.Size.Height + 24));
+                if (Origins().Zip(origins).Any(pair => pair.First == pair.Second) ||
                     !originalFile.SequenceEqual(File.ReadAllBytes(settingsPath)))
                     throw new InvalidOperationException("A staged move did not move its window or wrote settings early.");
             }
         }
 
-        File.WriteAllLines(output + ".desktop-arrangement-result", cards.Select(card => FormattableString.Invariant($"{card.Origin.X},{card.Origin.Y}")));
+        File.WriteAllLines(output + ".desktop-arrangement-result", Origins().Select(point => FormattableString.Invariant($"{point.X},{point.Y}")));
         return true;
     }
 }

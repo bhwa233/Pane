@@ -119,7 +119,7 @@ dpi = win->dpi;
     onDestroy.add([this]() { killTimer(ocrTimerId); });
 '@
 Edit-Exact $tool 'btn->setFontSize(13.f);' @'
-btn->setFontSize(13.f);
+btn->setFontSize(16.f);
         if (btnIds[i] == L"ocr") {
             ocrButton = btn;
             if (!ocrVisible) btn->hide();
@@ -155,6 +155,14 @@ else if (btn->id == L"pin") {
 
 $mainTool = Join-Path $capture 'Tool/ToolMain.cpp'
 $mainHeader = Join-Path $capture 'Tool/ToolMain.h'
+foreach ($header in $toolHeader, $mainHeader, (Join-Path $capture 'Tool/ToolSub.h')) {
+    Edit-Exact $header 'btnSize{ 32.f }' 'btnSize{ 40.f }'
+}
+$subTool = Join-Path $capture 'Tool/ToolSub.cpp'
+Edit-Exact $mainTool 'btn->setFontSize(13.f);' 'btn->setFontSize(16.f);'
+Edit-Exact $subTool 'btn->setFontSize(13.f);' 'btn->setFontSize(16.f);'
+Edit-Exact $subTool 'label->setSize(13.f, 13.f);' 'label->setSize(16.f, 16.f);'
+Edit-Exact $subTool 'label->setFontSize(8.f);' 'label->setFontSize(10.f);'
 Edit-Exact $mainHeader 'L"|",L"close"' 'L"|",L"pin",L"close"'
 Edit-Exact $mainHeader 'L"|",L"\ue62d"' 'L"|",L"\ue6a2",L"\ue62d"'
 Edit-Exact $mainTool '#include "../Lang.h"' "#include `"../Lang.h`"`n#include `"../SessionResult.h`""

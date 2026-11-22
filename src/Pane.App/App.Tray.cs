@@ -32,7 +32,7 @@ public sealed partial class App
             Modules.IsActive(ModuleIds.PowerTimer)&&PowerTimer!=null,
             PowerTimer?.Current is {} timer?string.Format(Strings.Tray_TimerStatus,(object?)PowerTimerText.State(timer),(object?)PowerTimerText.Span(timer.At-DateTimeOffset.Now)):null,
             Modules.IsActive(ModuleIds.Traffic),Modules.IsActive(ModuleIds.Notes),Modules.IsActive(ModuleIds.Screenshots),
-            DesktopCardPanels().Any(),desktopCardsHidden,DictionaryAvailable:Modules.IsActive(ModuleIds.Ai),
+            HasDesktopCardPanels,desktopCardsHidden,DictionaryAvailable:Modules.IsActive(ModuleIds.Ai),
             HasHiddenDesktopNotes:Modules.IsActive(ModuleIds.Notes) && (Store.Current.DesktopNotes ?? []).Keys.Any(IsNoteHidden)));
         foreach(var other in panels.Values)if(other!=trayPanel)other.Hide();
         current=trayPanel;
@@ -52,7 +52,7 @@ public sealed partial class App
             case "screenshots":ShowScreenshots();break;
             case "dictionary":ShowTranslate(null,dictionary:true);break;
             case "desktop-cards":ShowDesktopCards();break;
-            case "desktop-cards-toggle":if(desktopCardsHidden||DesktopCardPanels().Any())ToggleDesktopCards();break;
+            case "desktop-cards-toggle":if(desktopCardsHidden||HasDesktopCardPanels)ToggleDesktopCards();break;
             case "timer-cancel":PowerTimer?.Cancel();break;   /* 055：启动器和超级面板都停用时的入口，空窗口里拖文件进来 */
             case "settings":Command("show-settings");break;
             case "pause":Command("pause-gestures");break;

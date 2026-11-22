@@ -16,6 +16,7 @@ public sealed partial class App
 {
     Dictionary<GlassPanel, LauncherPosition?>? desktopArrangement;
     Dictionary<Guid, RectInt32>? noteArrangement;
+    Dictionary<Guid, RectInt32>? screenshotArrangement;
     Native.Point? desktopScreenPoint;
     bool desktopReflowQueued, desktopCardsHidden;
     CardDesktopOverlay? cardDesktopWindow;
@@ -474,11 +475,16 @@ public sealed partial class App
         { ReportFailure(Strings.DesktopCards_Title, error); }
     }
 
-    IEnumerable<GlassPanel> DesktopCardPanels() => (desktopTrafficCard is { } traffic ? new[] { traffic } : [])
-        .Concat(desktopScreenshots.Values);
+    IEnumerable<GlassPanel> DesktopCardPanels() => desktopTrafficCard is { } traffic ? [traffic] : [];
+    bool HasDesktopCardPanels => desktopTrafficCard != null || desktopScreenshots.Count != 0;
 
-    System.Drawing.Rectangle[] DesktopCardObstacles(GlassPanel? except = null, DesktopNoteWindow? exceptNote = null) =>
+    System.Drawing.Rectangle[] DesktopCardObstacles(GlassPanel? except = null, DesktopNoteWindow? exceptNote = null, Window? exceptScreenshot = null) =>
         DesktopCardPanels().Where(card => card != except && card.Shown).Select(card => card.DesktopBounds)
+        .Concat(desktopScreenshots.Values.Where(card => card != exceptScreenshot && card.AppWindow.IsVisible).Select(card =>
+        {
+            var bounds = WindowBounds(card.AppWindow);
+            return new System.Drawing.Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+        }))
         .Concat(desktopNotes.Values.Where(card => card != exceptNote && card.Shown).Select(card =>
         {
             var bounds = card.Bounds;
@@ -502,12 +508,18 @@ public sealed partial class App
         {
             foreach (var panel in panels) panel.Hide();
             foreach (var note in desktopNotes.Values) note.Hide();
+            foreach (var screenshot in desktopScreenshots.Values) screenshot.AppWindow.Hide();
         }
         else
         {
             SelectDesktopCardScreen();
             GlassPanel.RevealDesktopCards(panels, error => ReportFailure(Strings.DesktopCards_Title, error));
             foreach (var note in desktopNotes.Values) note.Show();
+            foreach (var (id, screenshot) in desktopScreenshots)
+            {
+                PositionDesktopScreenshot(id, screenshot, Store.Current.DesktopScreenshots?.GetValueOrDefault(id));
+                ShowDesktopScreenshot(screenshot);
+            }
         }
         RefreshDesktopCardsOverview();
     }
@@ -517,9 +529,10 @@ public sealed partial class App
         if (closing || desktopCardsHidden || desktopArrangement != null) return false;
         ApplyTrafficEdgeTab(false, allowDock: false);
         var open = DesktopCardPanels().Where(panel => panel.Shown).ToDictionary(panel => panel, panel => panel.DesktopAnchor);
-        if (open.Count == 0 && desktopNotes.Count == 0) return false;
+        if (open.Count == 0 && desktopNotes.Count == 0 && desktopScreenshots.Count == 0) return false;
         desktopArrangement = open;
         noteArrangement = desktopNotes.ToDictionary(pair => pair.Key, pair => pair.Value.Bounds);
+        screenshotArrangement = desktopScreenshots.ToDictionary(pair => pair.Key, pair => WindowBounds(pair.Value.AppWindow));
         foreach (var panel in open.Keys) panel.BeginDesktopArrangement();
         return true;
     }
@@ -542,11 +555,13 @@ public sealed partial class App
                     if (ReferenceEquals(noteSizes, settings.DesktopNoteSizes)) noteSizes = new(noteSizes ?? []);
                     RecordDesktopNoteBounds(id, card, notesLayout!, noteSizes!);
                 }
-                var screenshotsLayout = UpdatePositions(settings.DesktopScreenshots, desktopScreenshots);
                 if (traffic != null && desktopTrafficCard is { } live && Changed(live)) traffic = traffic with { Position = live.DesktopAnchor };
-                return traffic == settings.DesktopTraffic && ReferenceEquals(notesLayout, settings.DesktopNotes) &&
-                    ReferenceEquals(screenshotsLayout, settings.DesktopScreenshots) ? settings : settings with
-                    { DesktopTraffic = traffic, DesktopNotes = notesLayout, DesktopNoteSizes = noteSizes, DesktopScreenshots = screenshotsLayout };
+                var updated = traffic == settings.DesktopTraffic && ReferenceEquals(notesLayout, settings.DesktopNotes) ? settings : settings with
+                    { DesktopTraffic = traffic, DesktopNotes = notesLayout, DesktopNoteSizes = noteSizes };
+                foreach (var (id, original) in screenshotArrangement!)
+                    if (desktopScreenshots.TryGetValue(id, out var card) && !WindowBounds(card.AppWindow).Equals(original))
+                        updated = RecordDesktopScreenshotBounds(updated, id, card.AppWindow);
+                return updated;
             });
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
@@ -557,16 +572,6 @@ public sealed partial class App
         return null;
 
         bool Changed(GlassPanel panel) => editing.TryGetValue(panel, out var baseline) && baseline != panel.DesktopAnchor;
-
-        Dictionary<Guid, LauncherPosition?>? UpdatePositions(Dictionary<Guid, LauncherPosition?>? layout, Dictionary<Guid, GlassPanel> live)
-        {
-            if (layout == null) return null;
-            Dictionary<Guid, LauncherPosition?>? changed = null;
-            foreach (var (id, panel) in live)
-                if (layout.ContainsKey(id) && Changed(panel))
-                    (changed ??= new(layout))[id] = panel.DesktopAnchor;
-            return changed ?? layout;
-        }
     }
 
     void CancelDesktopArrangement() => EndDesktopArrangement(restore: true);
@@ -577,9 +582,14 @@ public sealed partial class App
         desktopArrangement = null;
         foreach (var (panel, original) in editing) panel.EndDesktopArrangement(original, restore);
         if (restore)
+        {
             foreach (var (id, bounds) in noteArrangement!)
                 if (desktopNotes.TryGetValue(id, out var card) && !card.Bounds.Equals(bounds)) card.AppWindow.MoveAndResize(bounds);
+            foreach (var (id, bounds) in screenshotArrangement!)
+                if (desktopScreenshots.TryGetValue(id, out var card) && !WindowBounds(card.AppWindow).Equals(bounds)) card.AppWindow.MoveAndResize(bounds);
+        }
         noteArrangement = null;
+        screenshotArrangement = null;
         if (restore) GlassPanel.RestoreDesktopCards(DesktopCardPanels());
         ApplyTrafficHudWindow();
     }
@@ -597,6 +607,8 @@ public sealed partial class App
             else GlassPanel.RestoreDesktopCards(DesktopCardPanels());
             foreach (var (id, note) in desktopNotes)
                 note.Reposition(Store.Current.DesktopNotes?.GetValueOrDefault(id), desktopScreenPoint ?? default, note.Size, DesktopCardObstacles(exceptNote: note));
+            foreach (var (id, screenshot) in desktopScreenshots)
+                PositionDesktopScreenshot(id, screenshot, Store.Current.DesktopScreenshots?.GetValueOrDefault(id));
             ApplyTrafficHudWindow();
             RefreshDesktopCardsOverview();
         });
@@ -613,7 +625,7 @@ public sealed partial class App
         GlassPanel? panel = null;
         try
         {
-            if (desktopScreenPoint == null || !desktopCardsHidden && !DesktopCardPanels().Any()) SelectDesktopCardScreen();
+            if (desktopScreenPoint == null || !desktopCardsHidden && !HasDesktopCardPanels) SelectDesktopCardScreen();
             panel = new GlassPanel(title, content, view, Glass, desktopCard: true, cornerRadius: cornerRadius)
             {
                 DesktopAnchor = position, EscapeHides = false,

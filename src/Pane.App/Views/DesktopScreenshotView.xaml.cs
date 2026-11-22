@@ -2,33 +2,40 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Pane.Hosting;
+using Pane.Localization;
 using Windows.Foundation;
 
 namespace Pane.Views;
 
 public sealed partial class DesktopScreenshotView : UserControl, IPanelView, IDisposable
 {
-    internal DesktopScreenshotView(string path, bool canEdit)
+    string UnpinLabel { get; }
+    internal event EventHandler<bool>? TopmostChanged;
+
+    internal DesktopScreenshotView(string path, bool canEdit, bool inWorkspace, bool topmost)
     {
+        UnpinLabel = inWorkspace ? Strings.CardDesktop_RemoveCard : Strings.Notes_UnpinDesktop;
         InitializeComponent();
-        EditButton.Visibility = canEdit ? Visibility.Visible : Visibility.Collapsed;
+        if (!canEdit) Actions.Items.Remove(EditItem);
+        TopmostItem.IsChecked = topmost;
         Apply(path);
     }
 
     internal void Apply(string path)
     {
         ImageError.Visibility = Visibility.Collapsed;
-        Preview.Source = new BitmapImage { DecodePixelWidth = 512, DecodePixelType = DecodePixelType.Physical, UriSource = new Uri(path) };
+        Preview.Source = new BitmapImage(new Uri(path));
     }
 
     public Size PreferredSize => new(256, 170);
-    public UIElement DragRegion => Header;
+    public UIElement DragRegion => Preview;
     event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
     event EventHandler? IPanelView.CloseRequested { add { } remove { } }
     internal event EventHandler? OpenRequested;
     internal event EventHandler? EditRequested;
     internal event EventHandler? UnpinRequested;
     internal void OpenImage() => OpenRequested?.Invoke(this, EventArgs.Empty);
+    internal void ShowActions(Point position) => Actions.ShowAt(this, position);
 
     public void OnShowing(PanelShowContext context) { }
     public void OnShown() { }
@@ -39,4 +46,5 @@ public sealed partial class DesktopScreenshotView : UserControl, IPanelView, IDi
     void OpenClicked(object sender, RoutedEventArgs args) => OpenImage();
     void EditClicked(object sender, RoutedEventArgs args) => EditRequested?.Invoke(this, EventArgs.Empty);
     void UnpinClicked(object sender, RoutedEventArgs args) => UnpinRequested?.Invoke(this, EventArgs.Empty);
+    void TopmostClicked(object sender, RoutedEventArgs args) => TopmostChanged?.Invoke(this, TopmostItem.IsChecked);
 }

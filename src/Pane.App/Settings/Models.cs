@@ -26,6 +26,8 @@ public sealed record PaneSettings(int Version, GeneralSettings General, Launcher
     public bool ShowCardDesktopTrigger { get; init; } = true;
     public bool PauseInterfaceTraffic { get; init; }
     public Dictionary<Guid,LauncherPosition?>? DesktopScreenshots { get; init; }
+    public Dictionary<Guid,double[]>? DesktopScreenshotSizes { get; init; }
+    public Dictionary<Guid,bool>? DesktopScreenshotTopmost { get; init; }
     public bool LimitScreenshotHistory { get; init; }
     public bool RememberTranslations { get; init; }
     public bool LookupTranslationSelection { get; init; }
