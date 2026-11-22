@@ -192,6 +192,290 @@ else if (btn->id == L"pin") {
 '@
 
 $capWindow = Join-Path $capture 'Win/WinCap.cpp'
+$cutMask = Join-Path $capture 'Win/CutMask.cpp'
+$cutMaskHeader = Join-Path $capture 'Win/CutMask.h'
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'HoverSelection.h'), (Join-Path $PSScriptRoot 'HoverSelection.cpp') -Destination (Join-Path $capture 'Win')
+Edit-Exact $cutMaskHeader '#include <include/Ling.h>' "#include <include/Ling.h>`n#include `"HoverSelection.h`""
+Edit-Exact $cutMaskHeader @'
+	// 鼠标悬停时吸附到光标下的窗口矩形，选区真的变了才返回 true
+	bool highlight(POINT pos);
+'@ @'
+	void highlight(POINT pos);
+	void highlightWheel(POINT pos, float space);
+'@
+Edit-Exact $cutMaskHeader "`tvoid initWinRect();`n" ''
+Edit-Exact $cutMaskHeader 'std::vector<D2D1_RECT_F> winRect;' 'HoverSelection hover;'
+Edit-Exact $cutMask "#include <dwmapi.h>`n" ''
+Edit-Exact $cutMask 'CutMask::CutMask(Ling::WinBase* win) :win{ win }' @'
+CutMask::CutMask(Ling::WinBase* win) :win{ win }, hover(
+	{ win->x, win->y, static_cast<LONG>(win->x + win->w), static_cast<LONG>(win->y + win->h) },
+	[this, win](RECT screen) {
+		D2D1_RECT_F rect{};
+		if (!IsRectEmpty(&screen)) {
+			POINT origin{};
+			ClientToScreen(win->hwnd, &origin);
+			rect = D2D1::RectF(static_cast<float>(screen.left - origin.x), static_cast<float>(screen.top - origin.y),
+				static_cast<float>(screen.right - origin.x), static_cast<float>(screen.bottom - origin.y));
+		}
+		if (maskRect.left == rect.left && maskRect.top == rect.top &&
+			maskRect.right == rect.right && maskRect.bottom == rect.bottom) return;
+		maskRect = rect;
+		if (hasRect()) makeLayout();
+		else layout.Reset();
+		win->refresh();
+	})
+'@
+Edit-Exact $cutMask "`tinitWinRect();`n" ''
+Edit-Exact $cutMaskHeader '光标落在哪一块。选区内部是 Inside，外面被选区四边的延长线切成 8 块，各对应一个方位' '光标位于选区内部、边角附近，或选区外。'
+Edit-Exact $cutMaskHeader '选区四边的延长线把窗口切成九块：中间是 Inside，外面八块各是一个方位。没框出选区时才是 None' '几何命中：只在选区内部或边角附近开始调整。'
+Edit-Exact $cutMaskHeader '开始调整：记下方向和起始矩形。按的是边或角时，这一下就把那条边吸到光标处' '开始调整：记下方向和起始矩形，拖动时使用鼠标位移。'
+Edit-Exact $cutMaskHeader 'POINT pressPos{};' @'
+POINT pressPos{};
+	bool drawing{ false };
+'@
+Edit-Exact $cutMask @'
+bool CutMask::highlight(POINT pos)
+{
+	for (auto& rect : winRect)
+	{
+		if (pos.x > rect.left && pos.y > rect.top && pos.x < rect.right && pos.y < rect.bottom) {
+			if (maskRect.left != rect.left || maskRect.top != rect.top ||
+				maskRect.right != rect.right || maskRect.bottom != rect.bottom) {
+				maskRect = rect;
+				makeLayout();
+				win->refresh();
+				return true;
+			}
+			break;
+		}
+	}
+	return false;
+}
+
+void CutMask::initWinRect()
+{
+	winRect.clear();
+	EnumWindows([](HWND hwnd, LPARAM lparam)
+		{
+			if (!hwnd) return TRUE;
+			if (!IsWindowVisible(hwnd)) return TRUE;
+			BOOL cloaked = FALSE;
+			DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+			if (cloaked) return TRUE;
+			RECT rect;
+			DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(RECT));
+			if (rect.right - rect.left <= 6 || rect.bottom - rect.top <= 6) return TRUE;
+			auto self = (CutMask*)lparam;
+			auto win = self->win;
+			if (rect.left < win->x) rect.left = win->x;
+			if (rect.top < win->y) rect.top = win->y;
+			if (rect.right > win->x + win->w) rect.right = (LONG)(win->x + win->w);
+			if (rect.bottom > win->y + win->h) rect.bottom = (LONG)(win->y + win->h);
+			auto x = (float)(rect.left - win->x);
+			auto y = (float)(rect.top - win->y);
+			auto r = (float)(rect.right - win->x);
+			auto b = (float)(rect.bottom - win->y);
+			self->winRect.push_back(D2D1::RectF(x, y, r, b));
+			return TRUE;
+		}, (LPARAM)this);
+}
+'@ @'
+void CutMask::highlight(POINT pos)
+{
+	ClientToScreen(win->hwnd, &pos);
+	hover.move(pos);
+}
+
+void CutMask::highlightWheel(POINT pos, float space)
+{
+	ClientToScreen(win->hwnd, &pos);
+	hover.wheel(pos, space);
+}
+'@
+Edit-Exact $cutMask @'
+	auto layoutStr = std::format(L"X:{} Y:{} R:{} B:{} W:{} H:{}",
+		maskRect.left, maskRect.top, maskRect.right, maskRect.bottom,
+		maskRect.right - maskRect.left, maskRect.bottom - maskRect.top);
+'@ @'
+	auto layoutStr = std::format(L"{} × {}", static_cast<int>(maskRect.right - maskRect.left),
+		static_cast<int>(maskRect.bottom - maskRect.top));
+'@
+Edit-Exact $cutMask @'
+	// 标签被顶出窗口上边时折回 maskRect 内部
+	if (layoutRect.top < 0) {
+'@ @'
+	POINT anchor{ win->x + static_cast<LONG>(maskRect.left), win->y + static_cast<LONG>(maskRect.top) };
+	MONITORINFO monitor{ sizeof(MONITORINFO) };
+	GetMonitorInfoW(MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST), &monitor);
+	// 标签被顶出所在屏幕上边时折回选区内部。
+	if (layoutRect.top + win->y < monitor.rcMonitor.top) {
+'@
+Edit-Exact $cutMask 'layout->SetMaxWidth(layoutRect.right - layoutRect.left);' @'
+const float labelWidth = layoutRect.right - layoutRect.left;
+	const float screenLeft = static_cast<float>(monitor.rcMonitor.left - win->x);
+	const float screenRight = static_cast<float>(monitor.rcMonitor.right - win->x);
+	layoutRect.left = std::clamp(layoutRect.left, screenLeft, std::max(screenLeft, screenRight - labelWidth));
+	layoutRect.right = layoutRect.left + labelWidth;
+	layout->SetMaxWidth(labelWidth);
+'@
+Edit-Exact $cutMask 'pressPos = pos;' @'
+pressPos = pos;
+	drawing = false;
+	hover.freeze();
+'@
+Edit-Exact $cutMask @'
+	auto [left, right] = std::minmax(pressPos.x, pos.x);
+	auto [top, bottom] = std::minmax(pressPos.y, pos.y);
+'@ @'
+	// Use the Windows drag rectangle so small movements still select the window at mouse-down.
+	if (!drawing && std::abs(pos.x - pressPos.x) <= GetSystemMetrics(SM_CXDRAG) &&
+		std::abs(pos.y - pressPos.y) <= GetSystemMetrics(SM_CYDRAG)) return;
+	drawing = true;
+	pos.x = std::clamp(pos.x, 0L, static_cast<LONG>(win->w));
+	pos.y = std::clamp(pos.y, 0L, static_cast<LONG>(win->h));
+	auto [left, right] = std::minmax(pressPos.x, pos.x);
+	auto [top, bottom] = std::minmax(pressPos.y, pos.y);
+'@
+Edit-Exact $cutMask @'
+	// 选区的四条边各自延长，把整个窗口切成九块：中间那块就是选区自己，
+	// 落在里面一律整体拖动；外面八块各对应一个方位，落在哪块就调哪条边/哪个角
+	const int col = px < r.left ? 0 : (px > r.right ? 2 : 1);
+	const int row = py < r.top ? 0 : (py > r.bottom ? 2 : 1);
+'@ @'
+	const float grip = 2 * strokeWidth;
+	if (px < r.left - grip || px > r.right + grip || py < r.top - grip || py > r.bottom + grip)
+		return MaskHit::None;
+	// Keep a movable center even when the selection is narrower than two grips.
+	const float gx = std::min(grip, (r.right - r.left) / 3);
+	const float gy = std::min(grip, (r.bottom - r.top) / 3);
+	const int col = px <= r.left + gx ? 0 : (px >= r.right - gx ? 2 : 1);
+	const int row = py <= r.top + gy ? 0 : (py >= r.bottom - gy ? 2 : 1);
+'@
+Edit-Exact $cutMask @'
+	// 抓边或抓角：按下这一下就把对应的边挪到光标位置。
+	// 内部整体拖动不能这么干 —— 那会让选区瞬间跳到光标为中心的位置。
+	if (adjustHit != MaskHit::None && adjustHit != MaskHit::Inside) {
+		adjust(pos);
+	}
+'@ ''
+Edit-Exact $cutMask @'
+		const float cx = std::clamp(px, 0.f, win->w);
+		const float cy = std::clamp(py, 0.f, win->h);
+		switch (adjustHit)
+		{
+		case MaskHit::Left: r.left = cx; break;
+		case MaskHit::Right: r.right = cx; break;
+		case MaskHit::Top: r.top = cy; break;
+		case MaskHit::Bottom: r.bottom = cy; break;
+		case MaskHit::TopLeft: r.left = cx; r.top = cy; break;
+		case MaskHit::TopRight: r.right = cx; r.top = cy; break;
+		case MaskHit::BottomRight: r.right = cx; r.bottom = cy; break;
+		case MaskHit::BottomLeft: r.left = cx; r.bottom = cy; break;
+		default: break;
+		}
+		// 拖过头（比如左边越过右边）时归一化，接下来就自然变成"在拖另一条边"
+		const float l = std::min(r.left, r.right), rr = std::max(r.left, r.right);
+		const float t = std::min(r.top, r.bottom), b = std::max(r.top, r.bottom);
+		r = D2D1::RectF(l, t, rr, b);
+		// 塌到最小尺寸以下时，把动着的那条边推回来，不动锚定的那条
+		const bool moveLeft = adjustHit == MaskHit::Left || adjustHit == MaskHit::TopLeft || adjustHit == MaskHit::BottomLeft;
+		const bool moveTop = adjustHit == MaskHit::Top || adjustHit == MaskHit::TopLeft || adjustHit == MaskHit::TopRight;
+		if (r.right - r.left < minSize) {
+			if (moveLeft) r.left = r.right - minSize;
+			else r.right = r.left + minSize;
+		}
+		if (r.bottom - r.top < minSize) {
+			if (moveTop) r.top = r.bottom - minSize;
+			else r.bottom = r.top + minSize;
+		}
+'@ @'
+		const auto moveEdge = [](float edge, float anchor, float delta, float bound) {
+			const float moved = std::clamp(edge + delta, 0.f, bound);
+			const float minimum = std::min(minSize, std::abs(edge - anchor));
+			const bool before = moved == anchor ? edge < anchor : moved < anchor;
+			return before ? std::min(moved, std::max(0.f, anchor - minimum))
+				: std::max(moved, std::min(bound, anchor + minimum));
+		};
+		const float dx = px - adjustPressPos.x, dy = py - adjustPressPos.y;
+		if (adjustHit == MaskHit::Left || adjustHit == MaskHit::TopLeft || adjustHit == MaskHit::BottomLeft)
+			r.left = moveEdge(r.left, r.right, dx, win->w);
+		if (adjustHit == MaskHit::Right || adjustHit == MaskHit::TopRight || adjustHit == MaskHit::BottomRight)
+			r.right = moveEdge(r.right, r.left, dx, win->w);
+		if (adjustHit == MaskHit::Top || adjustHit == MaskHit::TopLeft || adjustHit == MaskHit::TopRight)
+			r.top = moveEdge(r.top, r.bottom, dy, win->h);
+		if (adjustHit == MaskHit::Bottom || adjustHit == MaskHit::BottomLeft || adjustHit == MaskHit::BottomRight)
+			r.bottom = moveEdge(r.bottom, r.top, dy, win->h);
+		if (r.left > r.right) std::swap(r.left, r.right);
+		if (r.top > r.bottom) std::swap(r.top, r.bottom);
+'@
+Edit-Exact $capWindow '    onMouseMove.add([this](POINT pos) { this->onMove(pos); });' @'
+    onMouseMove.add([this](POINT pos) { this->onMove(pos); });
+    onMouseWheel.add([this](POINT pos, float space) {
+        if (stage == CapStage::Select && !isPress) cutMask->highlightWheel(pos, space);
+    });
+'@
+Edit-Exact $capWindow @'
+    ScreenToClient(hwnd, &pos);
+    getPixImg(pos);
+    setPixPos(pos);
+    show();
+'@ @'
+    ScreenToClient(hwnd, &pos);
+    getPixImg(pos);
+    setPixPos(pos);
+    cutMask->highlight(pos);
+    show();
+'@
+Edit-Exact $capWindow @'
+        cutMask->startMakeRect(pos);
+    }
+    else if (stage == CapStage::Adjust) {
+        // 选区外面按下不是重新框选，而是按落点所在的那一块调对应的边或角
+        isPress = true;
+        cutMask->startAdjust(pos);
+        layoutTool(toolCap.get());
+    }
+'@ @'
+        cutMask->startMakeRect(pos);
+        SetCapture(hwnd);
+    }
+    else if (stage == CapStage::Adjust && cutMask->hitTest(pos) != MaskHit::None) {
+        isPress = true;
+        cutMask->startAdjust(pos);
+        SetCapture(hwnd);
+    }
+'@
+Edit-Exact $capWindow @'
+void WinCap::onUp(POINT pos, bool isRight)
+{
+    if (stage == CapStage::Select) {
+        isPress = false;
+'@ @'
+void WinCap::onUp(POINT pos, bool isRight)
+{
+    if (stage == CapStage::Select) {
+        if (isRight || !isPress) return;
+        isPress = false;
+        ReleaseCapture();
+        cutMask->makeRect(pos);
+        lastDownTime = 0;
+'@
+Edit-Exact $capWindow @'
+    else if (stage == CapStage::Adjust) {
+        isPress = false;
+    }
+    else if (stage == CapStage::Long && capLong) {
+        capLong->onUp(pos);
+'@ @'
+    else if (stage == CapStage::Adjust && isPress && !isRight) {
+        isPress = false;
+        ReleaseCapture();
+        cutMask->adjust(pos);
+        layoutTool(toolCap.get());
+    }
+    else if (stage == CapStage::Long && capLong) {
+        capLong->onUp(pos);
+'@
 Edit-Exact (Join-Path $capture 'Win/WinCap.h') 'void startPin();' 'void startPin(bool pinned = false);'
 Edit-Exact $capWindow 'void WinCap::startPin()' 'void WinCap::startPin(bool pinned)'
 Edit-Exact $capWindow 'int(maskRect.right - maskRect.left), int(maskRect.bottom - maskRect.top));' 'int(maskRect.right - maskRect.left), int(maskRect.bottom - maskRect.top), pinned);'
