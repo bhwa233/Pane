@@ -32,7 +32,7 @@ internal sealed class DesktopCardTrigger : IDisposable
         foreach (var window in windows) Native.DestroyWindow(window);
         windows.Clear();
         if (!enabled()) return;
-        var shell = GetShellWindow();
+        var shell = Native.GetShellWindow();
         if (shell == 0) return;
         GetWindowThreadProcessId(shell, out var explorer);
         nint desktop = FindWindowExW(shell, 0, "SHELLDLL_DefView", null);
@@ -81,7 +81,6 @@ internal sealed class DesktopCardTrigger : IDisposable
 
     delegate bool EnumWindow(nint window, nint state);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindow callback, nint state);
-    [DllImport("user32.dll")] static extern nint GetShellWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(nint window, out uint process);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     static extern nint FindWindowExW(nint parent, nint after, string name, string? title);

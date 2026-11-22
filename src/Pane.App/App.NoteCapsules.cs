@@ -25,7 +25,7 @@ public sealed partial class App
     bool capsulePreviewHovered;
     DispatcherQueueTimer? capsuleHideTimer;
     (string QueueKey, double Scroll)? pendingScrollCommit;
-    readonly HashSet<string> capsuleDemotedMonitors = [];
+    string? capsuleDemotedMonitor;
 
     // ---------------- 状态读取 ----------------
 
@@ -185,7 +185,8 @@ public sealed partial class App
             DisposeQueueHost(key, host);
             return;
         }
-        host.SetTopmost(true);
+        if (capsuleDemotedMonitor == monitorId) host.PlacePanelInZOrder(1); // HWND_BOTTOM
+        else host.SetTopmost(true);
         StartCapsuleFullscreenWatch();
     }
 
@@ -242,6 +243,7 @@ public sealed partial class App
     void DisposeQueueHost(string key, GlassPanel host)
     {
         capsuleQueues.Remove(key);
+        if (host.View is NoteCapsuleQueueView view) view.OnHidden();
         (host.View as IDisposable)?.Dispose();
         host.Dispose();
     }
@@ -743,19 +745,21 @@ public sealed partial class App
         var session = noteSessions?.Find(id);
         var title = (session?.Title ?? note.Title ?? "").Trim();
         var body = session?.Body ?? note.Body;
-        capsulePreviewView ??= new NoteCapsulePreviewView();
-        capsulePreviewView.Apply(id, title, body);
+        if (capsulePreviewView == null)
+        {
+            capsulePreviewView = new NoteCapsulePreviewView();
+            capsulePreviewView.HoverChanged += PreviewHoverChanged;
+        }
         if (capsulePreviewPanel is { } host)
         {
-            (host.View as IDisposable)?.Dispose();
-            host.Dispose();
+            host.Dispose(releaseView: false);
+            capsulePreviewHovered = false;
         }
         var view = capsulePreviewView;
+        view.Apply(id, title, body);
         var host2 = new GlassPanel(Strings.Notes_DesktopCard, view, view, Glass, desktopCard: true, contentOnly: true) { EscapeHides = false };
         WatchFrames(host2);
         capsulePreviewPanel = host2;
-        // 预览卡自身的悬停参与走廊判定（notes-mvp §7）。
-        view.HoverChanged += PreviewHoverChanged;
         if (PreviewPlacement(id, host2) is not { } placement) { HideCapsulePreview(); return; }
         host2.DesktopScreenPoint = placement.Screen;
         host2.DesktopAnchor = placement.Anchor;
@@ -763,13 +767,13 @@ public sealed partial class App
         try
         {
             host2.Show(activate: false);
-            host2.SetTopmost(true);
+            if (capsuleDemotedMonitor != null && host2.DesktopPlacement?.MonitorId == capsuleDemotedMonitor)
+                host2.PlacePanelInZOrder(1);
+            else host2.SetTopmost(true);
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or System.Runtime.InteropServices.COMException)
         {
-            (host2.View as IDisposable)?.Dispose();
-            host2.Dispose();
-            capsulePreviewPanel = null;
+            HideCapsulePreview();
         }
     }
 
@@ -842,44 +846,43 @@ public sealed partial class App
     {
         capsuleFullscreenWatch?.Stop();
         capsuleFullscreenWatch = null;
-        RestoreCapsuleZOrder();
+        SetCapsuleDemotedMonitor(null);
     }
 
     void AvoidFullscreenWindows()
     {
-        if (closing) return;
-        var foreground = Native.GetForegroundWindow();
-        if (foreground == 0 || OwnWindow(foreground)) { RestoreCapsuleZOrder(); return; }
-        Native.GetWindowRect(foreground, out var bounds);
-        var monitor = GlassPanel.MonitorFromPoint(new GlassPanel.Point { X = bounds.Left + 8, Y = bounds.Top + 8 }, 2);
-        var info = new GlassPanel.MonitorInfo { Size = System.Runtime.InteropServices.Marshal.SizeOf<GlassPanel.MonitorInfo>() };
-        if (!GlassPanel.GetMonitorInfoW(monitor, ref info)) return;
-        // 全屏窗口覆盖整块显示器（不只是工作区）才算；最小化 / 普通最大化不触发。
-        if (bounds.Left > info.Monitor.Left || bounds.Top > info.Monitor.Top ||
-            bounds.Right < info.Monitor.Right || bounds.Bottom < info.Monitor.Bottom)
-        {
-            RestoreCapsuleZOrder();
-            return;
-        }
-        var monitorId = GlassPanel.MonitorAt(info.Monitor.Left + 16, info.Monitor.Top + 16)?.Id;
-        if (monitorId == null) return;
-        // 该屏的胶囊、预览和开了置顶的展开便签让到全屏窗之后；其他屏保留原状态（notes-mvp §7）。
-        if (capsuleDemotedMonitors.Add(monitorId))
-        {
-            foreach (var host in CapsulePanelsOn(monitorId))
-                Native.SetWindowPos(host.Input, -2, 0, 0, 0, 0, 0x13);
-        }
-        foreach (var id in desktopNotes.Keys) ApplyDesktopNoteTopmost(id);
+        if (!closing) SetCapsuleDemotedMonitor(ForegroundFullscreenMonitor());
     }
 
-    void RestoreCapsuleZOrder()
+    static string? ForegroundFullscreenMonitor()
     {
-        if (capsuleDemotedMonitors.Count == 0) return;
-        capsuleDemotedMonitors.Clear();
-        foreach (var host in capsuleQueues.Values)
-            if (host.Shown) host.SetTopmost(true);
-        if (capsulePreviewPanel is { } preview && preview.Shown) preview.SetTopmost(true);
-        // 展开便签按保存的置顶偏好恢复（不改写偏好本身）。
+        var foreground = Native.GetForegroundWindow();
+        if (foreground == 0 || foreground == Native.GetShellWindow() || OwnWindow(foreground)) return null;
+        var name = new System.Text.StringBuilder(256);
+        Pane.Services.SelectionNative.GetClassName(foreground, name, name.Capacity);
+        if (name.ToString() is "Progman" or "WorkerW") return null;
+
+        const int windowStyle = -16, caption = 0x00C00000, thickFrame = 0x00040000;
+        var style = GlassPanel.GetWindowLongPtrW(foreground, windowStyle);
+        // 普通最大化在任务栏自动隐藏时也可能盖满屏幕。无框全屏仍按屏幕边界判断。
+        if (GlassPanel.IsZoomed(foreground) && ((style & caption) == caption || (style & thickFrame) != 0)) return null;
+        if (!Native.GetWindowRect(foreground, out var bounds)) return null;
+        var monitor = GlassPanel.MonitorFromWindow(foreground, 2);
+        var info = new GlassPanel.MonitorInfo { Size = System.Runtime.InteropServices.Marshal.SizeOf<GlassPanel.MonitorInfo>() };
+        if (!GlassPanel.GetMonitorInfoW(monitor, ref info) || bounds.Left > info.Monitor.Left || bounds.Top > info.Monitor.Top ||
+            bounds.Right < info.Monitor.Right || bounds.Bottom < info.Monitor.Bottom) return null;
+        return GlassPanel.MonitorAt(info.Monitor.Left, info.Monitor.Top)?.Id;
+    }
+
+    void SetCapsuleDemotedMonitor(string? monitorId)
+    {
+        if (capsuleDemotedMonitor == monitorId) return;
+        var previous = capsuleDemotedMonitor;
+        capsuleDemotedMonitor = monitorId;
+        if (previous != null)
+            foreach (var host in CapsulePanelsOn(previous)) host.SetTopmost(true);
+        if (monitorId != null)
+            foreach (var host in CapsulePanelsOn(monitorId)) host.PlacePanelInZOrder(1);
         foreach (var id in desktopNotes.Keys) ApplyDesktopNoteTopmost(id);
     }
 
@@ -888,7 +891,8 @@ public sealed partial class App
         foreach (var edge in new[] { NoteEdge.Left, NoteEdge.Right, NoteEdge.Top })
             if (capsuleQueues.TryGetValue(NoteCapsuleGeometry.QueueKey(monitorId, edge), out var host))
                 yield return host;
-        if (capsulePreviewPanel is { } preview) yield return preview;
+        if (capsulePreviewPanel is { Shown: true } preview && preview.DesktopPlacement?.MonitorId == monitorId)
+            yield return preview;
     }
 
     static bool OwnWindow(nint window)
@@ -938,13 +942,9 @@ public sealed partial class App
     {
         EndCapsuleDrag();
         HideCapsulePreview();
+        foreach (var (key, host) in capsuleQueues.ToArray()) DisposeQueueHost(key, host);
         capsuleHoverTimer?.Stop();
-        foreach (var host in capsuleQueues.Values)
-        {
-            (host.View as IDisposable)?.Dispose();
-            host.Dispose();
-        }
-        capsuleQueues.Clear();
+        capsuleHideTimer?.Stop();
         StopCapsuleFullscreenWatch();
     }
 

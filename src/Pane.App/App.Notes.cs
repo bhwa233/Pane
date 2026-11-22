@@ -341,9 +341,11 @@ public sealed partial class App
 
     void ApplyDesktopNoteTopmost(Guid id)
     {
-        if (desktopNotes.TryGetValue(id, out var card))
-            card.SetTopmost((card.TemporarilyTopmost || temporaryNoteTopmost || Store.Current.DesktopNoteTopmost?.GetValueOrDefault(id) == true) &&
-                (capsuleDemotedMonitors.Count == 0 || card.Monitor is not { } screen || !capsuleDemotedMonitors.Contains(screen.Id)));
+        if (!desktopNotes.TryGetValue(id, out var card)) return;
+        bool topmost = card.TemporarilyTopmost || temporaryNoteTopmost || Store.Current.DesktopNoteTopmost?.GetValueOrDefault(id) == true;
+        bool fullscreen = topmost && capsuleDemotedMonitor != null && card.Monitor?.Id == capsuleDemotedMonitor;
+        card.SetTopmost(topmost && !fullscreen);
+        if (fullscreen) card.AppWindow.MoveInZOrderAtBottom();
     }
 
     void SaveDesktopNoteBounds(Guid id)

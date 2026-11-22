@@ -36,10 +36,22 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
     public int UnreadableCount { get; private set; }
     public event EventHandler? Changed;
 
-    internal IEnumerable<NoteDocument> DocumentsInStorage => documents!.Values.OrderByDescending(note => note.Updated);
+    internal IEnumerable<NoteDocument> DocumentsInStorage
+    {
+        get
+        {
+            NoteDocument[] snapshot;
+            lock (storageGate) snapshot = documents!.Values.ToArray();
+            return snapshot.OrderByDescending(note => note.Updated);
+        }
+    }
     public IEnumerable<NoteDocument> Documents => DocumentsInStorage.Where(note => !note.Recycled);
     public IEnumerable<NoteDocument> RecycledDocuments => DocumentsInStorage.Where(note => note.Recycled);
-    public NoteDocument? Find(Guid id) => documents?.GetValueOrDefault(id) is { Recycled: false } note ? note : null;
+    public NoteDocument? Find(Guid id)
+    {
+        lock (storageGate)
+            return documents?.GetValueOrDefault(id) is { Recycled: false } note ? note : null;
+    }
 
     public void Load()
     {
@@ -212,22 +224,29 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
 
     static bool IsNoteFile(string path) => Path.GetExtension(path).ToLowerInvariant() == ".txt";
 
-    public IReadOnlyList<DateTimeOffset> Versions(Guid id) => documents!.TryGetValue(id, out var saved)
-        ? HistoryFiles(id).Select(Path.GetFileNameWithoutExtension).Select(name =>
-            name is { Length: 52 } && long.TryParse(name.AsSpan(33), NumberStyles.None, CultureInfo.InvariantCulture, out long ticks) ? ticks : -1)
-            .Where(ticks => ticks >= 0 && ticks < saved.Updated.UtcTicks).OrderDescending().Take(VersionLimit)
-            .Select(ticks => new DateTimeOffset(ticks, TimeSpan.Zero)).ToArray()
-        : [];
+    public IReadOnlyList<DateTimeOffset> Versions(Guid id)
+    {
+        lock (storageGate)
+            return documents!.TryGetValue(id, out var saved)
+                ? HistoryFiles(id).Select(Path.GetFileNameWithoutExtension).Select(name =>
+                    name is { Length: 52 } && long.TryParse(name.AsSpan(33), NumberStyles.None, CultureInfo.InvariantCulture, out long ticks) ? ticks : -1)
+                    .Where(ticks => ticks >= 0 && ticks < saved.Updated.UtcTicks).OrderDescending().Take(VersionLimit)
+                    .Select(ticks => new DateTimeOffset(ticks, TimeSpan.Zero)).ToArray()
+                : [];
+    }
 
     public NoteDocument ReadVersion(Guid id, DateTimeOffset version)
     {
-        if (!documents!.TryGetValue(id, out var saved) || version >= saved.Updated)
-            throw new FileNotFoundException();
-        using var stream = File.OpenRead(VersionPath(id, version));
-        var note = JsonSerializer.Deserialize(stream, NoteJson.Default.NoteDocument);
-        if (note == null || note.Recycled || note.Id != id || note.Updated != version || note.Title == null || note.Body == null)
-            throw new InvalidDataException();
-        return note;
+        lock (storageGate)
+        {
+            if (!documents!.TryGetValue(id, out var saved) || version >= saved.Updated)
+                throw new FileNotFoundException();
+            using var stream = File.OpenRead(VersionPath(id, version));
+            var note = JsonSerializer.Deserialize(stream, NoteJson.Default.NoteDocument);
+            if (note == null || note.Recycled || note.Id != id || note.Updated != version || note.Title == null || note.Body == null)
+                throw new InvalidDataException();
+            return note;
+        }
     }
 
     /// <summary>版本内容指纹（galaxy note.restore 的 expectedRevision 对齐）：预览时取指纹，

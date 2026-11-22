@@ -86,6 +86,7 @@ public sealed record AiSettings
         new("explain","解释","ai","用通俗易懂的中文解释下面的内容。如果是代码，说明它做什么；如果是术语，给出含义和一个例子。\n\n{text}")]; // 不翻译：用户数据
     internal static bool ValidUrl(string? value)=>Uri.TryCreate(value,UriKind.Absolute,out var u)&&u.Scheme is "http" or "https"&&!string.IsNullOrEmpty(u.Host)&&string.IsNullOrEmpty(u.UserInfo)&&string.IsNullOrEmpty(u.Fragment);
     internal static bool ValidProxy(string? value)=>Uri.TryCreate(value,UriKind.Absolute,out var u)&&u.Scheme is "http" or "https" or "socks5" or "socks5h"&&!string.IsNullOrEmpty(u.Host)&&string.IsNullOrEmpty(u.Fragment);
+    internal static bool ValidTranslateEngine(string? value) => value is "ai" or "youdao" or "bing" or "google";
     internal AiSettings Migrate()
     {
         if(ApiEndpoint!=null)return this;
@@ -121,6 +122,7 @@ public sealed record AiSettings
     internal void Validate()
     {
         ValidateEndpoints();
+        if (!ValidTranslateEngine(TranslateEngine)) throw new ArgumentException(Strings.Settings_Ai_Invalid);
         if(TranslationModel!=null&&string.IsNullOrWhiteSpace(TranslationModel)||!Enum.IsDefined(Provider)||(ProxyUrl!=null&&!ValidProxy(ProxyUrl))||!Enum.IsDefined(Proxy)||Proxy==AiProxyMode.Custom&&ProxyUrl==null||!Enum.IsDefined(Reasoning)||TranslateTarget is not ("auto" or "zh" or "en" or "ja" or "ko" or "fr" or "de" or "es" or "ru")||Actions==null||Actions.Any(a=>a==null||string.IsNullOrWhiteSpace(a.Id)||string.IsNullOrWhiteSpace(a.Name)||string.IsNullOrWhiteSpace(a.PromptTemplate))||Actions.Select(a=>a.Id).Distinct(StringComparer.Ordinal).Count()!=Actions.Length)
             throw new ArgumentException(Strings.Settings_Ai_Invalid);
     }

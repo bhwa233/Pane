@@ -243,7 +243,7 @@ public sealed partial class AiCard : UserControl
                 var reply = await OnlineTranslator.TranslateAsync(request.Text, target, engine, cts.Token);
                 if (running != cts) return;
                 if (reply.Ok) { HeadModel.Text = OnlineTranslator.NameOf(reply.Engine); result = reply.Text; IsDone = true; }
-                else ShowProblem(Strings.Translate_Failed, Strings.Common_Retry, settings: false);
+                else ShowProblem(reply.Error ?? Strings.Translate_Failed, Strings.Common_Retry, settings: false);
                 return;
             }
             await foreach (var chunk in ai!.RunAsync(request!, cts.Token))

@@ -12,4 +12,5 @@ internal static partial class Native {
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] internal static extern bool ScreenToClient(nint window, ref Point point);
     [DllImport("user32.dll")] internal static extern bool IsWindowVisible(nint h);
+    [DllImport("user32.dll")] internal static extern nint GetShellWindow();
 }

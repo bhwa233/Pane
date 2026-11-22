@@ -31,7 +31,8 @@ public sealed partial class AiService : IAiService,IAiSetup,IDisposable
     LoginRecord login=new();
     IReadOnlyList<AiModel> models=[];
     string? modelsSource;
-    internal TimeSpan FirstTimeout {get;set;}=TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan DefaultFirstTimeout = TimeSpan.FromSeconds(30);
+    internal TimeSpan FirstTimeout {get;set;}=DefaultFirstTimeout;
     internal TimeSpan TotalTimeout {get;set;}=TimeSpan.FromSeconds(120);
     public AiService(SettingsStore store):this(store,new()){}
     internal AiService(SettingsStore store,AiEndpoints endpoints)

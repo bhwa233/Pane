@@ -1387,6 +1387,9 @@
   <data name="Translate_HistorySaveFailed" xml:space="preserve"><value>未能儲存歷史記錄</value></data>
   <data name="Translate_EmptyCount" xml:space="preserve"><value>0 字</value></data>
   <data name="Translate_Failed" xml:space="preserve"><value>翻譯失敗</value></data>
+  <data name="Translate_EngineRecovered" xml:space="preserve"><value>翻譯引擎設定無效，已恢復預設值。可在設定中重新選擇翻譯引擎。</value></data>
+  <data name="Translate_InvalidServiceResponse" xml:space="preserve"><value>翻譯服務傳回的內容無法辨識，請重試</value></data>
+  <data name="Translate_ServiceHttpError" xml:space="preserve"><value>翻譯服務傳回 HTTP {0}，請重試</value></data>
   <data name="Translate_InputPlaceholder" xml:space="preserve"><value>輸入或貼上要翻譯的文字</value></data>
   <data name="Translate_LanguageChinese" xml:space="preserve"><value>中文</value></data>
   <data name="Translate_LanguageEnglish" xml:space="preserve"><value>英文</value></data>

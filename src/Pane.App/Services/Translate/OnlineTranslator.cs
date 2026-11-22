@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using Pane.Localization;
+using Pane.Services.Ai;
 
 namespace Pane.Services.Translate;
 
@@ -46,14 +47,18 @@ internal static class OnlineTranslator
         foreach (var engine in chain)
         {
             token.ThrowIfCancellationRequested();
+            // 沿用 AI 首响应预算。取凭证与同一引擎的重试共用预算，避免慢端点拖住后续回退。
+            using var attempt = CancellationTokenSource.CreateLinkedTokenSource(token);
+            attempt.CancelAfter(AiService.DefaultFirstTimeout);
             try
             {
                 last = engine switch
                 {
-                    Youdao => await YoudaoAsync(text, target, token).ConfigureAwait(false),
-                    Bing => await BingAsync(text, target, token).ConfigureAwait(false),
-                    _ => await GoogleAsync(text, target, token).ConfigureAwait(false),
+                    Youdao => await YoudaoAsync(text, target, attempt.Token).ConfigureAwait(false),
+                    Bing => await BingAsync(text, target, attempt.Token).ConfigureAwait(false),
+                    _ => await GoogleAsync(text, target, attempt.Token).ConfigureAwait(false),
                 };
+                token.ThrowIfCancellationRequested();
                 if (last.Ok) return last;
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
@@ -62,6 +67,20 @@ internal static class OnlineTranslator
             }
         }
         return last;
+    }
+
+    static OnlineTranslation Failed(string engine, Exception? error = null) => new(false, "", null, engine, error switch
+    {
+        HttpRequestException { StatusCode: { } code } => string.Format(Strings.Translate_ServiceHttpError, (int)code),
+        HttpRequestException or IOException => Strings.Ai_EndpointNetworkFailed,
+        _ => Strings.Translate_InvalidServiceResponse,
+    });
+
+    static string? NormalizeDetectedLanguage(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return null;
+        var separator = code.IndexOf('-');
+        return (separator < 0 ? code : code[..separator]).ToLowerInvariant();
     }
 
     // ---------------- 有道：官网 AI 演示接口，自动检测源语言，免密钥 ----------------
@@ -92,11 +111,11 @@ internal static class OnlineTranslator
                 var result = translation[0].GetString() ?? "";
                 if (result.Length > 0) return new(true, result, null, Youdao, null);
             }
-            return new(false, "", null, Youdao, Strings.Translate_Failed);
+            return Failed(Youdao);
         }
         catch (Exception error) when (error is HttpRequestException or JsonException or IOException)
         {
-            return new(false, "", null, Youdao, error.Message);
+            return Failed(Youdao, error);
         }
     }
 
@@ -113,25 +132,23 @@ internal static class OnlineTranslator
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token).ConfigureAwait(false));
             // 响应是嵌套数组：[ [ [译文, 原文, ...], ... ], 检测语言, ... ]
             var segments = json.RootElement;
-            if (segments.ValueKind != JsonValueKind.Array || segments.GetArrayLength() == 0) return Fail();
+            if (segments.ValueKind != JsonValueKind.Array || segments.GetArrayLength() == 0) return Failed(Google);
             var pieces = segments[0];
-            if (pieces.ValueKind != JsonValueKind.Array) return Fail();
+            if (pieces.ValueKind != JsonValueKind.Array) return Failed(Google);
             var translated = new StringBuilder();
             foreach (var piece in pieces.EnumerateArray())
                 if (piece.ValueKind == JsonValueKind.Array && piece.GetArrayLength() > 0 &&
                     piece[0].ValueKind == JsonValueKind.String)
                     translated.Append(piece[0].GetString());
-            if (translated.Length == 0) return Fail();
-            string? detected = segments.GetArrayLength() > 2 && segments[2].ValueKind == JsonValueKind.Array &&
-                segments[2].GetArrayLength() > 0 && segments[2][0].ValueKind == JsonValueKind.String
-                ? segments[2][0].GetString() : null;
+            if (translated.Length == 0) return Failed(Google);
+            var language = segments.GetArrayLength() > 2 ? segments[2] : default;
+            if (language.ValueKind == JsonValueKind.Array && language.GetArrayLength() > 0) language = language[0];
+            var detected = language.ValueKind == JsonValueKind.String ? NormalizeDetectedLanguage(language.GetString()) : null;
             return new(true, translated.ToString(), detected, Google, null);
-
-            OnlineTranslation Fail() => new(false, "", null, Google, Strings.Translate_Failed);
         }
         catch (Exception error) when (error is HttpRequestException or JsonException or IOException)
         {
-            return new(false, "", null, Google, error.Message);
+            return Failed(Google, error);
         }
     }
 
@@ -153,12 +170,17 @@ internal static class OnlineTranslator
             lock (bingGate) credentials = bingCredentials;
             if (credentials == null)
             {
-                credentials = await FetchBingCredentialsAsync(site, token).ConfigureAwait(false);
+                try { credentials = await FetchBingCredentialsAsync(site, token).ConfigureAwait(false); }
+                catch (Exception error) when (error is HttpRequestException or IOException)
+                {
+                    last = Failed(Bing, error);
+                    continue;
+                }
                 if (credentials != null) lock (bingGate) bingCredentials = credentials;
             }
             if (credentials == null)
             {
-                last = last with { Error = Strings.Translate_Failed };
+                last = Failed(Bing);
                 continue;
             }
             var result = await BingOnceAsync(credentials, text, target, token).ConfigureAwait(false);
@@ -172,27 +194,20 @@ internal static class OnlineTranslator
 
     static async Task<BingCredentials?> FetchBingCredentialsAsync(string site, CancellationToken token)
     {
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, site + "/translator");
-            request.Headers.Accept.ParseAdd("application/json,text/plain,*/*;q=0.8");
-            request.Headers.AcceptLanguage.ParseAdd("zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
-            using var response = await client.SendAsync(request, token).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            var page = await response.Content.ReadAsStringAsync(token).ConfigureAwait(false);
-            // 凭证与站点绑定：跟随重定向后的最终地址。
-            var host = response.RequestMessage?.RequestUri is { } final ? final.Scheme + "://" + final.Host : site;
-            var key = ReadAbuseHelper(page);
-            if (key is not { } pair) return null;
-            var ig = FindQuotedAfter(page, "IG", ':');
-            var iid = FindQuotedAfter(page, "data-iid", '=');
-            if (ig == null || iid == null) return null;
-            return new BingCredentials(host, pair.Key, pair.Token, ig, iid);
-        }
-        catch (Exception error) when (error is HttpRequestException or IOException)
-        {
-            return null;
-        }
+        using var request = new HttpRequestMessage(HttpMethod.Get, site + "/translator");
+        request.Headers.Accept.ParseAdd("application/json,text/plain,*/*;q=0.8");
+        request.Headers.AcceptLanguage.ParseAdd("zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+        using var response = await client.SendAsync(request, token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var page = await response.Content.ReadAsStringAsync(token).ConfigureAwait(false);
+        // 凭证与站点绑定：跟随重定向后的最终地址。
+        var host = response.RequestMessage?.RequestUri is { } final ? final.Scheme + "://" + final.Host : site;
+        var key = ReadAbuseHelper(page);
+        if (key is not { } pair) return null;
+        var ig = FindQuotedAfter(page, "IG", ':');
+        var iid = FindQuotedAfter(page, "data-iid", '=');
+        if (ig == null || iid == null) return null;
+        return new BingCredentials(host, pair.Key, pair.Token, ig, iid);
     }
 
     static async Task<OnlineTranslation> BingOnceAsync(BingCredentials credentials, string text, string target, CancellationToken token)
@@ -213,18 +228,18 @@ internal static class OnlineTranslator
             response.EnsureSuccessStatusCode();
             var bodyText = await response.Content.ReadAsStringAsync(token).ConfigureAwait(false);
             // 凭证与站点不匹配时 Bing 回 200 + 空体。
-            if (bodyText.Length == 0) return new(false, "", null, Bing, Strings.Translate_Failed);
+            if (bodyText.Length == 0) return Failed(Bing);
             using var json = JsonDocument.Parse(bodyText);
             var root = json.RootElement;
             if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0 && root[0].ValueKind == JsonValueKind.Object)
             {
                 var head = root[0];
                 if (head.TryGetProperty("statusCode", out var code) && code.ValueKind == JsonValueKind.Number)
-                    return new(false, "", null, Bing, Strings.Translate_Failed);
+                    return Failed(Bing);
                 string? detected = head.TryGetProperty("detectedLanguage", out var detectedNode) &&
                     detectedNode.ValueKind == JsonValueKind.Object &&
                     detectedNode.TryGetProperty("language", out var language) && language.ValueKind == JsonValueKind.String
-                    ? language.GetString() : null;
+                    ? NormalizeDetectedLanguage(language.GetString()) : null;
                 if (head.TryGetProperty("translations", out var translations) && translations.ValueKind == JsonValueKind.Array &&
                     translations.GetArrayLength() > 0 && translations[0].ValueKind == JsonValueKind.Object &&
                     translations[0].TryGetProperty("text", out var translated) && translated.ValueKind == JsonValueKind.String)
@@ -233,11 +248,11 @@ internal static class OnlineTranslator
                     if (result.Length > 0) return new(true, result, detected, Bing, null);
                 }
             }
-            return new(false, "", null, Bing, Strings.Translate_Failed);
+            return Failed(Bing);
         }
         catch (Exception error) when (error is HttpRequestException or JsonException or IOException)
         {
-            return new(false, "", null, Bing, error.Message);
+            return Failed(Bing, error);
         }
     }
 

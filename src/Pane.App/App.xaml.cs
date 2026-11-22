@@ -78,6 +78,7 @@ public sealed partial class App : Application
             await StartWinV();
             if(!demo)SettingsView.DataStorage=new Pane.Services.Clipboard.DataStorage(Store,()=>clipboardService,()=>{launcherSearch?.RebuildStorageCache();(FileIcons as Pane.Services.Icons.FileIcons)?.RebuildStorageCache();},text=>queue.TryEnqueue(()=>{if(!closing)shell?.NotifyOnce(text);}),ClearWebStorageCache,()=>launcherSearch?.WebSearchHistory.Completion??Task.CompletedTask);
             await StartModules();
+            if(Store.TranslateEngineRecovered)shell?.NotifyOnce(Strings.Translate_EngineRecovered);
             StartCardDesktopTrigger();
             hotkeysReadyMs=(DateTime.UtcNow-System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalMilliseconds;
             listener=SingleInstance.Listen(command=>queue.TryEnqueue(()=>{Command(command);Ack("forwarded");}),cancellation.Token);

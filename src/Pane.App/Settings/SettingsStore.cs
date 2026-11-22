@@ -1,5 +1,6 @@
 using Pane.Localization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 namespace Pane.Settings;
 [JsonSerializable(typeof(PaneSettings))]
@@ -19,6 +20,7 @@ public sealed class SettingsStore
     }
     public string DirectoryPath { get; }
     public PaneSettings Current { get; private set; }
+    internal bool TranslateEngineRecovered { get; private set; }
     // 顺序固定为存储锁 → 设置写锁；历史保存和搬移共用此锁。
     internal object StorageSync { get; }=new();
     internal SemaphoreSlim ScreenshotPinSync { get; }=new(1);
@@ -34,7 +36,18 @@ public sealed class SettingsStore
         if(!File.Exists(path)) { Save(Current with{Update=Current.Update with{SeenVersion=CurrentVersion()}}); return; }
         try {
             using var document=JsonDocument.Parse(File.ReadAllText(path));
-            var value=document.RootElement.Deserialize(SettingsJson.Default.PaneSettings)??throw new JsonException();
+            var root=document.RootElement;
+            bool recoverEngine=root.TryGetProperty("Ai",out var ai)&&ai.ValueKind==JsonValueKind.Object&&
+                ai.TryGetProperty(nameof(AiSettings.TranslateEngine),out var engine)&&
+                (engine.ValueKind!=JsonValueKind.String||!AiSettings.ValidTranslateEngine(engine.GetString()));
+            PaneSettings? loaded;
+            // 只修复已有设置中的引擎字段，避免新校验让整份旧配置被重置。
+            if(recoverEngine){
+                var repaired=JsonNode.Parse(root.GetRawText())!;
+                repaired["Ai"]![nameof(AiSettings.TranslateEngine)]=defaults.Ai.TranslateEngine;
+                loaded=repaired.Deserialize(SettingsJson.Default.PaneSettings);
+            }else loaded=root.Deserialize(SettingsJson.Default.PaneSettings);
+            var value=loaded??throw new JsonException();
             if(!document.RootElement.TryGetProperty("Update",out var update)||!update.TryGetProperty("SeenVersion",out _))
                 value=value with{Update=value.Update with{SeenVersion="0"}};
             // 源生成反序列化会为缺失的 init 布尔属性传入 false，显式保留旧文件默认开启。
@@ -42,7 +55,8 @@ public sealed class SettingsStore
                 value=value with{Launcher=value.Launcher with{RememberOpenedPrograms=true}};
             bool migrate=value.Ai.ApiEndpoint==null;
             value=Normalize(value);Validate(value);Current=value;
-            if(migrate)SaveCore(value);
+            if(migrate||recoverEngine)SaveCore(value);
+            TranslateEngineRecovered=recoverEngine;
         }
         catch(Exception e) when(e is JsonException or ArgumentException or NotSupportedException) {
             var backup=path+".bad-"+Guid.NewGuid().ToString("N"); File.Move(path,backup); Current=defaults; CorruptFile?.Invoke(this,backup);

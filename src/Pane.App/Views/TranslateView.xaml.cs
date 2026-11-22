@@ -231,7 +231,7 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
             if (cts != running) return;
             if (!result.Ok)
             {
-                ShowMessage(Strings.Translate_Failed, MessageAction.Retry);
+                ShowMessage(result.Error ?? Strings.Translate_Failed, MessageAction.Retry);
                 return;
             }
             if (result.DetectedSource is { Length: > 0 } code && code != target)

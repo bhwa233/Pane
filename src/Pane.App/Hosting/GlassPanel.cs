@@ -218,7 +218,7 @@ public sealed partial class GlassPanel : IDisposable
         Hide();
     }
     [DllImport("user32.dll")] static extern nint GetAncestor(nint window,uint flags);
-    [DllImport("user32.dll")] static extern nint GetWindowLongPtrW(nint window,int index);
+    [DllImport("user32.dll")] internal static extern nint GetWindowLongPtrW(nint window,int index);
     [DllImport("user32.dll")] static extern nint SetWindowLongPtrW(nint window,int index,nint value);
     // 保险：面板开着却不在前台时（激活仍被拒绝），在面板外面按下鼠标左 / 右 / 中键也照常收起；只认新按下的那一下
     int outsideButtons;
@@ -498,9 +498,9 @@ public sealed partial class GlassPanel : IDisposable
         scene.Root.Offset=new Vector3(rectNow.Left-ul,rectNow.Top-ut,0);
         Native.SetWindowPos(Visual,0,ul-m,ut-m,ur-ul+2*m,ub-ut+(int)(112*dpi),0x214);   // 同 MoveWindowsTogether：左右上各留 48，下面多留给阴影
     }
-    [DllImport("user32.dll")] static extern bool IsZoomed(nint window);
+    [DllImport("user32.dll")] internal static extern bool IsZoomed(nint window);
     [DllImport("user32.dll")] static extern bool IsIconic(nint window);
-    [DllImport("user32.dll")] static extern nint MonitorFromWindow(nint window,uint flags);
+    [DllImport("user32.dll")] internal static extern nint MonitorFromWindow(nint window,uint flags);
     public void Dispose()=>Dispose(releaseView:true);
     internal void Dispose(bool releaseView){if(disposing)return;disposing=true;transient.Remove(this);if(releaseView)(view as IDisposable)?.Dispose();Native.RemoveWindowSubclass(childWindow,childProc,1);parameters.Changed-=ParametersChanged;view.SizeRequested-=ViewSize;view.CloseRequested-=ViewClose;Native.ShowWindow(Input,0);Native.ShowWindow(Visual,0);root.RemoveHandler(UIElement.KeyDownEvent,keyHandler);root.PointerPressed-=DragPressed;root.PointerMoved-=DragMoved;root.PointerReleased-=DragReleased;root.PointerCaptureLost-=DragCaptureLost;root.Children.Clear();island.Content=null;island.SystemBackdrop=null;island.Dispose();target.Root=null;target.Dispose();scene.Dispose();compositor.Dispose();Native.DestroyWindow(Input);Native.DestroyWindow(Visual);Native.UnregisterClassW(className,Native.GetModuleHandleW(null));}
     [StructLayout(LayoutKind.Sequential)] internal struct Point{internal int X,Y;}

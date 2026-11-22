@@ -63,7 +63,11 @@ static class NoteHistoryTests
         Check(store.ReadVersion(created.Id, replaced).Body == saved.Body, "restore remains reversible");
 
         // 回收 / 恢复 / 永久删除。
+        // 队列后台写入时，UI 已取得的列表必须能独立于活字典枚举。
+        var documentsBeforeWrite = store.Documents;
         var other = store.Create("Other note", "Its own body", "Personal");
+        Check(!documentsBeforeWrite.Any(note => note.Id == other.Id) && store.Documents.Any(note => note.Id == other.Id),
+            "a captured note listing stays stable across a later write");
         Check(store.Recycle(other.Id) && store.Find(other.Id) == null && store.RecycledDocuments.Single().Id == other.Id,
             "recycling moves the note out of the active list but retains its content");
         Check(store.RestoreRecycled(other.Id) && store.Find(other.Id)?.Title == "Other note" && !store.RecycledDocuments.Any(),

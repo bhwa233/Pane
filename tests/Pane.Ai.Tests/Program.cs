@@ -2,6 +2,7 @@ using Pane.Contracts;
 using Pane.Settings;
 using Pane.Services.Ai;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 internal static partial class Program
 {
@@ -42,6 +43,15 @@ internal static partial class Program
         var old=JsonSerializer.SerializeToElement(Defaults(),SettingsJson.Default.PaneSettings);
         File.WriteAllText(Path.Combine(directory,"settings.json"),"{"+string.Join(",",old.EnumerateObject().Where(p=>p.Name!="Ai").Select(p=>("\""+p.Name+"\"")+":"+p.Value.GetRawText()))+"}");
         store.Load();Check(store.Current.Ai.Actions.Length==4&&!Directory.GetFiles(directory,"*.bad-*").Any(),"old settings");
+        await Error<ArgumentException>(()=>{store.Save(store.Current with { Ai = settings with { TranslateEngine = "unknown" } });return Task.CompletedTask;},"reject an unsupported translation engine on save");
+        store.Save(store.Current with { Ai = store.Current.Ai with { TranslateTarget = "ja" } });
+        var settingsPath = Path.Combine(directory, "settings.json");
+        var malformedEngine = JsonNode.Parse(File.ReadAllText(settingsPath))!;
+        malformedEngine["Ai"]!["TranslateEngine"] = 42;
+        File.WriteAllText(settingsPath, malformedEngine.ToJsonString());
+        store.Load();
+        Check(store.TranslateEngineRecovered && store.Current.Ai.TranslateEngine == "ai" && store.Current.Ai.TranslateTarget == "ja" &&
+            !Directory.GetFiles(directory,"*.bad-*").Any(), "repair an invalid on-disk translation engine without resetting other settings");
         foreach(var bad in new[]{settings with{Endpoints=[FixtureEndpoint("file:///x")]},settings with{ProxyUrl="invalid"},settings with{Actions=[new("x","x","x","x"),new("x","y","y","y")]},settings with{Actions=[new("","x","x","x")]},settings with{Actions=[new("x","","x","x")]},settings with{Actions=[new("x","x","x","")]}})await Error<ArgumentException>(()=>{store.Save(store.Current with{Ai=bad});return Task.CompletedTask;},"validation");
         await using var server=new FakeServer();
         using var ai=new AiService(store,new(){Api=server.Url,Issuer=server.Url,OpenBrowser=server.Browser});

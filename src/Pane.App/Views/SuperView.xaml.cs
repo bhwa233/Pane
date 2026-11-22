@@ -250,7 +250,8 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
             {
                 var reply = await OnlineTranslator.TranslateAsync(text, target, engine, cts.Token);
                 if (cts.IsCancellationRequested) return;
-                if (!reply.Ok) throw new AiNetworkException(Strings.Translate_Failed);
+                if (!reply.Ok) throw new AiNetworkException(reply.Error ?? Strings.Translate_Failed);
+                if (reply.DetectedSource is { } detected) direction = $"{Languages.NameOf(detected)} → {Languages.NameOf(target)}";
                 AutoDirection.Text = $"{direction} · {OnlineTranslator.NameOf(reply.Engine)}";
                 AutoOut.Text = autoResult = reply.Text;
                 AutoOut.Opacity = 1;

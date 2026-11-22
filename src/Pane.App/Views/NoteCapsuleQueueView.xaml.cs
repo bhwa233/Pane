@@ -27,8 +27,9 @@ internal sealed record CapsuleDragResult(Guid Id, bool Master, double LocalX, do
 /// 视图只管交互与摆放；几何、持久化和窗口层级都在协调层。</summary>
 public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
 {
-    readonly Dictionary<Guid, (Border Strip, TextBlock Title)> strips = [];
+    readonly Dictionary<Guid, (Border Strip, TextBlock Title, StackPanel Badges)> strips = [];
     CapsuleQueueState? state;
+    Guid? hoveredMember;
     Border? pressedStrip;
     uint pressedPointer;
     bool dragging;
@@ -59,13 +60,37 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
     event EventHandler? IPanelView.CloseRequested { add { } remove { } }
     public void OnShowing(PanelShowContext context) { }
     public void OnShown() { }
-    public void OnHidden() { }
+    public void OnHidden()
+    {
+        CancelActiveDrag();
+        ClearHover();
+    }
 
-    /// <summary>按协调层给的快照重建队列；滚动与收放状态包含在内。</summary>
+    /// <summary>应用队列快照。布局未变时保留现有控件和指针捕获。</summary>
     internal void Apply(CapsuleQueueState next)
     {
+        var previous = state;
         state = next;
+        if (previous != null && previous.QueueKey == next.QueueKey && previous.Edge == next.Edge &&
+            previous.Collapsed == next.Collapsed && previous.Start == next.Start && previous.Scroll == next.Scroll &&
+            previous.Members.Select(member => member.Id).SequenceEqual(next.Members.Select(member => member.Id)))
+        {
+            if (!next.Collapsed)
+                for (int i = 0; i < next.Members.Count; i++)
+                {
+                    var member = next.Members[i];
+                    if (member == previous.Members[i]) continue;
+                    UpdateMemberTitle(member.Id, member.Title);
+                    var (strip, _, badges) = strips[member.Id];
+                    strip.BorderThickness = new Thickness(member.Highlighted ? 2.5 : 2);
+                    var old = previous.Members[i];
+                    if ((member.Topmost, member.DesktopPinned, member.Reminder) != (old.Topmost, old.DesktopPinned, old.Reminder))
+                        ApplyMemberBadges(badges, member);
+                }
+            return;
+        }
         CancelActiveDrag();
+        ClearHover();
         Surface.Children.Clear();
         strips.Clear();
         var master = BuildMaster(next);
@@ -221,15 +246,7 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var badges = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
-        foreach (var (enabled, glyph, label) in new[] { (member.Topmost, "pin", Strings.Notes_Topmost),
-            (member.DesktopPinned, "monitor", Strings.Notes_PinnedDesktop), (member.Reminder, "timer", Strings.Notes_Reminder) })
-        {
-            if (!enabled) continue;
-            var badge = new PaneIcon { Glyph = glyph, Width = 12, Height = 12, IsFilled = glyph == "pin", Foreground = AccentProto.Foreground };
-            AutomationProperties.SetName(badge, label);
-            ToolTipService.SetToolTip(badge, label);
-            badges.Children.Add(badge);
-        }
+        ApplyMemberBadges(badges, member);
         content.Children.Add(badges);
         var title = new TextBlock
         {
@@ -258,12 +275,26 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
         pill.PointerCaptureLost += (_, _) => press.Opacity = 0;
         var name = member.Title.Length == 0 ? Strings.Notes_Untitled : member.Title;
         title.Text = name;
-        strips[member.Id] = (pill, title);
+        strips[member.Id] = (pill, title, badges);
         AutomationProperties.SetName(pill, name);
         ToolTipService.SetToolTip(pill, name);
         pill.RightTapped += (_, args) => { ShowMemberMenu(pill, member.Id, args); args.Handled = true; };
         HookStrip(pill, member.Id, master: false);
         return pill;
+    }
+
+    void ApplyMemberBadges(StackPanel badges, CapsuleMember member)
+    {
+        badges.Children.Clear();
+        foreach (var (enabled, glyph, label) in new[] { (member.Topmost, "pin", Strings.Notes_Topmost),
+            (member.DesktopPinned, "monitor", Strings.Notes_PinnedDesktop), (member.Reminder, "timer", Strings.Notes_Reminder) })
+        {
+            if (!enabled) continue;
+            var badge = new PaneIcon { Glyph = glyph, Width = 12, Height = 12, IsFilled = glyph == "pin", Foreground = AccentProto.Foreground };
+            AutomationProperties.SetName(badge, label);
+            ToolTipService.SetToolTip(badge, label);
+            badges.Children.Add(badge);
+        }
     }
 
     void ShowMemberMenu(Border strip, Guid id, RightTappedRoutedEventArgs args)
@@ -308,6 +339,7 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
             var dx = point.Position.X - pressX;
             var dy = point.Position.Y - pressY;
             if (!dragging && dx * dx + dy * dy <= 25) return;
+            if (!dragging) ClearHover();
             dragging = true;
             if (Native.GetCursorPos(out var screen)) DragMoved?.Invoke(Position(point.Position, screen));
             args.Handled = true;
@@ -318,6 +350,7 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
             var point = args.GetCurrentPoint(Surface).Position;
             var wasDragging = dragging;
             pressedStrip = null;
+            pressedPointer = 0;
             dragging = false;
             pill.ReleasePointerCapture(args.Pointer);
             args.Handled = true;
@@ -337,10 +370,22 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
         {
             pill.PointerEntered += (_, _) =>
             {
-                if (pressedStrip == null) HoverChanged?.Invoke(id, IndexOf(id));
+                if (pressedStrip != null || !strips.TryGetValue(id, out var member) || !ReferenceEquals(member.Strip, pill)) return;
+                hoveredMember = id;
+                HoverChanged?.Invoke(id, IndexOf(id));
             };
-            pill.PointerExited += (_, _) => HoverChanged?.Invoke(id, null);
+            pill.PointerExited += (_, _) =>
+            {
+                if (hoveredMember == id && strips.TryGetValue(id, out var member) && ReferenceEquals(member.Strip, pill)) ClearHover();
+            };
         }
+    }
+
+    void ClearHover()
+    {
+        if (hoveredMember is not { } id) return;
+        hoveredMember = null;
+        HoverChanged?.Invoke(id, null);
     }
 
     int? IndexOf(Guid id)
@@ -372,6 +417,7 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
         var strip = pressedStrip;
         if (strip == null) return;
         pressedStrip = null;
+        pressedPointer = 0;
         dragging = false;
         strip.ReleasePointerCaptures();
         DragCancelled?.Invoke();
