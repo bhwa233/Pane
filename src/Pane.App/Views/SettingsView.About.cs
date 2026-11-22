@@ -32,7 +32,8 @@ public sealed partial class SettingsView
             AppendChangelog(changelog, version);
             if (changelog.Count > 0) Group(null, changelog.ToArray());
         }
-        Group(Strings.Settings_About_Information,
+        List<FrameworkElement> information =
+        [
             Row(Strings.Settings_About_License, Strings.Settings_About_LicenseDescription, Button(Strings.Common_Open, "external", () => OpenUrl(SourceUrl))),
             Row(Strings.Settings_About_DataLocation, app.Store.DirectoryPath, Button(Strings.Common_Open, "external", () =>
             {
@@ -40,7 +41,9 @@ public sealed partial class SettingsView
                 start.ArgumentList.Add(app.Store.DirectoryPath);
                 System.Diagnostics.Process.Start(start)?.Dispose();
             })),
-            UninstallRow());
+        ];
+        if (RuntimeMode.PortableExecutable == null) information.Add(UninstallRow());
+        Group(Strings.Settings_About_Information, information.ToArray());
         var notices = Path.Combine(AppContext.BaseDirectory, "THIRD_PARTY_NOTICES.md");
         var noticeButton = Button(Strings.Settings_About_ViewAll, "external", () => OpenUrl(notices));
         Enable(noticeButton, File.Exists(notices));
@@ -269,7 +272,8 @@ public sealed partial class SettingsView
                     latest.SizeBytes > 0 ? string.Format(Strings.Update_DownloadProgress, (object?)(u.DownloadProgress), (object?)(Size(latest.SizeBytes))) : Origin(), Chip($"{u.DownloadProgress:P0}")));
                 break;
             case UpdateState.Ready when latest is not null:
-                rows.Add(Row(string.Format(Strings.Update_ReadyVersion, (object?)(latest.Version)), Strings.Update_InstallDescription,
+                rows.Add(Row(string.Format(Strings.Update_ReadyVersion, (object?)(latest.Version)),
+                    RuntimeMode.PortableExecutable == null ? Strings.Update_InstallDescription : Strings.Update_PortableDescription,
                     Button(Strings.Update_RestartAndUpdate, "refresh", () => u.InstallAndRestart())));
                 break;
             case UpdateState.Failed:
@@ -297,7 +301,7 @@ public sealed partial class SettingsView
             tail.Children.Add(link);
             rows.Add(tail);
         }
-        rows.AddRange(SourceRows(u));
+        if (RuntimeMode.PortableExecutable == null) rows.AddRange(SourceRows(u));
         var update = app.Store.Current.Update;
         rows.Add(Row(Strings.Update_Automatic, Strings.Update_AutomaticDescription,
             Switch(update.AutoUpdate, v => { app.Store.Save(app.Store.Current with { Update = app.Store.Current.Update with { AutoUpdate = v } }); Render(); })));

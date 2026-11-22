@@ -80,6 +80,15 @@ internal static class Autostart099Tests
         registry.ThrowRead=true;Logger("read-failed").Manual(true,true,exe,registry);
         Check(!File.Exists(Log("read-failed")),"读取诊断失败不影响启动");
         Check(registry.Writes==0,"所有新增测试不写注册表");
+        var portableRegistry = new FakeRegistry();
+        var portableStore = new SettingsStore(Folder("portable"), defaults);
+        const string launcher = @"C:\Pane portable\pane.exe", moved = @"C:\Apps\Renamed.exe";
+        new AutostartService(true, launcher, portableStore, portableRegistry, portable: true).Set(true);
+        Check(AutostartService.PointsTo(portableRegistry.Value, launcher), "免安装版自启指向外层 EXE");
+        var movedService = new AutostartService(true, moved, portableStore, portableRegistry, portable: true);
+        movedService.Align();
+        Check(movedService.State == AutostartState.On && AutostartService.PointsTo(portableRegistry.Value, moved),
+            "手动启动移动后的免安装 EXE 会接管原启动项");
         var original=AutostartDiagnostics.OpenLog;
         try{
             AutostartDiagnostics.OpenLog=()=>Logger("lifecycle");

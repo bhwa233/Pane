@@ -1439,6 +1439,7 @@
   <data name="Update_DownloadTimeout" xml:space="preserve"><value>下载超时，请稍后重试</value></data>
   <data name="Update_Failed" xml:space="preserve"><value>更新失败</value></data>
   <data name="Update_InstallDescription" xml:space="preserve"><value>重启后更新：安装窗口将自动完成安装并打开新版本，设置和数据均会保留</value></data>
+  <data name="Update_PortableDescription" xml:space="preserve"><value>重启时替换原位置的程序文件，保留设置和数据</value></data>
   <data name="Update_InstallLaunchFailed" xml:space="preserve"><value>安装程序启动失败，请稍后重试</value></data>
   <data name="Update_InvalidDownload" xml:space="preserve"><value>下载的文件不完整，已删除，请稍后重试</value></data>
   <data name="Update_InvalidResponse" xml:space="preserve"><value>无法解析 GitHub 返回的更新信息，请稍后重试</value></data>

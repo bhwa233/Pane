@@ -2,6 +2,15 @@
 
 internal sealed record RuntimeMode(bool IsProduction,string DataDirectory)
 {
+    internal static string? PortableExecutable { get; private set; }
+    internal static string LauncherExecutable => PortableExecutable ?? Environment.ProcessPath!;
+    internal static void InitializePortableExecutable()
+    {
+        const string variable = "PANE_PORTABLE_EXE";
+        PortableExecutable = Environment.GetEnvironmentVariable(variable);
+        Environment.SetEnvironmentVariable(variable, null);
+    }
+
     public static RuntimeMode Current {get;}=Resolve(AppContext.BaseDirectory,Environment.GetEnvironmentVariable("PANE_DATA_DIR"),Settings.SettingsStore.ProductionDirectory);
     public static RuntimeMode Resolve(string executableDirectory,string? configured,string productionDirectory)
     {

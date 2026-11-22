@@ -27,12 +27,11 @@ jobs:
           }
           ./src/Pane.Capture/build.ps1 -OutputRoot "$env:RUNNER_TEMP/capture" -StageDirectory "$env:RUNNER_TEMP/pane/aot/NativeCapture"
           Copy-Item LICENSE,LICENSE-EXCEPTION.md,THIRD_PARTY_NOTICES.md,src/Pane.App/ThirdParty -Destination "$env:RUNNER_TEMP/pane/aot" -Recurse
+          ./scripts/package-portable.ps1 -AppDirectory "$env:RUNNER_TEMP/pane/aot" -OutputDirectory "$env:RUNNER_TEMP/dist"
       - uses: actions/upload-artifact@v4
         with:
           name: Pane-Windows-x64-${{ github.run_number }}
-          path: |
-            ${{ runner.temp }}/pane/aot/
-            !${{ runner.temp }}/pane/aot/**/*.pdb
+          path: ${{ runner.temp }}/dist/
           if-no-files-found: error
   publish-release:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -45,17 +44,15 @@ jobs:
         with:
           name: Pane-Windows-x64-${{ github.run_number }}
           path: dist
-      - name: Publish the Windows ZIP
+      - name: Publish the Windows executable
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           version="${RELEASE_TAG#v}"
-          archive="Pane-Windows-x64-$version.zip"
-          (cd dist && zip -qr "../$archive" .)
-          sha256sum "$archive" > SHA256SUMS.txt
-          printf '下载 `%s`，解压整个目录后运行 `Pane.App.exe`。\n\n' "$archive" > "$RUNNER_TEMP/release-notes.md"
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          printf '下载 `pane.exe` 后双击启动。支持 Windows x64，首次运行会自动解包。\n\n' > "$RUNNER_TEMP/release-notes.md"
           cat dist/release-notes.md >> "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" --verify-tag --title "Pane $version" \
-            --notes-file "$RUNNER_TEMP/release-notes.md" "$archive" SHA256SUMS.txt
+            --notes-file "$RUNNER_TEMP/release-notes.md" dist/pane.exe dist/SHA256SUMS.txt

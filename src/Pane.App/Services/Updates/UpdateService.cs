@@ -13,17 +13,21 @@ namespace Pane.Services.Updates;
 internal sealed partial class UpdateService : IUpdateService, IDisposable
 {
     internal static readonly Uri ProductionSource = new("https://api.github.com/repos/LBEILC/Pane/releases/latest");
+    static readonly Uri PortableSource = new("https://api.github.com/repos/bhwa233/Pane/releases/latest");
+    const string PortableAsset = "pane.exe";
     readonly HttpClient http;
     readonly Uri source;
     readonly string directory;
     readonly Func<bool> automatic;
-    readonly Action<string> install;
+    readonly Action<string>? install;
+    readonly Action<string, string>? portableInstall;
     readonly SemaphoreSlim gate = new(1);
     readonly CancellationTokenSource lifetime = new();
     readonly Timer timer;
     DateTimeOffset retryAfter;
     Uri? asset, sums;
     string? readyPath;
+    string? readyHash;
     bool disposed;
     public string CurrentVersion { get; }
     public UpdateState State { get; private set; }
@@ -36,17 +40,20 @@ internal sealed partial class UpdateService : IUpdateService, IDisposable
     public event EventHandler? Changed;
 
     // 测试源只由测试宿主显式注入；产品接线不读取任何更新源环境变量。
-    public UpdateService(string version, string data, Func<bool> automatic, Action<string> install, Uri? testSource = null,
-        Func<UpdateSource>? selectedSource = null, Uri? testMirrorSource = null)
+    public UpdateService(string version, string data, Func<bool> automatic, Action<string>? install, Uri? testSource = null,
+        Func<UpdateSource>? selectedSource = null, Uri? testMirrorSource = null, Action<string, string>? portableInstall = null)
     {
-        CurrentVersion = version; directory = Path.Combine(data, "updates");
-        this.automatic = automatic; this.install = install; source = testSource ?? ProductionSource;
+        CurrentVersion = version;
+        this.portableInstall = portableInstall;
+        directory = portableInstall == null ? Path.Combine(data, "updates") : Path.Combine(data, "updates", "portable");
+        this.automatic = automatic; this.install = install;
+        source = testSource ?? (portableInstall == null ? ProductionSource : PortableSource);
         if (testSource != null && (testSource.Scheme != "http" || testSource.Host != "127.0.0.1"))
             throw new ArgumentException("测试源必须是本机 HTTP 服务"); // 不翻译：测试异常
         http = new(new HttpClientHandler { UseCookies = false, UseDefaultCredentials = false, AllowAutoRedirect = false });
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Pane/" + version);
         http.Timeout = TimeSpan.FromMinutes(10);
-        InitializeMirror(data, selectedSource, testMirrorSource);
+        if (portableInstall == null) InitializeMirror(data, selectedSource, testMirrorSource);
         timer = new Timer(_ => _ = TickAsync(), null, TimeSpan.FromMinutes(1), TimeSpan.FromHours(24));
         RestoreReady();
     }
@@ -59,7 +66,7 @@ internal sealed partial class UpdateService : IUpdateService, IDisposable
             if (selection == UpdateSource.GitHub && DateTimeOffset.UtcNow < retryAfter) return;
             activeStep = UpdateStep.Check;
             Set(UpdateState.Checking); LastChecked = DateTimeOffset.UtcNow;
-            Latest = null; readyPath = null; asset = sums = null; mirrorTicket = null; DownloadFrom = null;
+            Latest = null; readyPath = readyHash = null; asset = sums = null; mirrorTicket = null; DownloadFrom = null;
             bool allowAutomatic = true;
             if (selection == UpdateSource.MirrorChyan && await CheckMirror(token).ConfigureAwait(false))
                 allowAutomatic = CdkStatus is not (MirrorCdkStatus.Invalid or MirrorCdkStatus.Mismatched or MirrorCdkStatus.Blocked);
@@ -82,7 +89,7 @@ internal sealed partial class UpdateService : IUpdateService, IDisposable
             if (root.GetProperty("draft").GetBoolean() || root.GetProperty("prerelease").GetBoolean() ||
                 !Regex.IsMatch(version, @"^\d+\.\d+\.\d+(\.\d+)?$") || SetupFiles.CompareVersions(version, CurrentVersion) <= 0)
             { Set(UpdateState.UpToDate); return; }
-            string name = $"Pane-Setup-{version}.exe";
+            string name = AssetName(version);
             var files = root.GetProperty("assets").EnumerateArray().ToArray();
             var package = files.Single(f => f.GetProperty("name").GetString() == name);
             asset = ValidateUrl(package.GetProperty("browser_download_url").GetString()!);
@@ -110,8 +117,9 @@ internal sealed partial class UpdateService : IUpdateService, IDisposable
         if (DateTimeOffset.UtcNow < retryAfter) { Set(UpdateState.Failed, Strings.Update_RateLimited); return; }
         if (asset == null || sums == null) await LoadGitHubAssets(token).ConfigureAwait(false);
         Directory.CreateDirectory(directory);
-        string name = $"Pane-Setup-{Latest!.Version}.exe", target = Path.Combine(directory, name), partial = target + ".partial";
-        readyPath = null; DownloadProgress = 0; Set(UpdateState.Downloading);
+        string version = Latest!.Version;
+        string name = AssetName(version), target = Path.Combine(directory, CacheName(version)), partial = target + ".partial";
+        readyPath = readyHash = null; DownloadProgress = 0; Set(UpdateState.Downloading);
         try
         {
             using var checksum = await GetAsync(sums!, token).ConfigureAwait(false);
@@ -147,15 +155,19 @@ internal sealed partial class UpdateService : IUpdateService, IDisposable
         await using var stream = File.OpenRead(path);
         return Convert.ToHexString(await SHA256.HashDataAsync(stream, token).ConfigureAwait(false)).Equals(hash, StringComparison.OrdinalIgnoreCase);
     }
-    void Ready(string path)
+    string AssetName(string version) => portableInstall == null ? CacheName(version) : PortableAsset;
+    string CacheName(string version) => portableInstall == null ? $"Pane-Setup-{version}.exe" : $"pane-{version}.exe";
+
+    void Ready(string path, string hash)
     {
-        foreach (string old in Directory.EnumerateFiles(directory, "Pane-Setup-*.exe")) if (old != path) File.Delete(old);
-        readyPath = path; DownloadProgress = 1; Set(UpdateState.Ready);
+        var filter = portableInstall == null ? "Pane-Setup-*.exe" : "pane-*.exe";
+        foreach (string old in Directory.EnumerateFiles(directory, filter)) if (old != path) File.Delete(old);
+        readyPath = path; readyHash = hash; DownloadProgress = 1; Set(UpdateState.Ready);
     }
     Uri ValidateUrl(string text)
     {
         var url = new Uri(text);
-        bool allowed = source != ProductionSource ? url.Scheme == "http" && url.Host == "127.0.0.1" && url.Port == source.Port :
+        bool allowed = source.IsLoopback ? url.Scheme == "http" && url.Host == "127.0.0.1" && url.Port == source.Port :
             url.Scheme == "https" && (url.Host == "github.com" || url.Host == "api.github.com" || url.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
         if (!allowed || url.UserInfo.Length != 0) throw new InvalidDataException();
         return url;
@@ -165,7 +177,7 @@ internal sealed partial class UpdateService : IUpdateService, IDisposable
         string record = Path.Combine(directory, "ready.json"), temporary = record + ".tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(new CachedUpdate(Latest!, hash, DownloadFrom ?? UpdateOrigin.GitHub), ReleaseNotesJson.Default.CachedUpdate));
         File.Move(temporary, record, true);
-        Ready(path);
+        Ready(path, hash);
     }
     void RestoreReady()
     {
@@ -175,11 +187,11 @@ internal sealed partial class UpdateService : IUpdateService, IDisposable
             if (!File.Exists(record)) return;
             var cache = JsonSerializer.Deserialize(File.ReadAllText(record), ReleaseNotesJson.Default.CachedUpdate);
             if (cache?.Release is not {} release || !Regex.IsMatch(release.Version, @"^\d+\.\d+\.\d+(\.\d+)?$") || SetupFiles.CompareVersions(release.Version, CurrentVersion) <= 0) return;
-            string path = Path.Combine(directory, $"Pane-Setup-{release.Version}.exe");
+            string path = Path.Combine(directory, CacheName(release.Version));
             if (!File.Exists(path) || new FileInfo(path).Length != release.SizeBytes) return;
             using var stream = File.OpenRead(path);
             if (!Convert.ToHexString(SHA256.HashData(stream)).Equals(cache.Hash, StringComparison.OrdinalIgnoreCase)) return;
-            Latest = release; readyPath = path; DownloadProgress = 1; State = UpdateState.Ready; DownloadFrom = cache.Origin;
+            Latest = release; readyPath = path; readyHash = cache.Hash; DownloadProgress = 1; State = UpdateState.Ready; DownloadFrom = cache.Origin;
         }
         catch (Exception e) when (Expected(e)) { new SelectionLog(Path.GetDirectoryName(directory)!).Write("update-cache skipped: " + e.GetType().Name); }
     }
@@ -228,8 +240,13 @@ internal sealed partial class UpdateService : IUpdateService, IDisposable
     {
         if (disposed || State != UpdateState.Ready || readyPath == null) return;
         activeStep = UpdateStep.Install;
-        try { install(readyPath); }
-        catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        try
+        {
+            if (portableInstall != null) portableInstall(readyPath, readyHash!);
+            else install!(readyPath);
+        }
+        catch (InvalidDataException) { Set(UpdateState.Failed, Strings.Update_InvalidDownload); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
         { Set(UpdateState.Failed, Strings.Update_InstallLaunchFailed); }
     }
     public void Dispose() { if (disposed) return; disposed = true; timer.Dispose(); lifetime.Cancel(); http.Dispose(); }

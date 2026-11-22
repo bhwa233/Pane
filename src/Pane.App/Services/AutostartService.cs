@@ -27,9 +27,10 @@ internal sealed class WindowsStartupRegistry:IStartupRegistry
     public void Write(string command){using var key=Registry.CurrentUser.CreateSubKey(Run);key.SetValue("Pane",command,RegistryValueKind.String);}
     public void Delete(){using var key=Registry.CurrentUser.OpenSubKey(Run,true);key?.DeleteValue("Pane",false);}
 }
-internal sealed class AutostartService(bool production,string executable,SettingsStore store,IStartupRegistry registry):IAutostart
+internal sealed class AutostartService(bool production,string executable,SettingsStore store,IStartupRegistry registry,bool portable=false):IAutostart
 {
-    string Command=>$"\"{executable}\" --autostart";
+    const string PortableArgument = "--portable-autostart";
+    string Command=>$"\"{executable}\" {(portable?PortableArgument:"--autostart")}";
     public string? UnavailableReason=>production?null:Strings.Settings_Autostart_Development;
     public AutostartState State=>GetState(production,executable,registry);
     internal static AutostartState GetState(bool production,string executable,IStartupRegistry registry){
@@ -45,7 +46,9 @@ internal sealed class AutostartService(bool production,string executable,Setting
     internal static bool RequiresElevation(string? flags)=>flags?.Split(' ',StringSplitOptions.RemoveEmptyEntries).Contains("RUNASADMIN",StringComparer.OrdinalIgnoreCase)==true;
     internal static string? Executable(string? command){if(string.IsNullOrWhiteSpace(command))return null;command=command.Trim();if(command[0]=='"'){int end=command.IndexOf('"',1);return end>1?command[1..end]:null;}int space=command.IndexOf(' ');return space<0?command:command[..space];}
     internal static bool PointsTo(string? command,string executable)=>string.Equals(Executable(command),executable,StringComparison.OrdinalIgnoreCase);
-    static bool IsPane(string? command)=>string.Equals(Path.GetFileName(Executable(command)),"Pane.App.exe",StringComparison.OrdinalIgnoreCase);
+    bool IsPane(string? command) => PointsTo(command, executable) ||
+        string.Equals(Path.GetFileName(Executable(command)), "Pane.App.exe", StringComparison.OrdinalIgnoreCase) ||
+        command?.TrimEnd().EndsWith(" " + PortableArgument, StringComparison.Ordinal) == true;
     public void Align(){
         if(!production||!store.Current.General.StartWithWindows)return;
         var old=registry.Read();

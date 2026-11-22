@@ -6,6 +6,7 @@ internal static class Program
     [STAThread] static void Main()
     {
         var args=Environment.GetCommandLineArgs().Skip(1).ToArray();
+        Pane.Hosting.RuntimeMode.InitializePortableExecutable();
         Pane.Hosting.SetupCrashDiagnostics.Install(args);
         Pane.Hosting.StartupDirectory.Initialize(args);
         if(Pane.Hosting.SetupEntry.TryRun(args,RunApplication))return;
@@ -14,8 +15,11 @@ internal static class Program
         try {Pane.Hosting.AutostartDiagnostics.Begin(command);Pane.Hosting.RestartProcess.WaitForParent();bool entered=Pane.Hosting.SingleInstance.Enter(command);Pane.Hosting.AutostartDiagnostics.AfterSingleInstance(command,entered);if(!entered)return;Pane.Hosting.NativeCrashRecovery.Start();RunApplication();}
         catch(Exception error){Pane.Hosting.AutostartDiagnostics.Failed(command,error);if(Pane.Hosting.RuntimeMode.Current.IsProduction)new Pane.Hosting.CrashLog(Pane.Hosting.RuntimeMode.Current.DataDirectory).Write(error);Environment.ExitCode=1;}
         finally {Pane.Hosting.NativeCrashRecovery.Current?.Stop();Pane.Hosting.SingleInstance.Release();}
-        if(Pane.Hosting.RestartProcess.Requested && Environment.ExitCode==0) {
-            try { Pane.Hosting.RestartProcess.Start(); }
+        if(Pane.Hosting.RestartProcess.Requested) {
+            try {
+                if(Environment.ExitCode==0)Pane.Hosting.RestartProcess.Start();
+                else Pane.Hosting.RestartProcess.DiscardUpdate();
+            }
             catch(Exception error){if(Pane.Hosting.RuntimeMode.Current.IsProduction)new Pane.Hosting.CrashLog(Pane.Hosting.RuntimeMode.Current.DataDirectory).Write(error);Environment.ExitCode=1;}
         }
     }

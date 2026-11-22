@@ -85,6 +85,31 @@ internal static class UpdateTests
                 server.Version = "0.1.101"; await installer.CheckAsync(default); await installer.DownloadAsync(default);
                 Check(Directory.GetFiles(Path.Combine(root, "install", "updates"), "*.exe").Length == 1, "只保留最新安装包");
             }
+            server.AssetName = "pane.exe";
+            var portableRoot = Path.Combine(root, "portable");
+            (string Path, string Hash)? replacement = null;
+            UpdateService Portable() => new("1.0.1", portableRoot, () => false, null, server.Url,
+                portableInstall: (path, hash) => replacement = (path, hash));
+            server.Version = "1.0.2";
+            using (var portable = Portable())
+            {
+                await portable.CheckAsync(default);
+                server.BadHash = true;
+                await portable.DownloadAsync(default);
+                portable.InstallAndRestart();
+                Check(portable.State == UpdateState.Failed && replacement == null, "免安装包校验失败时禁止更新");
+                server.BadHash = false;
+                await portable.DownloadAsync(default);
+                Check(portable.State == UpdateState.Ready, "使用固定的 pane.exe 附件和校验项");
+            }
+            using (var restored = Portable())
+            {
+                restored.InstallAndRestart();
+                Check(replacement is { } package && File.Exists(package.Path) &&
+                    Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(package.Path))) == package.Hash,
+                    "重启后仍能交接已校验的免安装包和摘要");
+            }
+            server.AssetName = null;
             Check(UpdateService.PlainNotes(new string('a', 2100)).Length == 2000, "说明长度限制");
             // 预热共享 Timer 队列后测服务本身，不把运行时首次启动的共享线程算成服务常驻线程。
             using (var warm = Service("warm")) { }
@@ -116,6 +141,7 @@ internal sealed class UpdateServer : IAsyncDisposable
     public Uri Url { get; }
     public byte[] Payload = new byte[512 * 1024];
     public string Version = "0.1.100";
+    public string? AssetName;
     public string Body = "# 标题\n**更新内容**";
     public bool Draft, Preview, BadHash, Disconnect, BreakDownload, Slow, UserAgent, Credentials;
     public int Status = 200, Requests, Downloads;
@@ -142,7 +168,7 @@ internal sealed class UpdateServer : IAsyncDisposable
                 await stream.WriteAsync(head, stop.Token); await stream.WriteAsync(reply.Body, stop.Token); return;
             }
             if (Disconnect) return;
-            string name = $"Pane-Setup-{Version}.exe", host = Url.GetLeftPart(UriPartial.Authority);
+            string name = AssetName ?? $"Pane-Setup-{Version}.exe", host = Url.GetLeftPart(UriPartial.Authority);
             byte[] body;
             bool package = first.Contains("/" + name + " ");
             if (package) { Interlocked.Increment(ref Downloads); body = Payload; }

@@ -68,7 +68,7 @@ public sealed partial class App : Application
             string data=RuntimeMode.Current.DataDirectory;
             Store=new SettingsStore(data,GlassParameters.Defaults());Store.CorruptFile+=(_,_)=>Ack("settings-recovered");Store.Load();ApplyUiLanguage();if(!demo)Fonts=new Pane.Services.FontCatalog();ApplyUiFont();/* 设计：界面字体 */
             if(Environment.GetEnvironmentVariable("PANE_MIGRATION_PROBE")=="1") { Glass=new GlassParameters(Store.Current.General); await StartMigrationProbe(); return; }
-            var autostart=new Pane.Services.AutostartService(IsProduction,Environment.ProcessPath!,Store,CreateStartupRegistry());Autostart=autostart;autostart.Align();
+            var autostart=new Pane.Services.AutostartService(IsProduction,RuntimeMode.LauncherExecutable,Store,CreateStartupRegistry(),RuntimeMode.PortableExecutable!=null);Autostart=autostart;autostart.Align();
             aiService=new Pane.Services.Ai.AiService(Store);AiSetup=aiService;Ai=demo?new Pane.DesignData.AiSample():aiService;aiService.SetModuleEnabled(false);
             Glass=new GlassParameters(Store.Current.General);
             Store.Changed+=(_,_)=>{Glass.Apply(Store.Current.General);shell?.Apply(ModuleShellSettings());ApplySuperSettings();folderJump?.Apply(Store.Current.FolderJump);};
@@ -82,7 +82,8 @@ public sealed partial class App : Application
             StartCardDesktopTrigger();
             hotkeysReadyMs=(DateTime.UtcNow-System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalMilliseconds;
             listener=SingleInstance.Listen(command=>queue.TryEnqueue(()=>{Command(command);Ack("forwarded");}),cancellation.Token);
-            StartUpdates();StartBackground();StartReleaseProbe();
+            if(StartUpdates())return;
+            StartBackground();StartReleaseProbe();
             timer=queue.CreateTimer();timer.Interval=TimeSpan.FromMilliseconds(8);timer.Tick+=(_,_)=>{try{Tick();}finally{if(!NeedsFrames)timer.Stop();}};timer.Start();
             StartCardPerformanceProbe();
         }catch(Exception e){ReportCrash(e);Shutdown();}

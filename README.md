@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LBEILC/Pane/releases/latest"><img src="https://img.shields.io/github/v/release/LBEILC/Pane?style=flat-square&color=5874c9&label=%E6%9C%80%E6%96%B0%E7%89%88" alt="最新版"></a>
+  <a href="https://github.com/bhwa233/Pane/releases/latest"><img src="https://img.shields.io/github/v/release/bhwa233/Pane?style=flat-square&color=5874c9&label=%E6%9C%80%E6%96%B0%E7%89%88" alt="最新版"></a>
   <img src="https://img.shields.io/badge/Windows%2011-x64-5874c9?style=flat-square" alt="Windows 11 x64">
   <img src="https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-%E7%AE%80%E4%BD%93%20%C2%B7%20%E7%B9%81%E9%AB%94-5874c9?style=flat-square" alt="界面：简体 · 繁體">
   <a href="LICENSE"><img src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-GPL--3.0-5874c9?style=flat-square" alt="许可证 GPL-3.0"></a>
@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LBEILC/Pane/releases/latest"><b>下载最新版</b></a> ·
+  <a href="https://github.com/bhwa233/Pane/releases/latest"><b>下载最新版</b></a> ·
   <a href="#安装">安装说明</a> ·
   <a href="#隐私">隐私</a> ·
   <a href="#反馈与交流">交流群</a> ·
@@ -140,13 +140,13 @@
 
 在启动器里直接说：`30分钟后关机`、`1.5小时后重启`、`23:30 睡眠`（也认 `gj` / `shutdown` 这类写法）。到点前 1 分钟提醒，可以取消或推迟；托盘菜单里也能看到和取消。
 
-## 安装
+## 下载和启动
 
-1. 到 [Releases](https://github.com/LBEILC/Pane/releases/latest) 下载最新的 `Pane-Setup-<版本>.exe`。
-2. 运行。安装包没有代码签名，Windows SmartScreen 可能会拦：点「更多信息」→「仍要运行」。
-3. 默认装到 `%LOCALAPPDATA%\Programs\Pane`，只装给当前用户，不需要管理员权限。设置、剪贴板历史、手势配置在 `%APPDATA%\Pane`。
+1. 到 [Releases](https://github.com/bhwa233/Pane/releases/latest) 下载 Windows x64 的 `pane.exe`。
+2. 把文件放到固定目录后双击启动。首次运行会自动解包，设置、剪贴板历史和手势配置保存在 `%APPDATA%\Pane`。
+3. 要开机自启，在 **设置 → 通用 → 启动** 打开「开机时启动 Pane」。
 
-有新版本时 Pane 会在后台下载好，在 **设置 → 关于** 里能看到这一版改了什么，点一下重启更新；也可以设成下次启动时自动安装，或者关掉自动更新。
+在 **设置 → 关于** 可以下载新版并重启更新。也可以退出 Pane 后手动覆盖原位置的 `pane.exe`。
 
 **可选的依赖**
 

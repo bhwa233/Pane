@@ -213,7 +213,7 @@ internal sealed partial class UpdateService
         if (root.GetProperty("draft").GetBoolean() || root.GetProperty("prerelease").GetBoolean() || root.GetProperty("tag_name").GetString() != "v" + Latest.Version)
             throw new JsonException();
         var files = root.GetProperty("assets").EnumerateArray().ToArray();
-        var package = files.Single(f => f.GetProperty("name").GetString() == $"Pane-Setup-{Latest.Version}.exe");
+        var package = files.Single(f => f.GetProperty("name").GetString() == AssetName(Latest.Version));
         asset = ValidateUrl(package.GetProperty("browser_download_url").GetString()!);
         sums = ValidateUrl(files.Single(f => f.GetProperty("name").GetString() == "SHA256SUMS.txt").GetProperty("browser_download_url").GetString()!);
         Latest = Latest with { SizeBytes = package.GetProperty("size").GetInt64() };
@@ -224,7 +224,7 @@ internal sealed partial class UpdateService
         var current = Latest; var origin = DownloadFrom; var state = State;
         RestoreReady();
         if (State == UpdateState.Ready && Latest?.Version == current.Version) { Changed?.Invoke(this, EventArgs.Empty); return true; }
-        Latest = current; DownloadFrom = origin; readyPath = null; State = state;
+        Latest = current; DownloadFrom = origin; readyPath = readyHash = null; State = state;
         return false;
     }
     async Task RefreshMirror(CancellationToken token)

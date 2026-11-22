@@ -1,5 +1,7 @@
 using Pane.Localization;
 using Pane.Contracts;
+using Pane.Hosting;
+using Pane.Services.Updates;
 namespace Pane;
 public sealed partial class App
 {
@@ -8,14 +10,23 @@ public sealed partial class App
     public IReleaseNotesCatalog? ReleaseHistory {get;set;}=new Pane.Services.Updates.ReleaseNotesCatalog(
         message=>new Pane.Services.SelectionLog(Pane.Hosting.RuntimeMode.Current.DataDirectory).Write(message));
     string? notifiedUpdate;
-    void StartUpdates()
+    bool StartUpdates()
     {
         if(demo)Updates??=new Pane.DesignData.UpdateSample();
-        if(Updates is not {} u)return;
+        else if(RuntimeMode.PortableExecutable!=null)
+        {
+            Updates=new UpdateService(RunningVersion,Store.DirectoryPath,()=>Store.Current.Update.AutoUpdate,null,
+                portableInstall:(path,hash)=>{
+                    RestartProcess.PreparePortableUpdate(path,hash);
+                    Shutdown();
+                });
+        }
+        if(Updates is not {} u)return false;
         u.Changed+=(_,_)=>queue.TryEnqueue(()=>{
             if(closing||u.State!=UpdateState.Ready||u.Latest is not {} r||notifiedUpdate==r.Version)return;
             notifiedUpdate=r.Version;
             shell?.NotifyOnce(string.Format(Strings.Update_ReadyNotification, (object?)(r.Version)));
         });
+        return u is UpdateService service && StartupUpdate.TryInstall(service,Store);
     }
 }

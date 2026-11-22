@@ -78,7 +78,7 @@ internal static class AutostartDiagnostics
             using var settings=JsonDocument.Parse(File.ReadAllText(path));
             bool enabled=settings.RootElement.TryGetProperty("General",out var general)&&
                 general.TryGetProperty("StartWithWindows",out var start)&&start.ValueKind==JsonValueKind.True;
-            log.Manual(enabled,RuntimeMode.Current.IsProduction,Environment.ProcessPath!,new WindowsStartupRegistry());
+            log.Manual(enabled,RuntimeMode.Current.IsProduction,RuntimeMode.LauncherExecutable,new WindowsStartupRegistry());
         }catch(Exception){/* 设置或注册表不可读时仍继续原有启动流程。 */}
     }
     internal static void Begin(LaunchCommand command)=>Interlocked.Exchange(ref starting,command==LaunchCommand.Autostart?1:0);
