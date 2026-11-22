@@ -4,23 +4,23 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Pane.Hosting;
 using Pane.Localization;
 using Pane.Services.Launcher;
 using Pane.Services.Traffic;
 using Pane.Views.Controls;
 using Windows.Foundation;
-using Windows.System;
 
 namespace Pane.Views;
 
-public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposable
+public sealed partial class TrafficView : UserControl, IDisposable
 {
     const string RateMode = "rate", AppRunMode = "app-run";
-    sealed record DisplayRow(string Key, TrafficProcessIdentity Process, string Download, string Upload, bool HasGap, TrafficAppGroup? Group)
+    sealed record DisplayRow(string Key, TrafficProcessIdentity Process, string Download, string Upload,
+        string RunDownload, string RunUpload, bool HasGap, TrafficAppGroup? Group)
     {
         internal bool Matches(DisplayRow other) => Key == other.Key && Process == other.Process && Download == other.Download &&
-            Upload == other.Upload && HasGap == other.HasGap && ((Group, other.Group) switch
+            Upload == other.Upload && RunDownload == other.RunDownload && RunUpload == other.RunUpload &&
+            HasGap == other.HasGap && ((Group, other.Group) switch
             {
                 (null, null) => true,
                 ({ } group, { } previous) => group.MemberCount == previous.MemberCount && group.Members.SequenceEqual(previous.Members),
@@ -37,6 +37,8 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
     readonly PaneSwitch processSwitch;
     readonly PaneSegmented processMode;
     bool shown, pointerInRanking, processMenuOpen, endingProcess;
+    TrafficSortColumn? sortColumn;
+    bool ascending, reorderNextSample;
     int adapterRequest, fileActionRequest;
     TrafficProcessIdentity? pendingEnd;
     ProcessTrafficState rankingState;
@@ -55,13 +57,6 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
         InitializeComponent();
         DownloadPlot.SizeChanged += (_, _) => DrawInterfaceTrend();
         UploadPlot.SizeChanged += (_, _) => DrawInterfaceTrend();
-        var close = new Microsoft.UI.Xaml.Input.KeyboardAccelerator
-        {
-            Key = VirtualKey.W,
-            Modifiers = VirtualKeyModifiers.Control
-        };
-        close.Invoked += (_, args) => { args.Handled = true; CloseRequested?.Invoke(this, EventArgs.Empty); };
-        KeyboardAccelerators.Add(close);
 
         interfaceSwitch = new PaneSwitch(!interfaceTraffic.Paused, TogglePrototype.Background, TogglePrototype.BorderBrush, AccentPrototype.Background);
         AutomationProperties.SetName(interfaceSwitch, Strings.Traffic_InterfaceMonitoring);
@@ -90,16 +85,14 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
         processMode.Changed += (_, _) => ChangeRanking();
         ProcessFilter.MaxLength = TrafficRankingQuery.KeywordLimit;
         ProcessModeHost.Child = processMode;
+        SortName.Content = Strings.Traffic_ProcessName;
+        SortDownload.Content = Strings.Traffic_Download;
+        SortUpload.Content = Strings.Traffic_Upload;
+        SortRunDownload.Content = Strings.Traffic_RunDownload;
+        SortRunUpload.Content = Strings.Traffic_RunUpload;
     }
 
-    public Size PreferredSize => new(480, 480);
-    public Size MinimumSize => new(360, 360);
-    public UIElement DragRegion => Header;
-    event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
-    event EventHandler<bool>? ISecondaryView.TopmostChanged { add { } remove { } }
-    public event EventHandler? CloseRequested;
-
-    public void OnShowing(PanelShowContext context)
+    internal void Prepare()
     {
         ApplyInterfaceReading(interfaceTraffic.Current);
         ProcessStatus.Text = Strings.Traffic_ProcessConnecting;
@@ -170,8 +163,8 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
 
     void ApplyInterfaceReading(InterfaceTrafficReading reading)
     {
-        Download.Text = FormatRate(reading.Rate?.Download);
-        Upload.Text = FormatRate(reading.Rate?.Upload);
+        Download.Text = "\u2193 " + FormatRate(reading.Rate?.Download);
+        Upload.Text = "\u2191 " + FormatRate(reading.Rate?.Upload);
         Status.Text = InterfaceStatusText(reading.State);
         DrawInterfaceTrend();
     }
@@ -224,7 +217,6 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
 
     void PinClicked(object sender, RoutedEventArgs args) => togglePin();
 
-    void HistoryClicked(object sender, RoutedEventArgs args) => showHistory(null);
 
     void ProcessRetryClicked(object sender, RoutedEventArgs args)
     {
@@ -246,7 +238,8 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
         ProcessActiveOnly.IsEnabled = sample.Enabled == true;
         ProcessRetry.Visibility = sample.Enabled == null ? Visibility.Visible : Visibility.Collapsed;
         ProcessRetry.IsEnabled = sample.Enabled == null;
-        RenderProcessRows(preserveOrder: pointerInRanking || processMenuOpen || HasRankingFocus());
+        RenderProcessRows(preserveOrder: !reorderNextSample && (pointerInRanking || processMenuOpen || HasRankingFocus()));
+        reorderNextSample = false;
     }
 
     internal static string ProcessStatusText(ProcessTrafficState state, bool empty) => state switch
@@ -263,7 +256,22 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
 
     void ProcessFilterChanged(object sender, TextChangedEventArgs args) => ChangeRanking();
 
-    void ProcessSortChanged(object sender, SelectionChangedEventArgs args) => ChangeRanking();
+    void SortHeaderClicked(object sender, RoutedEventArgs args)
+    {
+        var button = (Button)sender;
+        var column = Enum.Parse<TrafficSortColumn>((string)button.Tag);
+        ascending = sortColumn == column ? !ascending : column == TrafficSortColumn.Name;
+        sortColumn = column;
+        SortName.Content = Label(TrafficSortColumn.Name, Strings.Traffic_ProcessName);
+        SortDownload.Content = Label(TrafficSortColumn.Download, Strings.Traffic_Download);
+        SortUpload.Content = Label(TrafficSortColumn.Upload, Strings.Traffic_Upload);
+        SortRunDownload.Content = Label(TrafficSortColumn.RunDownload, Strings.Traffic_RunDownload);
+        SortRunUpload.Content = Label(TrafficSortColumn.RunUpload, Strings.Traffic_RunUpload);
+        reorderNextSample = true;
+        ChangeRanking(keepRows: true);
+
+        string Label(TrafficSortColumn key, string text) => key != column ? text : text + (ascending ? " \u2191" : " \u2193");
+    }
 
     void ProcessActiveOnlyChanged(object sender, RoutedEventArgs args) => ChangeRanking();
 
@@ -271,24 +279,18 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
     {
         var cumulative = processMode.Value == AppRunMode;
         var keyword = ProcessFilter.Text.Trim();
-        var sort = ProcessSort.SelectedIndex switch
-        {
-            1 => TrafficRankingSort.Download,
-            2 => TrafficRankingSort.Upload,
-            _ => TrafficRankingSort.Total
-        };
-        var query = new TrafficRankingQuery(keyword, cumulative, sort, ProcessActiveOnly.IsChecked == true);
-        return !cumulative && sort == TrafficRankingSort.Total && !query.HasFilter ? null : query;
+        var query = new TrafficRankingQuery(keyword, cumulative, TrafficRankingSort.Total, ProcessActiveOnly.IsChecked == true, sortColumn, ascending);
+        return !cumulative && sortColumn == null && !query.HasFilter ? null : query;
     }
 
-    void ChangeRanking()
+    void ChangeRanking(bool keepRows = false)
     {
         if (!shown || processMode == null) return;
         var query = ReadRankingQuery();
         if (activeRanking == query) return;
         activeRanking = query;
         rankingState = ProcessTrafficState.Sampling;
-        processRows = [];
+        if (!keepRows) processRows = [];
         ProcessStatus.Text = Strings.Traffic_Sampling;
         RenderProcessRows();
         processTraffic.SetDetailQuery(query);
@@ -317,10 +319,9 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
         var matches = processRows.Where(row => cumulative || row.Download != null || row.Upload != null);
         if (preserveOrder && displayedRows.Length != 0)
             matches = TrafficRankingOrder.Preserve(matches, displayedRows.Select(row => row.Key));
-        var rows = matches.Select(row => cumulative
-            ? new DisplayRow(row.Key, row.Process, FormatRunBytes(row.AppRun?.Download, row.AppRun?.HasGap == true),
-                FormatRunBytes(row.AppRun?.Upload, row.AppRun?.HasGap == true), row.AppRun?.HasGap == true, row.AppGroup)
-            : new DisplayRow(row.Key, row.Process, FormatRate(row.Download), FormatRate(row.Upload), false, null)).ToArray();
+        var rows = matches.Select(row => new DisplayRow(row.Key, row.Process, FormatRate(row.Download), FormatRate(row.Upload),
+            FormatRunBytes(row.AppRun?.Download, row.AppRun?.HasGap == true), FormatRunBytes(row.AppRun?.Upload, row.AppRun?.HasGap == true),
+            row.AppRun?.HasGap == true, cumulative ? row.AppGroup : null)).ToArray();
         var noMatches = activeRanking?.HasFilter == true && rows.Length == 0 && rankingState == ProcessTrafficState.Live
             ? Visibility.Visible : Visibility.Collapsed;
         if (ProcessNoMatches.Visibility != noMatches) ProcessNoMatches.Visibility = noMatches;
@@ -332,7 +333,11 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
 
     void UpdateRows(DisplayRow[] rows)
     {
-        if (displayedRows.Length == rows.Length && displayedRows.Zip(rows).All(pair => pair.First.Matches(pair.Second))) return;
+        if (displayedRows.Length == rows.Length && displayedRows.Zip(rows).All(pair => pair.First.Matches(pair.Second)))
+        {
+            for (var i = 0; i < rows.Length; i++) UpdateProcessIcon((Grid)ProcessRows.Children[i], rows[i].Process);
+            return;
+        }
         var previous = new Dictionary<string, (Grid View, DisplayRow Row)>(StringComparer.Ordinal);
         for (var index = 0; index < displayedRows.Length; index++)
             previous.Add(displayedRows[index].Key, ((Grid)ProcessRows.Children[index], displayedRows[index]));
@@ -349,21 +354,24 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
                 if (existing) ProcessRows.Children.Remove(view);
                 ProcessRows.Children.Insert(index, view);
             }
+            UpdateProcessIcon(view, row.Process);
             if (existing && entry.Row.Matches(row)) continue;
             var columns = view.Children;
             var groupLabel = row.Group is { MemberCount: > 1 } group ? string.Format(Strings.Traffic_RankingGroupName, row.Process.Name, group.MemberCount) : null;
-            ((TextBlock)columns[0]).Text = groupLabel ?? row.Process.Name;
+            ((TextBlock)((Grid)columns[0]).Children[2]).Text = groupLabel ?? row.Process.Name;
             ToolTipService.SetToolTip(columns[0], groupLabel ?? $"{row.Process.Name} (PID {row.Process.Pid})");
-            SetProcessAction((Button)columns[3], row, Strings.Traffic_HistoryOpenProcess, Strings.Traffic_RankingPickHistory);
-            var more = (Button)columns[4];
+            SetProcessAction((Button)columns[5], row, Strings.Traffic_HistoryOpenProcess, Strings.Traffic_RankingPickHistory);
+            var more = (Button)columns[6];
             more.Tag = row;
             var moreLabel = string.Format(Strings.Launcher_MenuTarget, Strings.Launcher_MoreActions, groupLabel ?? $"{row.Process.Name} (PID {row.Process.Pid})");
             ToolTipService.SetToolTip(more, moreLabel);
             AutomationProperties.SetName(more, moreLabel);
             ((TextBlock)columns[1]).Text = row.Download;
             ((TextBlock)columns[2]).Text = row.Upload;
-            ToolTipService.SetToolTip(columns[1], row.HasGap ? Strings.Traffic_AppRunGap : null);
-            ToolTipService.SetToolTip(columns[2], row.HasGap ? Strings.Traffic_AppRunGap : null);
+            ((TextBlock)columns[3]).Text = row.RunDownload;
+            ((TextBlock)columns[4]).Text = row.RunUpload;
+            ToolTipService.SetToolTip(columns[3], row.HasGap ? Strings.Traffic_AppRunGap : null);
+            ToolTipService.SetToolTip(columns[4], row.HasGap ? Strings.Traffic_AppRunGap : null);
         }
         displayedRows = rows;
         if (rows.Length == 0) pointerInRanking = false;
@@ -377,6 +385,16 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
             string.Format(format, row.Process.Name, row.Process.Pid);
         ToolTipService.SetToolTip(button, label);
         AutomationProperties.SetName(button, label);
+    }
+
+    static void UpdateProcessIcon(Grid row, TrafficProcessIdentity process)
+    {
+        var cell = (Grid)row.Children[0];
+        var image = (Image)cell.Children[1];
+        var png = process.ImagePath is { Length: > 0 } path ? ((App)Application.Current).FileIcons.TryGet(path, false) : null;
+        var source = Files.SystemIcons.Load(png);
+        if (image.Source != source) image.Source = source;
+        cell.Children[0].Visibility = source == null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void OpenProcessAction(Button button, Action<TrafficProcessIdentity> action)
@@ -498,27 +516,29 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
 
     Grid CreateRow()
     {
-        var grid = new Grid { Height = 30, ColumnSpacing = 10, BorderThickness = new(0, 0, 0, 1), BorderBrush = TogglePrototype.BorderBrush };
+        var grid = new Grid { MinHeight = 40, Padding = new(8, 0, 8, 0), ColumnSpacing = 8,
+            BorderThickness = new(0, 0, 0, 1), BorderBrush = TogglePrototype.BorderBrush };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        for (var index = 0; index < 3; index++)
+        var name = new Grid { ColumnSpacing = 8 };
+        name.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+        name.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        name.Children.Add(new PaneIcon { Glyph = "app", Width = 20, Height = 20, Foreground = ProcessStatus.Foreground });
+        name.Children.Add(new Image { Width = 24, Height = 24 });
+        var nameText = new TextBlock { FontSize = ProcessStatus.FontSize, VerticalAlignment = VerticalAlignment.Center,
+            Foreground = ProcessTitle.Foreground, TextTrimming = TextTrimming.CharacterEllipsis };
+        Grid.SetColumn(nameText, 1);
+        name.Children.Add(nameText);
+        grid.Children.Add(name);
+        for (var index = 1; index <= 4; index++)
         {
-            var text = new TextBlock { FontSize = ProcessStatus.FontSize, VerticalAlignment = VerticalAlignment.Center };
-            if (index == 0)
-            {
-                text.Foreground = ProcessTitle.Foreground;
-                text.TextTrimming = TextTrimming.CharacterEllipsis;
-            }
-            else
-            {
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92) });
-                text.Foreground = ProcessStatus.Foreground;
-                text.TextAlignment = TextAlignment.Right;
-            }
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
+            var text = new TextBlock { FontSize = ProcessStatus.FontSize, VerticalAlignment = VerticalAlignment.Center,
+                Foreground = index % 2 == 1 ? Download.Foreground : Upload.Foreground, TextAlignment = TextAlignment.Right };
             Grid.SetColumn(text, index);
             grid.Children.Add(text);
         }
-        AddAction("history", button => OpenProcessAction(button, showHistory), 3);
-        AddAction("chev-d", OpenProcessMenu, 4);
+        AddAction("history", button => OpenProcessAction(button, showHistory), 5);
+        AddAction("chev-d", OpenProcessMenu, 6);
         return grid;
 
         void AddAction(string glyph, Action<Button> action, int column)
@@ -543,5 +563,4 @@ public sealed partial class TrafficView : UserControl, ISecondaryView, IDisposab
         _ => $"{value:N0} B/s"
     };
 
-    void CloseClicked(object sender, RoutedEventArgs args) => CloseRequested?.Invoke(this, EventArgs.Empty);
 }

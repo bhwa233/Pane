@@ -2,7 +2,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Pane.Hosting;
 using Pane.Localization;
 using Pane.Services.Traffic;
 using Pane.Views.Controls;
@@ -11,7 +10,7 @@ using Windows.System;
 
 namespace Pane.Views;
 
-public sealed partial class TrafficHistoryView : UserControl, ISecondaryView, IDisposable
+public sealed partial class TrafficHistoryView : UserControl, IDisposable
 {
     readonly CancellationTokenSource lifetime = new();
     readonly PaneSegmented historyMode;
@@ -36,17 +35,10 @@ public sealed partial class TrafficHistoryView : UserControl, ISecondaryView, ID
         ApplicationSort.SelectedIndex = (int)TrafficApplicationSort.Total;
         Range.SelectedIndex = (int)RangeOption.Hour;
         StartDate.Date = EndDate.Date = DateTimeOffset.Now;
-        var close = new KeyboardAccelerator { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control };
-        close.Invoked += (_, args) => { args.Handled = true; CloseRequested?.Invoke(this, EventArgs.Empty); };
-        KeyboardAccelerators.Add(close);
     }
 
-    public Size PreferredSize => new(608, 464);
-    public Size MinimumSize => new(500, 320);
-    public UIElement DragRegion => Header;
-    event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
-    event EventHandler<bool>? ISecondaryView.TopmostChanged { add { } remove { } }
-    public event EventHandler? CloseRequested;
+    internal static Size PreferredSize => new(608, 464);
+    internal static Size MinimumSize => new(500, 320);
 
     internal void Open(TrafficProcessIdentity? filter)
     {
@@ -75,16 +67,12 @@ public sealed partial class TrafficHistoryView : UserControl, ISecondaryView, ID
         else Reload();
     }
 
-    public void OnShowing(PanelShowContext context) { }
-
     public void OnShown()
     {
         if (started) return;
         started = true;
         Reload();
     }
-
-    public void OnHidden() => Dispose();
 
     public void Dispose()
     {
@@ -123,7 +111,6 @@ public sealed partial class TrafficHistoryView : UserControl, ISecondaryView, ID
     void RefreshClicked(object sender, RoutedEventArgs args) => Reload();
     void NextClicked(object sender, RoutedEventArgs args) { if (nextCursor is { } cursor) LoadPage(cursor); }
     void ClearProcessFilterClicked(object sender, RoutedEventArgs args) => Open(null);
-    void CloseClicked(object sender, RoutedEventArgs args) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
     void ArmClearClicked(object sender, RoutedEventArgs args)
     {

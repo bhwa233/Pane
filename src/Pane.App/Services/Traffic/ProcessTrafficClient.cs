@@ -28,7 +28,7 @@ internal readonly record struct TrafficAppRun(long Download, long Upload, bool H
 internal sealed record TrafficAppGroup(string RunId, int MemberCount, TrafficProcessIdentity[] Members);
 
 internal sealed record ProcessTrafficRow(TrafficProcessIdentity Process, double? Download, double? Upload, TrafficAppRun? AppRun,
-    TrafficAppGroup? AppGroup = null)
+    TrafficAppGroup? AppGroup = null, string? AppRunId = null)
 {
     internal string Key => AppGroup is { } group ? $"app:{group.RunId}" : Process.InstanceId;
 }
@@ -69,7 +69,8 @@ internal sealed class ProcessTrafficClient : IDisposable
         {
             if (protocol == null)
             {
-                if (!TrafficServiceIdentity.IsInstalled()) return Offline(ProcessTrafficState.NotInstalled);
+                // The service can be installed while Pane is running; do not cache its absence.
+                if (!TrafficServiceIdentity.IsInstalled()) return new(ProcessTrafficState.NotInstalled, []);
                 protocol = await TrafficPipeProtocol.ConnectAsync(deadline.Token).ConfigureAwait(false);
             }
 
@@ -141,11 +142,11 @@ internal sealed class ProcessTrafficClient : IDisposable
         lastRenewed = Stopwatch.GetTimestamp();
     }
 
-    internal async Task<ProcessTrafficSample> ReadRankingAsync(TrafficRankingQuery ranking, CancellationToken token)
+    internal async Task<ProcessTrafficSample> ReadRankingAsync(TrafficRankingQuery ranking, int limit, CancellationToken token)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(2));
-        try { return await ReadSnapshotAsync(ranking, DetailRankingLimit, deadline.Token).ConfigureAwait(false); }
+        try { return await ReadSnapshotAsync(ranking, limit, deadline.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (!token.IsCancellationRequested) { return Offline(ProcessTrafficState.Unavailable); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or SecurityException or Win32Exception or
             JsonException or InvalidDataException or InvalidOperationException or KeyNotFoundException or ArgumentException or FormatException)
@@ -159,6 +160,7 @@ internal sealed class ProcessTrafficClient : IDisposable
         if (protocol == null) return new(ProcessTrafficState.Unavailable, []);
         try
         {
+            if (ranking is { Column: not null } sorted) return await ReadSortedSnapshotAsync(protocol, sorted, token).ConfigureAwait(false);
             var operation = ranking is { ActiveOnly: true } ? "snapshot.ranking.active" : ranking.HasValue ? "snapshot.ranking" : "snapshot";
             var snapshot = await protocol.RequestAsync(operation,
                 token, limit: limit, firstPageOnly: true, ranking: ranking).ConfigureAwait(false);
@@ -168,6 +170,45 @@ internal sealed class ProcessTrafficClient : IDisposable
         {
             return new(ProcessTrafficState.Unavailable, [], Enabled: true);
         }
+    }
+
+    static async Task<ProcessTrafficSample> ReadSortedSnapshotAsync(TrafficPipeProtocol pipe, TrafficRankingQuery ranking, CancellationToken token)
+    {
+        var snapshot = await pipe.RequestAsync("snapshot", token).ConfigureAwait(false);
+        var first = ParseSnapshot(snapshot);
+        var rows = first.Rows.ToList();
+        // The server cursor keeps every page on the same snapshot. Sort only after reading all pages.
+        while (snapshot.GetProperty("nextCursor").GetString() is { } cursor)
+        {
+            snapshot = await pipe.RequestAsync("snapshot", token, cursor: cursor).ConfigureAwait(false);
+            rows.AddRange(ParseSnapshot(snapshot).Rows);
+        }
+        IEnumerable<ProcessTrafficRow> matches = rows.Where(row =>
+            (ranking.Keyword.Length == 0 || row.Process.Name.Contains(ranking.Keyword, StringComparison.OrdinalIgnoreCase) ||
+                row.Process.ImagePath?.Contains(ranking.Keyword, StringComparison.OrdinalIgnoreCase) == true ||
+                int.TryParse(ranking.Keyword, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) && pid == row.Process.Pid) &&
+            (ranking.ActiveOnly ? row.Download is > 0 || row.Upload is > 0 : ranking.Cumulative || row.Download != null || row.Upload != null));
+        if (ranking.Cumulative)
+            matches = matches.GroupBy(row => row.AppRunId ?? row.Process.InstanceId).Select(group =>
+            {
+                var members = group.OrderBy(row => row.Process.Pid).ToArray();
+                var representative = members[0];
+                return representative.AppRunId is { } id
+                    ? representative with { AppGroup = new(id, members.Length, members.Select(row => row.Process).ToArray()) } : representative;
+            });
+        decimal? Value(ProcessTrafficRow row) => ranking.Column switch
+        {
+            TrafficSortColumn.Download => (decimal?)row.Download,
+            TrafficSortColumn.Upload => (decimal?)row.Upload,
+            TrafficSortColumn.RunDownload => row.AppRun?.Download,
+            _ => row.AppRun?.Upload
+        };
+        var ordered = ranking.Column == TrafficSortColumn.Name
+            ? ranking.Ascending ? matches.OrderBy(row => row.Process.Name, StringComparer.OrdinalIgnoreCase)
+                : matches.OrderByDescending(row => row.Process.Name, StringComparer.OrdinalIgnoreCase)
+            : ranking.Ascending ? matches.OrderBy(row => Value(row) == null).ThenBy(Value)
+                : matches.OrderByDescending(Value);
+        return first with { Rows = ordered.ThenBy(row => row.Process.Pid).ToArray() };
     }
 
     internal static ProcessTrafficSample ParseSnapshot(JsonElement snapshot)
@@ -193,7 +234,8 @@ internal sealed class ProcessTrafficClient : IDisposable
                 var appRun = ReadAppRun(item);
                 if (received is null && sent is null && appRun is null) continue;
                 var process = TrafficProcessIdentity.Read(item);
-                var row = new ProcessTrafficRow(process, received, sent, appRun, ReadAppGroup(item, process));
+                var row = new ProcessTrafficRow(process, received, sent, appRun, ReadAppGroup(item, process),
+                    item.TryGetProperty("appRunId", out var runId) && runId.GetString() is { Length: > 0 } id ? id : null);
                 if (!keys.Add(row.Key)) throw new InvalidDataException("Repeated traffic ranking identity.");
                 rows.Add(row);
             }

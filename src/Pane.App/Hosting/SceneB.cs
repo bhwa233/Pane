@@ -78,13 +78,13 @@ internal sealed class SceneB : IDisposable
         } finally { System.Runtime.InteropServices.Marshal.Release(ptr); }
     }
     internal bool Attached => material.Parent==Root && material.Brush!=null && material.Clip!=null && tint.Parent==Root && luminosity.Parent==Root && Edges.Parent==Root && Shadows.Parent==Root && shadowVisuals.All(v=>v.Parent==Shadows && v.Shadow!=null) && Root.Opacity>0 && material.Size.X>0;
-    internal void Apply(GlassParameters parameters) {
+    internal void Apply(GlassParameters parameters, double? cornerRadius = null) {
         var g=parameters.Active; bool dark=parameters.Dark, solid=parameters.Solid;
         var old=material.Brush;var oldBackdrop=backdropBrush;backdropBrush=null;material.Brush=solid?Own(c.CreateColorBrush(dark?Color.FromArgb(255,22,22,25):Color.FromArgb(255,249,249,250))):SaturatedBackdrop(c,(float)g.Saturation,(float)g.ExtraBlur);Release(old);Release(oldBackdrop);
         ((CompositionColorBrush)tint.Brush).Color=dark?Color.FromArgb((byte)Math.Round(255*g.TintOpacity),28,28,32):Color.FromArgb((byte)Math.Round(255*g.TintOpacity),246,246,248);
         ((CompositionColorBrush)luminosity.Brush).Color=dark?Color.FromArgb((byte)Math.Round(255*g.LuminosityOpacity),10,10,12):Color.FromArgb((byte)Math.Round(255*g.LuminosityOpacity),255,255,255);
         tint.Opacity=luminosity.Opacity=solid?0:1;
-        float radius=(float)parameters.Current.PanelRadius;maskGeometry.CornerRadius=clipGeometry.CornerRadius=new Vector2(radius);outer.CornerRadius=new Vector2(radius+.5f);inner.CornerRadius=new Vector2(Math.Max(0,radius-.5f));
+        float radius=(float)(cornerRadius??parameters.Current.PanelRadius);maskGeometry.CornerRadius=clipGeometry.CornerRadius=new Vector2(radius);outer.CornerRadius=new Vector2(radius+.5f);inner.CornerRadius=new Vector2(Math.Max(0,radius-.5f));
         // 设计（2026-10-28）：深色不画外圈黑线（压在亮色、花哨背景上像一圈黑框），改成整圈都有的淡白高光，和背景分开交给阴影；浅色不变
         ((CompositionColorBrush)((CompositionSpriteShape)Edges.Shapes[0]).StrokeBrush).Color=Color.FromArgb((byte)Math.Round(255*(dark?0:.1)*g.Highlight),0,0,0);
         var gradient=(CompositionLinearGradientBrush)((CompositionSpriteShape)Edges.Shapes[1]).StrokeBrush;float[] strengths=dark?[1,.6f,.45f,.65f]:[1,.3f,.1f,.45f];

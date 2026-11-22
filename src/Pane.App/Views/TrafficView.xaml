@@ -6,6 +6,15 @@
     xmlns:c="using:Pane.Views.Controls"
     xmlns:loc="using:Pane.Localization">
     <UserControl.Resources>
+        <Style x:Key="TrafficSortHeader" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Right"/>
+            <Setter Property="FontSize" Value="{StaticResource PaneTextXs}"/>
+        </Style>
         <Style x:Key="ProcessHistoryButton" TargetType="Button" BasedOn="{StaticResource PaneIconButton}">
             <Setter Property="Width" Value="24"/>
             <Setter Property="Height" Value="24"/>
@@ -16,37 +25,10 @@
     </UserControl.Resources>
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="56"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <Grid x:Name="Header" Padding="18,0,10,0" Background="Transparent"
-              BorderThickness="0,0,0,1" BorderBrush="{ThemeResource PaneStrokeBrush}">
-            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <c:PaneIcon Glyph="globe" Width="16" Height="16" Foreground="{ThemeResource PaneText2Brush}"/>
-                <TextBlock Text="{x:Bind loc:Strings.Module_Traffic_Name}" VerticalAlignment="Center"
-                           FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}"
-                           Foreground="{ThemeResource PaneText1Brush}"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}"
-                        Height="{StaticResource PaneControlMd}" Click="HistoryClicked"
-                        AutomationProperties.Name="{x:Bind loc:Strings.Traffic_History}" ToolTipService.ToolTip="{x:Bind loc:Strings.Traffic_History}">
-                    <c:PaneIcon Glyph="history" Width="16" Height="16"/>
-                </Button>
-                <Button x:Name="PinButton" Style="{StaticResource PaneIconButton}"
-                        Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="PinClicked">
-                    <c:PaneIcon x:Name="PinIcon" Glyph="pin" Width="16" Height="16"/>
-                </Button>
-                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}"
-                        Height="{StaticResource PaneControlMd}" Click="CloseClicked"
-                        AutomationProperties.Name="{x:Bind loc:Strings.Common_CloseWindowHint}"
-                        ToolTipService.ToolTip="{x:Bind loc:Strings.Common_CloseWindowHint}">
-                    <c:PaneIcon Glyph="close" Width="16" Height="16"/>
-                </Button>
-            </StackPanel>
-        </Grid>
-        <StackPanel Grid.Row="1" Padding="18,16" Spacing="12">
+        <StackPanel Padding="12,8" Spacing="6">
             <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -79,29 +61,33 @@
                     <TextBlock Text="{x:Bind loc:Strings.Traffic_InterfaceMonitoring}" FontSize="{StaticResource PaneTextXs}"
                                Foreground="{ThemeResource PaneText2Brush}" VerticalAlignment="Center"/>
                     <Border x:Name="InterfaceSwitchHost" VerticalAlignment="Center"/>
+                    <Button x:Name="PinButton" Style="{StaticResource PaneIconButton}"
+                            Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}" Click="PinClicked">
+                        <c:PaneIcon x:Name="PinIcon" Glyph="pin" Width="16" Height="16"/>
+                    </Button>
                 </StackPanel>
             </Grid>
-            <Grid ColumnSpacing="16" Padding="0,10" BorderThickness="0,1" BorderBrush="{ThemeResource PaneStrokeBrush}">
+            <Grid ColumnSpacing="16" Padding="0,4" BorderThickness="0,0,0,1" BorderBrush="{ThemeResource PaneStrokeBrush}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Spacing="4">
+                <StackPanel Orientation="Horizontal" Spacing="6">
                     <TextBlock Text="{x:Bind loc:Strings.Traffic_Download}" FontSize="{StaticResource PaneTextXs}"
                                Foreground="{ThemeResource PaneText2Brush}"/>
-                    <TextBlock x:Name="Download" FontSize="20" FontWeight="SemiBold" Text="—"
-                               Foreground="{ThemeResource PaneText1Brush}"/>
-                    <Canvas x:Name="DownloadPlot" Height="32" IsHitTestVisible="False">
-                        <Polyline x:Name="DownloadLine" Stroke="{ThemeResource PaneAccentBrush}" StrokeThickness="2" StrokeLineJoin="Round"/>
+                    <TextBlock x:Name="Download" FontSize="16" FontWeight="SemiBold" Text="—"
+                               Foreground="{ThemeResource PaneSuccessBrush}"/>
+                    <Canvas x:Name="DownloadPlot" Width="48" Height="18" IsHitTestVisible="False">
+                        <Polyline x:Name="DownloadLine" Stroke="{ThemeResource PaneSuccessBrush}" StrokeThickness="2" StrokeLineJoin="Round"/>
                     </Canvas>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="4">
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                     <TextBlock Text="{x:Bind loc:Strings.Traffic_Upload}" FontSize="{StaticResource PaneTextXs}"
                                Foreground="{ThemeResource PaneText2Brush}"/>
-                    <TextBlock x:Name="Upload" FontSize="20" FontWeight="SemiBold" Text="—"
-                               Foreground="{ThemeResource PaneText1Brush}"/>
-                    <Canvas x:Name="UploadPlot" Height="32" IsHitTestVisible="False">
-                        <Polyline x:Name="UploadLine" Stroke="{ThemeResource PaneAccentBrush}" StrokeThickness="2" StrokeLineJoin="Round"/>
+                    <TextBlock x:Name="Upload" FontSize="16" FontWeight="SemiBold" Text="—"
+                               Foreground="{ThemeResource PaneWarningBrush}"/>
+                    <Canvas x:Name="UploadPlot" Width="48" Height="18" IsHitTestVisible="False">
+                        <Polyline x:Name="UploadLine" Stroke="{ThemeResource PaneWarningBrush}" StrokeThickness="2" StrokeLineJoin="Round"/>
                     </Canvas>
                 </StackPanel>
             </Grid>
@@ -112,7 +98,7 @@
                 <TextBlock x:Name="Status" Grid.Column="1" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
             </Grid>
         </StackPanel>
-        <Grid Grid.Row="2" Padding="18,12,18,14" RowSpacing="10"
+        <Grid Grid.Row="1" Padding="12,8,12,10" RowSpacing="6"
               BorderThickness="0,1,0,0" BorderBrush="{ThemeResource PaneStrokeBrush}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -144,16 +130,9 @@
                     <c:PaneIcon Glyph="refresh" Width="16" Height="16"/>
                 </Button>
             </Grid>
-            <Grid Grid.Row="2" ColumnSpacing="8">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Grid Grid.Row="2">
                 <TextBox x:Name="ProcessFilter" PlaceholderText="{x:Bind loc:Strings.Traffic_RankingFilter}"
                          AutomationProperties.Name="{x:Bind loc:Strings.Traffic_RankingFilter}" TextChanged="ProcessFilterChanged"/>
-                <ComboBox x:Name="ProcessSort" Grid.Column="1" SelectedIndex="0" SelectionChanged="ProcessSortChanged"
-                          AutomationProperties.Name="{x:Bind loc:Strings.Traffic_RankingSort}">
-                    <ComboBoxItem Content="{x:Bind loc:Strings.Traffic_RankingDefault}"/>
-                    <ComboBoxItem Content="{x:Bind loc:Strings.Traffic_Download}"/>
-                    <ComboBoxItem Content="{x:Bind loc:Strings.Traffic_Upload}"/>
-                </ComboBox>
             </Grid>
             <Grid x:Name="EndProcessConfirmation" Grid.Row="3" Visibility="Collapsed" ColumnSpacing="8" Padding="8,6"
                   BorderThickness="1" BorderBrush="{ThemeResource PaneStrokeBrush}">
@@ -173,23 +152,28 @@
             <TextBlock x:Name="ProcessNoMatches" Grid.Row="4" Visibility="Collapsed" TextWrapping="Wrap"
                        Text="{x:Bind loc:Strings.Traffic_RankingNoMatch}" AutomationProperties.LiveSetting="Polite"
                        FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
-            <Grid x:Name="ProcessTable" Grid.Row="4" Visibility="Collapsed" RowSpacing="6" Background="Transparent"
+            <Grid x:Name="ProcessTable" Grid.Row="4" Visibility="Collapsed" BorderThickness="1" CornerRadius="8"
+                  BorderBrush="{ThemeResource PaneStrokeBrush}" Background="Transparent"
                   PointerEntered="RankingPointerEntered" PointerExited="RankingPointerExited">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                <Grid ColumnSpacing="10">
+                <Grid ColumnSpacing="8" Padding="8,2" Background="{ThemeResource PaneFillControlBrush}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="92"/>
-                        <ColumnDefinition Width="92"/>
+                        <ColumnDefinition Width="72"/><ColumnDefinition Width="72"/>
+                        <ColumnDefinition Width="72"/><ColumnDefinition Width="72"/>
                         <ColumnDefinition Width="24"/>
                         <ColumnDefinition Width="24"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="{x:Bind loc:Strings.Traffic_ProcessName}" FontSize="{StaticResource PaneTextXs}"
-                               Foreground="{ThemeResource PaneText2Brush}"/>
-                    <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Traffic_Download}" TextAlignment="Right"
-                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
-                    <TextBlock Grid.Column="2" Text="{x:Bind loc:Strings.Traffic_Upload}" TextAlignment="Right"
-                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                    <Button x:Name="SortName" Tag="Name" Style="{StaticResource TrafficSortHeader}" Click="SortHeaderClicked"
+                            HorizontalContentAlignment="Left" Foreground="{ThemeResource PaneText2Brush}"/>
+                    <Button x:Name="SortDownload" Grid.Column="1" Tag="Download" Style="{StaticResource TrafficSortHeader}" Click="SortHeaderClicked"
+                            Foreground="{ThemeResource PaneSuccessBrush}"/>
+                    <Button x:Name="SortUpload" Grid.Column="2" Tag="Upload" Style="{StaticResource TrafficSortHeader}" Click="SortHeaderClicked"
+                            Foreground="{ThemeResource PaneWarningBrush}"/>
+                    <Button x:Name="SortRunDownload" Grid.Column="3" Tag="RunDownload" Style="{StaticResource TrafficSortHeader}" Click="SortHeaderClicked"
+                            Foreground="{ThemeResource PaneSuccessBrush}"/>
+                    <Button x:Name="SortRunUpload" Grid.Column="4" Tag="RunUpload" Style="{StaticResource TrafficSortHeader}" Click="SortHeaderClicked"
+                            Foreground="{ThemeResource PaneWarningBrush}"/>
                 </Grid>
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollMode="Disabled">
                     <StackPanel x:Name="ProcessRows"/>

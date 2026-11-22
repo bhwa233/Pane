@@ -54,7 +54,8 @@ public sealed partial class GlassPanel : IDisposable
     bool disposing,focusing,pendingFocus,animating;
     /// <summary>Esc 是否收起窗口（视图没处理时）。二级窗口（文件、翻译、AI 对话）设成 false：Esc 永远不关窗口。</summary>
     public bool EscapeHides {get;set;}=true;
-    public GlassPanel(string name, UIElement content, IPanelView view, GlassParameters parameters, bool settingsWindow=false, bool interactive=true, Size? minSize=null, bool desktopCard=false, bool contentOnly=false)
+    readonly double? cornerRadius;
+    public GlassPanel(string name, UIElement content, IPanelView view, GlassParameters parameters, bool settingsWindow=false, bool interactive=true, Size? minSize=null, bool desktopCard=false, bool contentOnly=false, double? cornerRadius=null)
     {
         this.view=view;this.parameters=parameters;this.settingsWindow=settingsWindow;this.desktopCard=desktopCard;
         keyHandler=(_,e)=>{if(e.Key==Windows.System.VirtualKey.Escape&&EscapeHides){e.Handled=true;Hide();}};
@@ -83,6 +84,7 @@ public sealed partial class GlassPanel : IDisposable
         dpi=Native.GetDpiForWindow(Input)/96f;target=Native.Target(compositor,Visual);
         bool dark=parameters.Dark;
         if(demo){var theme=Environment.GetEnvironmentVariable("PANE_THEME");if(theme is "Light" or "Dark")dark=theme=="Dark";}
+        this.cornerRadius=cornerRadius;
         scene=new SceneB(compositor,dark,parameters.Solid);if(!contentOnly)target.Root=scene.Root;
         island.Initialize(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(Input));
         // 设计改：贴左上角。宿主窗按 Ceiling 取整总比 root 大一点，默认居中会让整片内容随高度动画在 0 / 1 像素之间跳
@@ -95,7 +97,7 @@ public sealed partial class GlassPanel : IDisposable
         root.Measure(new Windows.Foundation.Size(Width,Height));root.Arrange(new Windows.Foundation.Rect(0,0,Width,Height));
         parameters.Changed+=ParametersChanged;view.SizeRequested+=ViewSize;view.CloseRequested+=ViewClose;ParametersChanged(null,EventArgs.Empty);
     }
-    void ParametersChanged(object? sender, EventArgs args){root.RequestedTheme=parameters.Dark?ElementTheme.Dark:ElementTheme.Light;scene.Apply(parameters);Layout(positionX,positionY);TickRequested?.Invoke();}
+    void ParametersChanged(object? sender, EventArgs args){root.RequestedTheme=parameters.Dark?ElementTheme.Dark:ElementTheme.Light;scene.Apply(parameters,cornerRadius);Layout(positionX,positionY);TickRequested?.Invoke();}
     void ViewSize(object? sender, Size size)=>RequestSize(size);
     void ViewClose(object? sender, EventArgs args)=>Hide();
     double targetWidth,targetHeight,velocityWidth,velocityHeight;
@@ -164,22 +166,22 @@ public sealed partial class GlassPanel : IDisposable
         // 新建的窗口第一次显示时先隐身，等内容和玻璃都画好一帧再现身、开始淡入；常驻面板（启动器等）不多等
         Layout(x-(int)(48*dpi),y-(int)(48*dpi));Shown=true;
         if(!shownOnce&&!revealing){shownOnce=true;Cloak(true);revealing=true;Reveal(++revealVersion);}else if(!revealing)Animate();
-        nint zOrder=desktopCard?1:settingsWindow&&!demo?0:-1;
+        nint zOrder=desktopCard?(DesktopTopmost?-1:1):settingsWindow&&!demo?0:-1;
         Native.ShowWindow(Visual,4);Native.ShowWindow(Input,4);Native.SetWindowPos(Visual,zOrder,0,0,0,0,0x13);Native.SetWindowPos(Input,zOrder,0,0,0,0,0x13);
         // 两次独立置顶不能保证 owner 与 owned 窗口连续；背景可能插在中间。
         // 显式以输入窗定位视觉窗，并禁止系统联动调整所有者的 Z 序。
         if(!Native.SetWindowPos(Visual,Input,0,0,0,0,0x213))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-        if(!demo&&activate&&interactive){Activate();pendingFocus=true;}
+        if(!demo&&activate&&interactive){Activate(Input);pendingFocus=true;}
         outsideButtons=MouseButtonsDown();
     }
     // 设计改（2026-10-30）：从鼠标钩子触发的面板（超级面板长按侧键）不是前台进程发起的，系统会拒绝 SetForegroundWindow，
     // 面板拿不到焦点：点外面不收起、Esc 和数字键也不响应。被拒绝时临时挂到前台窗口线程的输入上再激活一次（常用做法）
-    void Activate()
+    internal static void Activate(nint window)
     {
-        if(Native.SetForegroundWindow(Input)&&Native.GetForegroundWindow()==Input)return;
+        if(Native.SetForegroundWindow(window)&&Native.GetForegroundWindow()==window)return;
         uint mine=GetCurrentThreadId(),theirs=GetWindowThreadProcessId(Native.GetForegroundWindow(),out _);
         bool attached=theirs!=0&&theirs!=mine&&AttachThreadInput(mine,theirs,true);
-        try{BringWindowToTop(Input);Native.SetForegroundWindow(Input);}
+        try{BringWindowToTop(window);Native.SetForegroundWindow(window);}
         finally{if(attached)AttachThreadInput(mine,theirs,false);}
     }
     // WS_EX_NOACTIVATE 只在不激活方式下加上；激活方式（含 Engage 之后）去掉，点击照常激活
@@ -194,13 +196,13 @@ public sealed partial class GlassPanel : IDisposable
     public void Refocus()
     {
         if(!Shown||Passive||disposing||demo||desktopCard)return;
-        Activate();
+        Activate(Input);
         if(root.IsLoaded)Focus();else pendingFocus=true;
     }
     public void Engage()
     {
         if(!Passive||!Shown||disposing)return;
-        SetPassive(false);Activate();
+        SetPassive(false);Activate(Input);
         if(root.IsLoaded)Focus();else pendingFocus=true;
     }
     // 不激活方式下原窗口不再是前台（切走、关掉）就收起；Pane 自己的窗口（如收起途中别的面板）不算
@@ -261,7 +263,7 @@ public sealed partial class GlassPanel : IDisposable
     public void Hide(){if(!Shown)return;Shown=false;pendingFocus=false;Hiding?.Invoke(this,EventArgs.Empty);minimizing=false;if(revealing){revealing=false;revealVersion++;Cloak(false);}Animate();}
     // 隐身显示（DWMWA_CLOAK）：窗口照常显示、照常合成，只是不画到屏幕上
     bool revealing,shownOnce;int revealVersion;
-    void Cloak(bool on){int v=on?1:0;Native.DwmSetWindowAttribute(Visual,13,ref v,4);Native.DwmSetWindowAttribute(Input,13,ref v,4);}
+    void Cloak(bool on){int v=on||DesktopOccluded?1:0;Native.DwmSetWindowAttribute(Visual,13,ref v,4);Native.DwmSetWindowAttribute(Input,13,ref v,4);}
     async void Reveal(int version)
     {
         try
@@ -285,7 +287,7 @@ public sealed partial class GlassPanel : IDisposable
         if(minimizing){minimizing=false;Animate();}   // 收起动画还没播完又被叫出来：原地反向
         if(IsIconic(Input))Native.ShowWindow(Input,9);
         view.OnShown();
-        if(!demo&&activate&&interactive){Activate();pendingFocus=true;}
+        if(!demo&&activate&&interactive){Activate(Input);pendingFocus=true;}
     }
     /// <summary>「总在最前」（二级窗口右上角的图钉；桌面便签卡置顶也走这里）。面板本来就在最前，只对有任务栏按钮的窗口和桌面卡有意义。</summary>
     public void SetTopmost(bool on){if(demo)return;if(!settingsWindow&&!desktopCard)return;Native.SetWindowPos(Input,on?-1:-2,0,0,0,0,0x13);Native.SetWindowPos(Visual,Input,0,0,0,0,0x213);}
@@ -337,7 +339,7 @@ public sealed partial class GlassPanel : IDisposable
         // 这里只跟踪当前值（中途反向时作起点、诊断用），画面由合成器的动画负责
         scale=(float)(startScale+((Showing?1:GlassParameters.Token("PaneEnterScale"))-startScale)*a);opacity=(float)(startOpacity+((Showing?1:0)-startOpacity)*b);
         if(t>=duration&&minimizing){animating=false;minimizing=false;StopAnimations();Layout(positionX,positionY);Native.ShowWindow(Input,6);return;}
-        if(t>=duration){animating=false;StopAnimations();Layout(positionX,positionY);if(!Shown)Gone();else view.OnShown();}
+        if(t>=duration){animating=false;StopAnimations();Layout(positionX,positionY);if(!Shown)Gone();else if(!DesktopOccluded)view.OnShown();}
     }
     void Gone(){Native.ShowWindow(Input,0);Native.ShowWindow(Visual,0);view.OnHidden();Hidden?.Invoke(this,EventArgs.Empty);}
     static double Ease(double t,double[] curve)=>t<=0?0:t>=1?1:Bezier(t,curve[0],curve[1],curve[2],curve[3]);
@@ -377,7 +379,8 @@ public sealed partial class GlassPanel : IDisposable
             content.Offset=new Vector3((float)((ex-ix)/dpi),(float)((ey-iy)/dpi),0);
             MoveWindowsTogether(x,y,ix,iy,w,h);
             nint region=HitRegion is { } build?build():0;
-            if(region==0)region=Native.CreateRoundRectRgn(0,0,w+1,h+1,(int)(2*parameters.Current.PanelRadius*dpi),(int)(2*parameters.Current.PanelRadius*dpi));
+            var diameter=(int)(2*(cornerRadius??parameters.Current.PanelRadius)*dpi);
+            if(region==0)region=Native.CreateRoundRectRgn(0,0,w+1,h+1,diameter,diameter);
             if(Native.SetWindowRgn(Input,region,false)==0)Native.DeleteObject(region);
         }
         island.SiteBridge.MoveAndResize(new RectInt32(0,0,w,h));

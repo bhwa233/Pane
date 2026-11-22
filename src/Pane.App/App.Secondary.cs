@@ -16,7 +16,7 @@ public sealed partial class App
     public IWebSuggestions? WebSuggestions {get;set;}
     /// <summary>终端命令历史（037）：设置页「清空」用。工程赋真实实现。</summary>
     public ITerminalHistory? TerminalHistory {get;set;}
-    enum SecondaryId { Files, Translate, Chat, Timer, Reminder, Words, Traffic, TrafficHistory, TrafficConnections, Screenshots, DesktopCards, NoteReminder }   // Reminder：定时关机的到点前提醒（058），不是二级窗口，借这张表逐帧推进和释放
+    enum SecondaryId { Files, Translate, Chat, Timer, Reminder, Words, TrafficConnections, Screenshots, NoteReminder }   // Reminder：定时关机的到点前提醒（058），不是二级窗口，借这张表逐帧推进和释放
     readonly Dictionary<SecondaryId,GlassPanel> secondaries=[];
     readonly Dictionary<SecondaryId,(int X,int Y,double W,double H)> secondaryBounds=[];
     // 销毁窗口前要做的退订（关窗口、能力停用两条路径都调用）
@@ -49,7 +49,7 @@ public sealed partial class App
     void Present(SecondaryId id,string name,Func<Microsoft.UI.Xaml.Controls.UserControl> make,Action<IPanelView> open,(int X,int Y)? at=null)
     {
         if(closing)return;
-        var owner=id switch { SecondaryId.Files=>ModuleIds.Launcher, SecondaryId.Timer=>ModuleIds.PowerTimer, SecondaryId.Words=>ModuleIds.Words, SecondaryId.Traffic or SecondaryId.TrafficHistory or SecondaryId.TrafficConnections=>ModuleIds.Traffic, SecondaryId.Screenshots=>ModuleIds.Screenshots, SecondaryId.DesktopCards=>null, _=>ModuleIds.Ai };
+        var owner=id switch { SecondaryId.Files=>ModuleIds.Launcher, SecondaryId.Timer=>ModuleIds.PowerTimer, SecondaryId.Words=>ModuleIds.Words, SecondaryId.TrafficConnections=>ModuleIds.Traffic, SecondaryId.Screenshots=>ModuleIds.Screenshots, _=>ModuleIds.Ai };
         if(owner!=null&&!AllowModule(owner))return;
         if(!secondaries.TryGetValue(id,out var panel)){
             var view=make();var sv=(ISecondaryView)view;
@@ -61,11 +61,6 @@ public sealed partial class App
             EventHandler<bool> topmost=(_,on)=>panel.SetTopmost(on);sv.TopmostChanged+=topmost;secondaryRelease[id]=()=>sv.TopmostChanged-=topmost;
             var host=panel;
             host.Hidden+=(_,_)=>{
-                if(id==SecondaryId.DesktopCards){
-                    if(current==host)current=null;
-                    ReclaimAfterSettings();
-                    return;
-                }
                 secondaryBounds[id]=(host.Origin.X,host.Origin.Y,host.Width,host.Height);
                 if(secondaryRelease.Remove(id,out var release))release();
                 secondaries.Remove(id);if(current==host)current=null;host.Dispose();ReclaimAfterSettings();
@@ -77,11 +72,10 @@ public sealed partial class App
         open(panel.View);
         current=panel;
         var activate=!demo&&Environment.GetEnvironmentVariable("PANE_VERIFY")!="1";
-        if(id==SecondaryId.DesktopCards&&desktopScreenPoint is {} screen)panel.ShowOnScreen(screen,activate);
-        else panel.BringToFront(activate:activate);
+        panel.BringToFront(activate:activate);
     }
 
-    void HideSecondaries(){foreach(var w in secondaries.Values.ToArray())w.Hide();notesWindow?.Close();}
+    void HideSecondaries(){HideCardDesktop();foreach(var w in secondaries.Values.ToArray())w.Hide();notesWindow?.Close();trafficWindow?.Close();}
     void TickSecondaries(){foreach(var w in secondaries.Values.ToArray())w.Tick();}
     bool SecondariesSettled=>secondaries.Values.All(w=>w.Settled);
 

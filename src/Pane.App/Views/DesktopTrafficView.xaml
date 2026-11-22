@@ -2,53 +2,53 @@
 <UserControl x:Class="Pane.Views.DesktopTrafficView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:c="using:Pane.Views.Controls"
     xmlns:loc="using:Pane.Localization">
-    <Grid>
-        <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-        <Grid x:Name="Header" Background="Transparent" Padding="12,0,6,0" ColumnSpacing="6"
-              BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="0,0,0,1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <c:PaneIcon Glyph="globe" Width="14" Height="14" Foreground="{ThemeResource PaneText2Brush}"/>
-            <TextBlock x:Name="CardTitle" Grid.Column="1" Text="{x:Bind loc:Strings.Traffic_InterfaceTotal}" VerticalAlignment="Center"
-                       TextTrimming="CharacterEllipsis" FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}"
-                       FontWeight="SemiBold" Foreground="{ThemeResource PaneText1Brush}"/>
-            <Button x:Name="RanksButton" Grid.Column="2" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="RanksClicked">
-                <c:PaneIcon x:Name="RanksIcon" Glyph="pulse" Width="13" Height="13"/>
-            </Button>
-            <Button Grid.Column="3" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="OpenClicked"
-                    AutomationProperties.Name="{x:Bind loc:Strings.Traffic_OpenPanel}" ToolTipService.ToolTip="{x:Bind loc:Strings.Traffic_OpenPanel}">
-                <c:PaneIcon Glyph="external" Width="13" Height="13"/>
-            </Button>
-            <Button Grid.Column="4" Width="28" Height="28" Style="{StaticResource PaneIconButton}" Click="UnpinClicked"
-                    AutomationProperties.Name="{x:Bind loc:Strings.Notes_UnpinDesktop}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_UnpinDesktop}">
-                <c:PaneIcon Glyph="pin-off" Width="13" Height="13"/>
-            </Button>
+    <Grid x:Name="Surface" Background="Transparent" IsTabStop="True"
+          PointerEntered="HudEntered" PointerExited="HudExited" Tapped="OpenTapped" KeyDown="HudKeyDown"
+          AutomationProperties.Name="{x:Bind loc:Strings.Traffic_DesktopCard}">
+        <Grid.ContextFlyout>
+            <MenuFlyout x:Name="Actions" Opening="ActionsOpening">
+                <ToggleMenuFlyoutItem x:Name="TopmostItem" Text="{x:Bind loc:Strings.Notes_Topmost}" Click="OptionsClicked"/>
+                <ToggleMenuFlyoutItem x:Name="EdgeItem" Text="{x:Bind loc:Strings.Traffic_EdgeHide}" Click="OptionsClicked"/>
+                <ToggleMenuFlyoutItem x:Name="FullscreenItem" Text="{x:Bind loc:Strings.Traffic_FullscreenHide}" Click="OptionsClicked"/>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutItem Text="{x:Bind loc:Strings.Traffic_OpenPanel}" Click="OpenClicked"/>
+                <MenuFlyoutItem Text="{x:Bind loc:Strings.Traffic_CloseHud}" Click="UnpinClicked"/>
+            </MenuFlyout>
+        </Grid.ContextFlyout>
+        <Border x:Name="RateCard" CornerRadius="8" BorderThickness="1" BorderBrush="{ThemeResource PaneStrokeBrush}"
+                Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+        <Grid Margin="5,2" ColumnSpacing="2" VerticalAlignment="Center">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <TextBlock Text="&#x2191;" Foreground="{ThemeResource PaneWarningBrush}"
+                       AutomationProperties.Name="{x:Bind loc:Strings.Traffic_Upload}"/>
+            <TextBlock x:Name="Upload" Grid.Column="1" Text="&#x2014;"
+                       Foreground="{ThemeResource PaneWarningBrush}"/>
+            <TextBlock Grid.Row="1" Text="&#x2193;" Foreground="{ThemeResource PaneSuccessBrush}"
+                       AutomationProperties.Name="{x:Bind loc:Strings.Traffic_Download}"/>
+            <TextBlock x:Name="Download" Grid.Row="1" Grid.Column="1" Text="&#x2014;"
+                       Foreground="{ThemeResource PaneSuccessBrush}"/>
         </Grid>
-        <Grid x:Name="InterfaceBody" Grid.Row="1" Margin="12,8,12,10" ColumnSpacing="10" RowSpacing="4">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-            <StackPanel Spacing="3">
-                <TextBlock Text="{x:Bind loc:Strings.Traffic_Download}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
-                <TextBlock x:Name="Download" Text="—" FontSize="{StaticResource PaneTextSm}" FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis" Foreground="{ThemeResource PaneText1Brush}"/>
-            </StackPanel>
-            <StackPanel Grid.Column="1" Spacing="3">
-                <TextBlock Text="{x:Bind loc:Strings.Traffic_Upload}" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
-                <TextBlock x:Name="Upload" Text="—" FontSize="{StaticResource PaneTextSm}" FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis" Foreground="{ThemeResource PaneText1Brush}"/>
-            </StackPanel>
-            <TextBlock x:Name="Status" Grid.Row="1" Grid.ColumnSpan="2" TextTrimming="CharacterEllipsis"
-                       FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
-        </Grid>
-        <Grid x:Name="RankBody" Grid.Row="1" Margin="12,8,12,10" RowSpacing="4" Visibility="Collapsed">
-            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-            <StackPanel x:Name="RankRows" Spacing="3"/>
-            <TextBlock x:Name="RankStatus" Grid.Row="1" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"
-                       FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
-        </Grid>
+        </Border>
+        <Border x:Name="EdgeTab" Background="{ThemeResource PaneSuccessBrush}" Visibility="Collapsed"/>
+        <Popup x:Name="RankingPopup" ShouldConstrainToRootBounds="False">
+            <Border x:Name="Ranking" Width="260" Padding="10,8" CornerRadius="8" BorderThickness="1"
+                    Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}"
+                    PointerEntered="RankingEntered" PointerExited="RankingExited">
+                <StackPanel Spacing="4">
+                    <StackPanel x:Name="UploadRank" Spacing="4" Visibility="Collapsed">
+                        <TextBlock x:Name="UploadHeading" Text="{x:Bind loc:Strings.Traffic_UploadRanking}" Foreground="{ThemeResource PaneWarningBrush}"/>
+                        <StackPanel x:Name="UploadRows" Spacing="4"/>
+                    </StackPanel>
+                    <StackPanel x:Name="DownloadRank" Spacing="4" Visibility="Collapsed">
+                        <TextBlock x:Name="DownloadHeading" Text="{x:Bind loc:Strings.Traffic_DownloadRanking}" Foreground="{ThemeResource PaneSuccessBrush}"/>
+                        <StackPanel x:Name="DownloadRows" Spacing="4"/>
+                    </StackPanel>
+                    <TextBlock x:Name="RankStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"
+                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                </StackPanel>
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

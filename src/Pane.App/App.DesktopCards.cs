@@ -1,3 +1,5 @@
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Pane.Hosting;
 using Pane.Localization;
@@ -14,43 +16,153 @@ public sealed partial class App
     Dictionary<Guid, RectInt32>? noteArrangement;
     Native.Point? desktopScreenPoint;
     bool desktopReflowQueued, desktopCardsHidden;
+    CardDesktopOverlay? cardDesktopWindow;
+    DesktopCardsView? cardDesktopView;
+    bool cardDesktopShown;
+    ContentControl? cardDesktopTraffic;
+    DesktopCardTrigger? desktopTrigger;
+
+    void StartCardDesktopTrigger()
+    {
+        if (demo) return;
+        desktopTrigger = new(point => queue.TryEnqueue(() => ShowCardDesktopAt(point)),
+            () => !closing && !cardDesktopShown && Store.Current.ShowCardDesktopTrigger);
+        desktopTrigger.Refresh();
+    }
+
+    internal void SetCardDesktopTrigger(bool enabled)
+    {
+        Store.Update(settings => settings with { ShowCardDesktopTrigger = enabled });
+        desktopTrigger?.Refresh();
+    }
+
+    void CloseCardDesktop()
+    {
+        ReturnCardDesktopTraffic();
+        cardDesktopView?.Dispose();
+        cardDesktopWindow?.Dispose();
+        desktopTrigger?.Dispose();
+    }
 
     void ShowDesktopCards()
     {
         if (closing) return;
-        CancelDesktopArrangement();
-        SelectDesktopCardScreen();
-        GlassPanel.RestoreDesktopCards(DesktopCardPanels());
-        Present(SecondaryId.DesktopCards, Strings.DesktopCards_Title,
-            () => new DesktopCardsView(Glass, CreateTrafficCardView, note => CreateNoteCardView(note.Id), CreateScreenshotCardView,
-                ShowTraffic, () => ShowNotes(), () => ShowScreenshots(), ToggleDesktopCards, BeginDesktopArrangement, SaveDesktopArrangement, CancelDesktopArrangement),
-            view => ApplyDesktopCards((DesktopCardsView)view));
+        Native.GetCursorPos(out var point);
+        ShowCardDesktopAt(point);
+    }
+
+    void ShowCardDesktopAt(Native.Point point)
+    {
+        if (closing) return;
+        foreach (var panel in panels.Values) panel.Hide();
+        var display = DisplayArea.GetFromPoint(new PointInt32(point.X, point.Y), DisplayAreaFallback.Nearest);
+        if (cardDesktopWindow == null)
+        {
+            var view = new DesktopCardsView(CardDesktopCatalog, CreateCardDesktopContent, SaveCardDesktopPlacement,
+                HideCardDesktop, OpenCardTrafficOutside, () => { HideCardDesktop(); OpenSettings(null); });
+            cardDesktopView = view;
+            cardDesktopWindow = new(view, HideCardDesktop);
+        }
+        if (Store.Current.CardDesktopLayout == null)
+        {
+            var layout = new Dictionary<string, CardDesktopPlacement>();
+            var settings = Store.Current;
+            if (settings.DesktopTraffic is { Hidden: false }) layout["hud"] = new(16, 16, 126, 76);
+            foreach (var id in settings.DesktopNotes?.Keys.AsEnumerable() ?? []) Seed($"note:{id:D}");
+            foreach (var id in settings.DesktopScreenshots?.Keys.AsEnumerable() ?? []) Seed($"screenshot:{id:D}");
+            Store.Update(current => current with { CardDesktopLayout = layout });
+            void Seed(string key) => layout[key] = new(16 + 24 * layout.Count, 16 + 24 * layout.Count, 256, 202);
+        }
+        cardDesktopShown = true;
+        cardDesktopView!.RequestedTheme = Glass.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        RefreshDesktopCardsOverview();
+        cardDesktopWindow.Show(display.WorkArea, activate: !demo);
+        cardDesktopView.SetVisible(true);
+        cardDesktopView.FocusEntry();
+        desktopTrigger?.Refresh();
+    }
+
+    void HideCardDesktop()
+    {
+        if (!cardDesktopShown) return;
+        cardDesktopShown = false;
+        cardDesktopView!.SetVisible(false);
+        cardDesktopWindow!.Hide();
+        ReturnCardDesktopTraffic();
+        desktopTrigger?.Refresh();
     }
 
     void RefreshDesktopCardsOverview()
     {
-        if (!closing && secondaries.TryGetValue(SecondaryId.DesktopCards, out var overview) && overview.Shown)
-            ApplyDesktopCards((DesktopCardsView)overview.View);
+        if (closing || cardDesktopView == null || Store.Current.CardDesktopLayout is not { } layout) return;
+        if (cardDesktopTraffic != null && (!layout.ContainsKey("traffic") || !desktopTrafficEnabled))
+        {
+            ReturnCardDesktopTraffic();
+            cardDesktopTraffic = null;
+        }
+        cardDesktopView.Apply(layout);
+        if (cardDesktopShown) BorrowCardDesktopTraffic();
     }
 
-    void ApplyDesktopCards(DesktopCardsView overview)
+    IEnumerable<(string Key, string Title)> CardDesktopCatalog()
     {
-        var panels = DesktopCardPanels().ToArray();
-        if (desktopArrangement is { } editing && (editing.Count != panels.Length || panels.Any(panel => !editing.ContainsKey(panel)) ||
-            noteArrangement!.Count != desktopNotes.Count || desktopNotes.Keys.Any(id => !noteArrangement.ContainsKey(id))))
-            EndDesktopArrangement(restore: true);
-        var hasCards = panels.Length != 0 || desktopNotes.Count != 0;
-        overview.ApplyDesktopVisibility(hasCards, desktopCardsHidden);
-        overview.ApplyArrangement(hasCards && !desktopCardsHidden, desktopArrangement != null);
-        var settings = Store.Current;
-        var pinnedNotes = desktopNotesEnabled && settings.DesktopNotes != null
-            ? settings.DesktopNotes.Keys.Select(id => notes?.Find(id)).OfType<NoteDocument>()
-            : [];
-        var pinnedScreenshots = desktopScreenshotsEnabled && settings.DesktopScreenshots != null
-            ? settings.DesktopScreenshots.Keys.Take(8).Where(id => id != Guid.Empty)
-            : [];
-        overview.Apply(desktopTrafficEnabled, desktopNotesEnabled, desktopScreenshotsEnabled,
-            desktopTrafficEnabled && settings.DesktopTraffic != null, pinnedNotes, pinnedScreenshots);
+        if (desktopTrafficEnabled)
+        {
+            yield return ("hud", Strings.Traffic_DesktopCard);
+            yield return ("traffic", Strings.Module_Traffic_Name);
+        }
+        if (desktopNotesEnabled)
+            foreach (var note in GetNotes().Documents)
+                yield return ($"note:{note.Id:D}", string.IsNullOrWhiteSpace(note.Title) ? Strings.Notes_New : note.Title);
+        if (desktopScreenshotsEnabled)
+            foreach (var screenshot in GetScreenshots().List())
+                yield return ($"screenshot:{screenshot.Id:D}", $"{Strings.Module_Screenshots_Name} · {screenshot.CreatedUtc.ToLocalTime():g}");
+    }
+
+    FrameworkElement? CreateCardDesktopContent(string key)
+    {
+        if (key == "traffic") return cardDesktopTraffic = new ContentControl
+        { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
+        if (key == "hud")
+        {
+            var hud = new DesktopTrafficView(GetInterfaceTraffic(), processTraffic!);
+            hud.OpenRequested += (_, _) => SaveCardDesktopPlacement("traffic",
+                Store.Current.CardDesktopLayout?.GetValueOrDefault("traffic") ?? new(48, 48, 608, 500));
+            hud.UnpinRequested += (_, _) => SaveCardDesktopPlacement("hud", null);
+            return hud;
+        }
+        var delimiter = key.IndexOf(':');
+        if (delimiter < 0 || !Guid.TryParse(key.AsSpan(delimiter + 1), out var id)) return null;
+        if (key.StartsWith("note:", StringComparison.Ordinal) && GetNotes().Find(id) != null)
+        {
+            var note = new DesktopNoteView(GetNoteSessions(), id, new DesktopNoteHost(this, key), inCardDesktop: true);
+            note.FoldRequested += (_, _) =>
+            {
+                if (Store.Current.CardDesktopLayout?.GetValueOrDefault(key) is { } placement && note.PrepareWorkspaceFold())
+                    SaveCardDesktopPlacement(key, placement with { Folded = true });
+            };
+            note.UnpinRequested += (_, _) => SaveCardDesktopPlacement(key, null);
+            return note;
+        }
+        if (!key.StartsWith("screenshot:", StringComparison.Ordinal)) return null;
+        return CreateScreenshotCardView(id, () => SaveCardDesktopPlacement(key, null));
+    }
+
+    void SaveCardDesktopPlacement(string key, CardDesktopPlacement? placement)
+    {
+        try
+        {
+            Store.Update(settings =>
+            {
+                var layout = new Dictionary<string, CardDesktopPlacement>(settings.CardDesktopLayout ?? []);
+                if (placement == null) layout.Remove(key);
+                else layout[key] = placement;
+                return settings with { CardDesktopLayout = layout };
+            });
+            RefreshDesktopCardsOverview();
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { ReportFailure(Strings.DesktopCards_Title, error); }
     }
 
     IEnumerable<GlassPanel> DesktopCardPanels() => (desktopTrafficCard is { } traffic ? new[] { traffic } : [])
@@ -94,12 +206,12 @@ public sealed partial class App
     bool BeginDesktopArrangement()
     {
         if (closing || desktopCardsHidden || desktopArrangement != null) return false;
+        ApplyTrafficEdgeTab(false, allowDock: false);
         var open = DesktopCardPanels().Where(panel => panel.Shown).ToDictionary(panel => panel, panel => panel.DesktopAnchor);
         if (open.Count == 0 && desktopNotes.Count == 0) return false;
         desktopArrangement = open;
         noteArrangement = desktopNotes.ToDictionary(pair => pair.Key, pair => pair.Value.Bounds);
         foreach (var panel in open.Keys) panel.BeginDesktopArrangement();
-        if (secondaries.TryGetValue(SecondaryId.DesktopCards, out var overview)) overview.PlacePanelInZOrder(0);
         return true;
     }
 
@@ -160,6 +272,7 @@ public sealed partial class App
                 if (desktopNotes.TryGetValue(id, out var card) && !card.Bounds.Equals(bounds)) card.AppWindow.MoveAndResize(bounds);
         noteArrangement = null;
         if (restore) GlassPanel.RestoreDesktopCards(DesktopCardPanels());
+        ApplyTrafficHudWindow();
     }
 
     void QueueDesktopReflow()
@@ -169,16 +282,19 @@ public sealed partial class App
         {
             desktopReflowQueued = false;
             if (closing) return;
+            desktopTrigger?.Refresh();
+            ApplyTrafficEdgeTab(false, allowDock: false);
             if (desktopArrangement != null) CancelDesktopArrangement();
             else GlassPanel.RestoreDesktopCards(DesktopCardPanels());
             foreach (var (id, note) in desktopNotes)
                 note.Reposition(Store.Current.DesktopNotes?.GetValueOrDefault(id), desktopScreenPoint ?? default, note.Size, DesktopCardObstacles(exceptNote: note));
+            ApplyTrafficHudWindow();
             RefreshDesktopCardsOverview();
         });
     }
 
     GlassPanel? CreateDesktopCard(string title, UserControl content, IPanelView view, LauncherPosition? position,
-        Action<LauncherPosition?> save)
+        Action<LauncherPosition?> save, double? cornerRadius = null)
     {
         void Remember(LauncherPosition? anchor)
         {
@@ -189,7 +305,7 @@ public sealed partial class App
         try
         {
             if (desktopScreenPoint == null || !desktopCardsHidden && !DesktopCardPanels().Any()) SelectDesktopCardScreen();
-            panel = new GlassPanel(title, content, view, Glass, desktopCard: true)
+            panel = new GlassPanel(title, content, view, Glass, desktopCard: true, cornerRadius: cornerRadius)
             {
                 DesktopAnchor = position, EscapeHides = false,
                 DesktopScreenPoint = desktopScreenPoint,

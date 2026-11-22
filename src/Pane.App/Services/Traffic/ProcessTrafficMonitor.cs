@@ -4,15 +4,16 @@ namespace Pane.Services.Traffic;
 
 internal sealed class ProcessTrafficMonitor
 {
-    internal const int DesktopRankingLimit = 2;
+    // The desktop hover panel shows three entries per direction.
+    const int DesktopRankingLimit = 3;
     readonly ProcessTrafficClient client = new();
     readonly CancellationTokenSource stop = new();
     readonly DispatcherQueueTimer timer;
-    Action<ProcessTrafficSample>? listeners;
+    Action<ProcessTrafficSample, ProcessTrafficSample>? listeners;
     Action<ProcessTrafficSample>? detailListener;
     TrafficRankingQuery? detailQuery;
     int detailVersion;
-    Task<(ProcessTrafficSample Primary, ProcessTrafficSample? Ranked)>? inFlight;
+    Task? inFlight;
     bool? requestedEnabled;
     bool retryRequested;
     bool settingsWriteFailed;
@@ -26,14 +27,14 @@ internal sealed class ProcessTrafficMonitor
         Refresh();
     }
 
-    public void Subscribe(Action<ProcessTrafficSample> listener)
+    public void Subscribe(Action<ProcessTrafficSample, ProcessTrafficSample> listener)
     {
         listeners += listener;
         timer.Interval = TimeSpan.FromSeconds(1);
         Refresh();
     }
 
-    public void Unsubscribe(Action<ProcessTrafficSample> listener)
+    public void Unsubscribe(Action<ProcessTrafficSample, ProcessTrafficSample> listener)
     {
         listeners -= listener;
         UpdateInterval();
@@ -92,23 +93,30 @@ internal sealed class ProcessTrafficMonitor
         var query = detail ? detailQuery : null;
         var version = detailVersion;
         var snapshotLimit = detail ? ProcessTrafficClient.DetailRankingLimit : card ? DesktopRankingLimit : 0;
+        var download = new TrafficRankingQuery("", false, TrafficRankingSort.Download, ActiveOnly: true);
+        var upload = new TrafficRankingQuery("", false, TrafficRankingSort.Upload, ActiveOnly: true);
         var work = Task.Run(async () =>
         {
-            var primary = await client.SampleAsync(requested, snapshotLimit, token, card ? null : query, retry).ConfigureAwait(false);
-            var ranked = requested == null && card && query is { } contract && primary.State is ProcessTrafficState.Live or ProcessTrafficState.Partial
-                ? await client.ReadRankingAsync(contract, token).ConfigureAwait(false) : null;
-            return (Primary: primary, Ranked: ranked);
+            var primary = await client.SampleAsync(requested, snapshotLimit, token, card ? detail ? null : download : query, retry).ConfigureAwait(false);
+            var live = primary.State is ProcessTrafficState.Live or ProcessTrafficState.Partial;
+            var ranked = requested == null && card && live && query is { } contract
+                ? await client.ReadRankingAsync(contract, ProcessTrafficClient.DetailRankingLimit, token).ConfigureAwait(false) : primary;
+            var down = card && detail && live
+                ? await client.ReadRankingAsync(download, DesktopRankingLimit, token).ConfigureAwait(false) : primary;
+            var up = card && live
+                ? await client.ReadRankingAsync(upload, DesktopRankingLimit, token).ConfigureAwait(false) : primary;
+            return (Primary: ranked, Download: down, Upload: up);
         }, token);
         inFlight = work;
         try
         {
-            var (primary, ranked) = await work;
+            var (primary, down, up) = await work;
             if (token.IsCancellationRequested) return;
             if (requested != null) settingsWriteFailed = primary.SettingsWriteFailed;
             if (requestedEnabled != null || retryRequested) return;
-            if (card) listeners?.Invoke(primary with { SettingsWriteFailed = settingsWriteFailed });
+            if (card) listeners?.Invoke(down, up);
             if (detail && version == detailVersion)
-                detailListener?.Invoke((ranked ?? primary) with { SettingsWriteFailed = settingsWriteFailed });
+                detailListener?.Invoke(primary with { SettingsWriteFailed = settingsWriteFailed });
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         finally

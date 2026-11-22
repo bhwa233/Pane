@@ -28,6 +28,9 @@ public sealed partial class SettingsView
             Row(Strings.Settings_ShowTrayIcon, Strings.Settings_ShowTrayIcon_Description,
                 Switch(g.ShowTrayIcon, v => SaveGeneral(x => x with { ShowTrayIcon = v }))));
         RenderLanguage(g);
+        Group(Strings.DesktopCards_Title,
+            Row(Strings.CardDesktop_Trigger, null, Switch(app.Store.Current.ShowCardDesktopTrigger,
+                app.SetCardDesktopTrigger)));
 
         var swatches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         foreach (var (color, name) in new[] { ("#FF5874C9", Strings.Settings_Accent_MistBlue), ("#FF17958B", Strings.Settings_Accent_Teal), ("#FF5F8F4E", Strings.Settings_Accent_Moss), ("#FF4A505C", Strings.Settings_Accent_Graphite) })

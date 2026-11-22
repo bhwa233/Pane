@@ -17,6 +17,12 @@ public sealed partial class GlassPanel
     internal LauncherPosition? DesktopPlacement => activeMonitor is { } monitor ? new(monitor.Id,anchorX,anchorY) : null;
     internal Func<IReadOnlyList<Rectangle>>? DesktopObstacles {get;set;}
     internal Action? DesktopWorkAreaChanged {get;set;}
+    internal Action<LauncherPosition?>? DesktopDragSaved {get;set;}
+    internal Action? DesktopDragStarted {get;set;}
+    internal Action<bool>? DesktopDragFinished {get;set;}
+    internal Action? DesktopClick {get;set;}
+    internal bool DesktopTopmost {get;set;}
+    internal bool DesktopOccluded {get;private set;}
     internal Rectangle DesktopBounds => new(Origin.X,Origin.Y,(int)(Width*dpi),(int)(Height*dpi));
     internal bool DesktopArranging {get;private set;}
     /// <summary>打开时放到这个位置（物理像素，玻璃左上角）。二级窗口用来「记住位置」。</summary>
@@ -165,12 +171,15 @@ public sealed partial class GlassPanel
         if(!desktopCard||disposing||!Shown)return;
         DesktopArranging=true;
         lastClick=0;
+        if(DesktopTopmost)SetTopmost(false);
         PlacePanelInZOrder(0);
     }
     internal void FinishDesktopDrag()
     {
+        bool moved=dragging&&dragMoved;
         EndDrag();
         root.ReleasePointerCaptures();
+        if(moved)DesktopDragFinished?.Invoke(false);
     }
     internal void EndDesktopArrangement(LauncherPosition? original,bool restore)
     {
@@ -180,7 +189,41 @@ public sealed partial class GlassPanel
         DesktopArranging=false;
         lastClick=0;
         if(restore)DesktopAnchor=original;
-        PlacePanelInZOrder(1);
+        PlacePanelInZOrder(DesktopTopmost?-1:1);
+    }
+    internal void SetDesktopOccluded(bool value)
+    {
+        if(DesktopOccluded==value)return;
+        DesktopOccluded=value;
+        Cloak(revealing);
+    }
+    internal bool SetDesktopEdgeTab(bool dock, bool collapse)
+    {
+        if(activeMonitor is not {} m||dragging)return false;
+        var size=view.PreferredSize;
+        var origin= new Point { X=(int)Math.Round(m.Work.Left+anchorX*dpi), Y=(int)Math.Round(m.Work.Top+anchorY*dpi) };
+        double width=size.Width,height=size.Height;
+        int w=(int)Math.Ceiling(width*dpi),h=(int)Math.Ceiling(height*dpi);
+        int margin=(int)Math.Ceiling(8*dpi);
+        bool folded=false;
+        if(dock&&Shown&&!DesktopArranging)
+        {
+            // Galaxy's edge target leaves a 4 DIP tab. Keep it inside this monitor's work area.
+            const double tab=4;
+            folded=collapse;
+            if(origin.X<=m.Work.Left+margin){if(folded)width=tab;origin.X=m.Work.Left;}
+            else if(origin.X+w>=m.Work.Right-margin){if(folded)width=tab;origin.X=m.Work.Right-(int)Math.Ceiling(width*dpi);}
+            else if(origin.Y<=m.Work.Top+margin){if(folded)height=tab;origin.Y=m.Work.Top;}
+            else if(origin.Y+h>=m.Work.Bottom-margin){if(folded)height=tab;origin.Y=m.Work.Bottom-(int)Math.Ceiling(height*dpi);}
+            else folded=false;
+        }
+        int x=origin.X-(int)(48*dpi),y=origin.Y-(int)(48*dpi);
+        if(Width!=width||Height!=height||positionX!=x||positionY!=y)
+        {
+            Width=targetWidth=width;Height=targetHeight=height;resizing=false;
+            Layout(x,y);
+        }
+        return folded;
     }
     internal void PlacePanelInZOrder(nint after)
     {
@@ -225,7 +268,8 @@ public sealed partial class GlassPanel
     {
         if(desktopCard)
         {
-            if(DesktopArranging)DesktopAnchor=DesktopPlacement;
+            if(DesktopArranging||DesktopDragSaved!=null)DesktopAnchor=DesktopPlacement;
+            if(!DesktopArranging)DesktopDragSaved?.Invoke(DesktopAnchor);
             return;
         }
         if(PositionStore is not {} store||activeMonitor is not {} m)return;
@@ -245,9 +289,9 @@ public sealed partial class GlassPanel
         // 按任务许可直接跳回，不重放出现动画和视图 OnShowing。
         Layout(point.X-(int)(48*dpi),point.Y-(int)(48*dpi));
     }
-    bool CanDrag(DependencyObject? source)
+    internal static bool CanDragFrom(UIElement? region, DependencyObject? source)
     {
-        if(view.DragRegion is not {} region)return false;
+        if(region==null)return false;
         for(var node=source;node!=null;node=VisualTreeHelper.GetParent(node))
         {
             // 标准控件一律保留交互；纯展示 UserControl（例如图标）仅在不可聚焦时放行。
@@ -258,11 +302,12 @@ public sealed partial class GlassPanel
         }
         return false;
     }
+    internal static bool PassedDragThreshold(double x,double y)=>Math.Abs(x)>=GetSystemMetrics(68)||Math.Abs(y)>=GetSystemMetrics(69);
     void DragPressed(object sender,PointerRoutedEventArgs e)
     {
-        if(dragging||desktopCard&&!DesktopArranging||!Settled||!CanDrag(e.OriginalSource as DependencyObject)||!e.GetCurrentPoint(root).Properties.IsLeftButtonPressed)return;
+        if(dragging||desktopCard&&!DesktopArranging&&DesktopDragSaved==null||!Settled||!CanDragFrom(view.DragRegion,e.OriginalSource as DependencyObject)||!e.GetCurrentPoint(root).Properties.IsLeftButtonPressed)return;
         Native.GetCursorPos(out var p);long now=Environment.TickCount64;
-        if(lastClick!=0&&now-lastClick<=GetDoubleClickTime()&&Math.Abs(p.X-clickX)<=GetSystemMetrics(36)&&Math.Abs(p.Y-clickY)<=GetSystemMetrics(37))
+        if(DesktopDragSaved==null&&lastClick!=0&&now-lastClick<=GetDoubleClickTime()&&Math.Abs(p.X-clickX)<=GetSystemMetrics(36)&&Math.Abs(p.Y-clickY)<=GetSystemMetrics(37))
         {lastClick=0;ResetPosition();e.Handled=true;return;}
         if(!root.CapturePointer(e.Pointer))return;
         dragging=true;dragMoved=false;dragPointer=e.Pointer.PointerId;pressX=p.X;pressY=p.Y;
@@ -272,7 +317,8 @@ public sealed partial class GlassPanel
     {
         if(!dragging||e.Pointer.PointerId!=dragPointer)return;
         Native.GetCursorPos(out var p);
-        if(!dragMoved&&Math.Abs(p.X-pressX)<GetSystemMetrics(68)&&Math.Abs(p.Y-pressY)<GetSystemMetrics(69))return;
+        if(!dragMoved&&!PassedDragThreshold(p.X-pressX,p.Y-pressY))return;
+        if(!dragMoved)DesktopDragStarted?.Invoke();
         dragMoved=true;lastClick=0;var m=desktopCard?activeMonitor??DesktopScreen():At(p.X,p.Y);
         MovePanel((int)Math.Round(p.X-grabX*m.Dpi),(int)Math.Round(p.Y-grabY*m.Dpi),m);e.Handled=true;
     }
@@ -284,9 +330,22 @@ public sealed partial class GlassPanel
     void DragReleased(object sender,PointerRoutedEventArgs e)
     {
         if(!dragging||e.Pointer.PointerId!=dragPointer)return;
-        DragMoved(sender,e);EndDrag();root.ReleasePointerCapture(e.Pointer);e.Handled=true;
+        DragMoved(sender,e);
+        var moved=dragMoved;
+        EndDrag();root.ReleasePointerCapture(e.Pointer);e.Handled=true;
+        if(DesktopDragFinished!=null)
+        {
+            Native.GetCursorPos(out var pointer);
+            if(moved)DesktopDragFinished(DesktopBounds.Contains(pointer.X,pointer.Y));
+            else if(!DesktopArranging)DesktopClick?.Invoke();
+        }
     }
-    void DragCaptureLost(object sender,PointerRoutedEventArgs e){EndDrag();}
+    void DragCaptureLost(object sender,PointerRoutedEventArgs e)
+    {
+        if(!dragging)return;
+        var moved=dragMoved;EndDrag();
+        if(moved)DesktopDragFinished?.Invoke(false);
+    }
     int inputX,inputY,inputW,inputH;   // 最近一次放好的内容窗位置，FollowInputWindow 用来判断是不是别人挪的
     void MoveWindowsTogether(int x,int y,int ix,int iy,int w,int h)
     {

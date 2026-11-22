@@ -28,6 +28,7 @@ public sealed partial class DesktopScreenshotView : UserControl, IPanelView, IDi
     internal event EventHandler? OpenRequested;
     internal event EventHandler? EditRequested;
     internal event EventHandler? UnpinRequested;
+    internal void OpenImage() => OpenRequested?.Invoke(this, EventArgs.Empty);
 
     public void OnShowing(PanelShowContext context) { }
     public void OnShown() { }
@@ -35,7 +36,7 @@ public sealed partial class DesktopScreenshotView : UserControl, IPanelView, IDi
     public void Dispose() => Preview.Source = null;
 
     void ImageFailed(object sender, ExceptionRoutedEventArgs args) => ImageError.Visibility = Visibility.Visible;
-    void OpenClicked(object sender, RoutedEventArgs args) => OpenRequested?.Invoke(this, EventArgs.Empty);
+    void OpenClicked(object sender, RoutedEventArgs args) => OpenImage();
     void EditClicked(object sender, RoutedEventArgs args) => EditRequested?.Invoke(this, EventArgs.Empty);
     void UnpinClicked(object sender, RoutedEventArgs args) => UnpinRequested?.Invoke(this, EventArgs.Empty);
 }

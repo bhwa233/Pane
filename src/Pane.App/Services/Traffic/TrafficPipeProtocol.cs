@@ -6,8 +6,10 @@ namespace Pane.Services.Traffic;
 
 internal enum TrafficApplicationSort { Total, Download, Upload, Name }
 internal enum TrafficRankingSort { Total, Download, Upload }
+internal enum TrafficSortColumn { Name, Download, Upload, RunDownload, RunUpload }
 
-internal readonly record struct TrafficRankingQuery(string Keyword, bool Cumulative, TrafficRankingSort Sort, bool ActiveOnly = false)
+internal readonly record struct TrafficRankingQuery(string Keyword, bool Cumulative, TrafficRankingSort Sort, bool ActiveOnly = false,
+    TrafficSortColumn? Column = null, bool Ascending = false)
 {
     internal const int KeywordLimit = 160;
     internal bool HasFilter => ActiveOnly || Keyword.Length > 0;

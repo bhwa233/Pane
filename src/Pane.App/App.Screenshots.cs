@@ -22,7 +22,10 @@ public sealed partial class App
         Path.Combine(Store.DirectoryPath, "capture-sessions"), TryPinScreenshot, RollBackScreenshotPin, Store.ScreenshotPinSync);
     NativeScreenshotOcr GetScreenshotOcr() => screenshotOcr ??= new(GetScreenshots(), WindowsScreenshotOcr.RecognizeAsync);
 
-    void ShowScreenshots(Guid? id = null) => Present(SecondaryId.Screenshots, Strings.Module_Screenshots_Name,
+    void ShowScreenshots(Guid? id = null)
+    {
+        HideCardDesktop();
+        Present(SecondaryId.Screenshots, Strings.Module_Screenshots_Name,
         () => new ScreenshotsView(GetScreenshots(), GetScreenshotCapture(), GetScreenshotOcr(),
             ocrHistory ??= new(Path.Combine(Store.DirectoryPath, OcrHistoryStore.DirectoryName), Store.StorageSync), IsScreenshotPinned,
             ToggleScreenshotPin, ScreenshotEdited, () => Store.Current.LimitScreenshotHistory,
@@ -30,6 +33,7 @@ public sealed partial class App
         {
             if (id is { } imageId) ((ScreenshotsView)view).Open(imageId);
         });
+    }
 
     async Task CaptureFromHotkeyAsync()
     {
@@ -58,19 +62,23 @@ public sealed partial class App
 
     bool IsScreenshotPinned(Guid id) => Store.Current.DesktopScreenshots?.ContainsKey(id) == true;
 
-    DesktopScreenshotView CreateScreenshotCardView(Guid id)
+    DesktopScreenshotView CreateScreenshotCardView(Guid id, Action? removeFromWorkspace = null)
     {
         var store = GetScreenshots();
         var view = new DesktopScreenshotView(store.PathFor(id), store.IsEditable(id) && NativeScreenshotCapture.Available);
         view.OpenRequested += (_, _) => ShowScreenshots(id);
-        view.EditRequested += async (_, _) => await EditPinnedScreenshotAsync(id);
-        view.UnpinRequested += (_, _) => UnpinScreenshot(id);
+        view.EditRequested += async (_, _) => await EditPinnedScreenshotAsync(id, inWorkspace: removeFromWorkspace != null);
+        view.UnpinRequested += (_, _) =>
+        {
+            if (removeFromWorkspace != null) removeFromWorkspace();
+            else UnpinScreenshot(id);
+        };
         return view;
     }
 
-    async Task EditPinnedScreenshotAsync(Guid id)
+    async Task EditPinnedScreenshotAsync(Guid id, bool inWorkspace = false)
     {
-        if (closing || !desktopScreenshotsEnabled || !IsScreenshotPinned(id) || !GetScreenshots().IsEditable(id)) return;
+        if (closing || !desktopScreenshotsEnabled || !inWorkspace && !IsScreenshotPinned(id) || !GetScreenshots().IsEditable(id)) return;
         ShowScreenshots(id);
         if (secondaries.TryGetValue(SecondaryId.Screenshots, out var history))
             await ((ScreenshotsView)history.View).EditSelectedAsync(id);
@@ -81,7 +89,7 @@ public sealed partial class App
         if (closing) return;
         var path = GetScreenshots().PathFor(id);
         if (desktopScreenshots.TryGetValue(id, out var card)) ((DesktopScreenshotView)card.View).Apply(path);
-        if (secondaries.TryGetValue(SecondaryId.DesktopCards, out var overview)) ((DesktopCardsView)overview.View).UpdateScreenshot(id, path);
+        cardDesktopView?.UpdateScreenshot(id, path);
     }
 
     void ToggleScreenshotPin(Guid id)

@@ -22,6 +22,8 @@ public sealed record PaneSettings(int Version, GeneralSettings General, Launcher
     /// <summary>首次折叠的一次性提示已经显示过（notes-mvp §6）。</summary>
     public bool NoteCapsuleHintShown { get; init; }
     public DesktopTrafficSettings? DesktopTraffic { get; init; }
+    public Dictionary<string, CardDesktopPlacement>? CardDesktopLayout { get; init; }
+    public bool ShowCardDesktopTrigger { get; init; } = true;
     public bool PauseInterfaceTraffic { get; init; }
     public Dictionary<Guid,LauncherPosition?>? DesktopScreenshots { get; init; }
     public bool LimitScreenshotHistory { get; init; }
@@ -159,7 +161,10 @@ public enum PortableKind { Folder, Program, Learned }
 /// <param name="AddedAt">加入时间；记住的程序满 100 个时，按启动器使用记录去掉最久没用的，没用过的按这个时间。</param>
 public sealed record PortableEntry(string Path, PortableKind Kind, DateTimeOffset AddedAt);
 public sealed record LauncherPosition(string MonitorId, double X, double Y);
-public sealed record DesktopTrafficSettings(LauncherPosition? Position = null);
+public sealed record CardDesktopPlacement(double X, double Y, double Width, double Height, bool Folded = false, bool Topmost = false);
+
+public sealed record DesktopTrafficSettings(LauncherPosition? Position = null, bool Topmost = true,
+    bool AutoHideAtEdge = false, bool HideInFullscreen = true, bool Hidden = false);
 // 本机专属位置；083 导出时跳过，不能随配置迁移到其他电脑。
 public sealed record StorageSettings(string? LargeFilesDirectory=null);
 public sealed record ClipboardSettings(Hotkey Hotkey,

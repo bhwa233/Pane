@@ -116,6 +116,7 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
         OriginalClipboardHotkeySuppressed=active&&!settings.Clipboard.KeepHotkeyWithWinV;
         if(!suspended&&(settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.Notes,true)??true))
             Register(7,"notes",new Hotkey(KeyModifiers.Ctrl|KeyModifiers.Alt,'N'));
+        if(!suspended)Register(8,"card-desktop",Override("card-desktop",ShellHotkeyBindings.DefaultCardDesktop));
         var keys=ShellHotkeyBindings.DoubleTapKeys(a,b,!OriginalClipboardHotkeySuppressed&&(settings.Modules?.GetValueOrDefault("clipboard",settings.Clipboard.Enabled)??settings.Clipboard.Enabled),suspended,settings.Modules?.GetValueOrDefault("launcher",true)??true);
         uint wordsKey=wordsEnabled&&!suspended&&words?.IsValidDoubleTap==true?words.VirtualKey:0u;
         if(wordsKey!=0&&(wordsKey==keys.Launcher||wordsKey==keys.Clipboard)){RegistrationResult("words",words!,false,1409);wordsKey=0;}
@@ -142,7 +143,7 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
         if(!ok){var conflict=new HotkeyConflict(name,key,code);lock(conflicts)conflicts.Add(conflict);queue.TryEnqueue(()=>HotkeyOccupied?.Invoke(this,conflict));
             // 设计加（2026-10-30）：注册失败时提示一次，否则按了没反应也不知道为什么
             var shortcut=Pane.Views.Controls.HotkeyBox.Text(key).Replace("Space",Strings.Common_SpaceKey);
-            var what=name switch{"launcher"=>Strings.Common_Launcher,"words"=>Strings.Module_Words_Name,"super-panel"=>Strings.Common_SuperPanel,_=>Strings.Common_Clipboard};
+            var what=name switch{"launcher"=>Strings.Common_Launcher,"words"=>Strings.Module_Words_Name,"super-panel"=>Strings.Common_SuperPanel,"card-desktop"=>Strings.DesktopCards_Title,_=>Strings.Common_Clipboard};
             NotifyOnce(name=="screenshots"?string.Format(Strings.Setup_ScreenshotHotkeyConflict,(object?)shortcut):
                 string.Format(Strings.Setup_HotkeyConflict,(object?)shortcut,(object?)what,(object?)what));}
     }
@@ -153,7 +154,8 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
         if(m==0x1e || m==0x218 && w==0x12){PowerTimeChanged?.Invoke();return m==0x218?1:0;}
         if(m==0x8006){while(barriers.TryDequeue(out var done))done.TrySetResult();return 0;}
         // 资源管理器重启后重新登记已有图标，不改变菜单或通知行为。
-        if(taskbarCreated!=0&&m==taskbarCreated){tray=false;if(currentSettings?.General.ShowTrayIcon==true)tray=Shell_NotifyIconW(0,ref data);return 0;}
+        if(taskbarCreated!=0&&m==taskbarCreated){tray=false;if(currentSettings?.General.ShowTrayIcon==true)tray=Shell_NotifyIconW(0,ref data);Dispatch("refresh-card-desktop-trigger");return 0;}
+        if(m==0x7e||(m==0x1a&&w==0x2f))Dispatch("refresh-card-desktop-trigger");
         if(m==0x8004){while(winVRequests.TryDequeue(out var request)){try{winVRequested=request.Enabled;if(currentSettings is {} settings)ApplyCore(settings);request.Done.TrySetResult(winVActive);}catch(Exception e){request.Done.TrySetException(e);}}return 0;}
         if(m==0x312){if(ShellHotkeyBindings.Command(w) is {} hotkey)Dispatch(hotkey);return 0;}
         if(m==0x8005){if(!suspended&&w==keyboardGeneration&&ShellHotkeyBindings.Command((nuint)l) is {} hotkey)Dispatch(hotkey);return 0;}

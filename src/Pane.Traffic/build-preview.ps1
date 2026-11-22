@@ -24,7 +24,7 @@ if ($LASTEXITCODE) { throw 'Traffic service Release build failed.' }
 $binaries = Join-Path $build 'bin/Traffic.Service/Release/net48'
 foreach ($required in 'Pane.TrafficService.exe','Pane.TrafficService.exe.config','Pane.Traffic.Core.dll',
     'Microsoft.Diagnostics.Tracing.TraceEvent.dll','amd64/KernelTraceControl.dll','amd64/msdia140.dll',
-    'Microsoft.Data.Sqlite.dll','SQLitePCLRaw.batteries_v2.dll','e_sqlite3.dll','runtimes/win-x64/native/e_sqlite3.dll') {
+    'Microsoft.Data.Sqlite.dll','SQLitePCLRaw.batteries_v2.dll','e_sqlite3.dll') {
     if (!(Test-Path -LiteralPath (Join-Path $binaries $required) -PathType Leaf)) {
         throw "Traffic service build is missing $required."
     }

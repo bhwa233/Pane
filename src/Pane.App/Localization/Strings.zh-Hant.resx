@@ -1640,9 +1640,14 @@
   <data name="Traffic_TrendPeak" xml:space="preserve"><value>最近 60 秒 · 峰值 {0}</value></data>
   <data name="Traffic_DesktopCard" xml:space="preserve"><value>桌面流量卡</value></data>
   <data name="Traffic_DesktopRanks" xml:space="preserve"><value>處理程序流量排行</value></data>
+  <data name="Traffic_UploadRanking" xml:space="preserve"><value>上傳排行</value></data>
+  <data name="Traffic_DownloadRanking" xml:space="preserve"><value>下載排行</value></data>
   <data name="Traffic_DesktopShowRanks" xml:space="preserve"><value>查看處理程序流量排行</value></data>
   <data name="Traffic_DesktopShowInterface" xml:space="preserve"><value>返回網路介面速率</value></data>
   <data name="Traffic_OpenPanel" xml:space="preserve"><value>開啟流量監控</value></data>
+  <data name="Traffic_EdgeHide" xml:space="preserve"><value>貼邊自動隱藏</value></data>
+  <data name="Traffic_FullscreenHide" xml:space="preserve"><value>全螢幕時自動隱藏</value></data>
+  <data name="Traffic_CloseHud" xml:space="preserve"><value>關閉流量提示</value></data>
   <data name="Traffic_Download" xml:space="preserve"><value>下載</value></data>
   <data name="Traffic_Upload" xml:space="preserve"><value>上傳</value></data>
   <data name="Traffic_Sampling" xml:space="preserve"><value>正在取樣…</value></data>
@@ -1671,6 +1676,8 @@
   <data name="Traffic_RankingNoMatch" xml:space="preserve"><value>目前排行沒有相符的處理程序</value></data>
   <data name="Traffic_ProcessDisplayMode" xml:space="preserve"><value>處理程序流量顯示方式</value></data>
   <data name="Traffic_AppRun" xml:space="preserve"><value>應用程式累計</value></data>
+  <data name="Traffic_RunDownload" xml:space="preserve"><value>本次下載</value></data>
+  <data name="Traffic_RunUpload" xml:space="preserve"><value>本次上傳</value></data>
   <data name="Traffic_AppRunGap" xml:space="preserve"><value>僅統計已觀測到的流量</value></data>
   <data name="Traffic_ProcessConnecting" xml:space="preserve"><value>正在檢查流量服務…</value></data>
   <data name="Traffic_ProcessNotInstalled" xml:space="preserve"><value>尚未安裝 Pane 流量服務</value></data>
@@ -1814,6 +1821,10 @@
   <data name="Notes_PinDesktop" xml:space="preserve"><value>釘選到桌面</value></data>
   <data name="Notes_PinnedDesktop" xml:space="preserve"><value>已釘選到桌面</value></data>
   <data name="DesktopCards_Title" xml:space="preserve"><value>桌面卡片</value></data>
+  <data name="CardDesktop_Add" xml:space="preserve"><value>新增面板</value></data>
+  <data name="CardDesktop_OpenWindow" xml:space="preserve"><value>用獨立視窗開啟</value></data>
+  <data name="CardDesktop_Locate" xml:space="preserve"><value>定位面板</value></data>
+  <data name="CardDesktop_Trigger" xml:space="preserve"><value>桌面頂部入口</value></data>
   <data name="DesktopCards_Hide" xml:space="preserve"><value>隱藏桌面卡片</value></data>
   <data name="DesktopCards_Show" xml:space="preserve"><value>顯示桌面卡片</value></data>
   <data name="DesktopCards_Arrange" xml:space="preserve"><value>編輯版面</value></data>

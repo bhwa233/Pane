@@ -76,6 +76,7 @@ public sealed partial class App : Application
             await StartWinV();
             if(!demo)SettingsView.DataStorage=new Pane.Services.Clipboard.DataStorage(Store,()=>clipboardService,()=>{launcherSearch?.RebuildStorageCache();(FileIcons as Pane.Services.Icons.FileIcons)?.RebuildStorageCache();},text=>queue.TryEnqueue(()=>{if(!closing)shell?.NotifyOnce(text);}),ClearWebStorageCache,()=>launcherSearch?.WebSearchHistory.Completion??Task.CompletedTask);
             await StartModules();
+            StartCardDesktopTrigger();
             hotkeysReadyMs=(DateTime.UtcNow-System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalMilliseconds;
             listener=SingleInstance.Listen(command=>queue.TryEnqueue(()=>{Command(command);Ack("forwarded");}),cancellation.Token);
             StartUpdates();StartBackground();StartReleaseProbe();
@@ -93,6 +94,7 @@ public sealed partial class App : Application
     // 测试宿主可注入前台句柄；产品入口始终读取系统前台窗口。
     void Command(string command,nint? foregroundOverride){
         if(closing)return;
+        if(command=="refresh-card-desktop-trigger"){desktopTrigger?.Refresh();return;}
         string? moduleId=command.StartsWith("show-",StringComparison.Ordinal)?command[5..]:
             command.StartsWith("hotkey-",StringComparison.Ordinal)?command[7..]:command=="pause-gestures"?Pane.Contracts.ModuleIds.Gestures:null;
         if(moduleId=="super")moduleId=Pane.Contracts.ModuleIds.SuperPanel;
@@ -101,6 +103,7 @@ public sealed partial class App : Application
         if(command=="hotkey-screenshots"){_ = CaptureFromHotkeyAsync();return;}
         if(command=="hotkey-super-panel"){ToggleSuperFromHotkey();return;}
         if(command=="hotkey-notes"){temporaryNoteTopmost=!temporaryNoteTopmost;foreach(var id in desktopNotes.Keys)ApplyDesktopNoteTopmost(id);return;}
+        if(command=="hotkey-card-desktop"){if(cardDesktopShown)HideCardDesktop();else ShowDesktopCards();return;}
         if(command.StartsWith("hotkey-",StringComparison.Ordinal)){
             string name=command[7..];command="show-"+name;
             nint foreground=foregroundOverride??Native.GetForegroundWindow();
@@ -197,6 +200,8 @@ public sealed partial class App : Application
         Clean(()=>(Updates as IDisposable)?.Dispose());
         Clean(()=>timer?.Stop());cancellation.Cancel();
         Clean(()=>cardPerformanceProbe?.Dispose());
+        Clean(CloseCardDesktop);
+        Clean(()=>trafficWindow?.Close());
         Clean(()=>StopProcessTrafficAsync().GetAwaiter().GetResult());
         Clean(StopNoteReminders);
         Clean(()=>notesWindow?.Close());

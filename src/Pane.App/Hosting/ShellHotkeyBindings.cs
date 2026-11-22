@@ -5,7 +5,8 @@ internal static class ShellHotkeyBindings
 {
     internal const uint NoRepeat=0x4000;
     internal static readonly Hotkey DefaultScreenshot = new(KeyModifiers.Alt, 'A');
-    internal static string? Command(nuint id)=>id switch{1=>"hotkey-launcher",2 or 3=>"hotkey-clipboard",4=>"hotkey-words",5=>"hotkey-screenshots",6=>"hotkey-super-panel",7=>"hotkey-notes",_=>null};
+    internal static readonly Hotkey DefaultCardDesktop = new(KeyModifiers.Alt, 'D');
+    internal static string? Command(nuint id)=>id switch{1=>"hotkey-launcher",2 or 3=>"hotkey-clipboard",4=>"hotkey-words",5=>"hotkey-screenshots",6=>"hotkey-super-panel",7=>"hotkey-notes",8=>"hotkey-card-desktop",_=>null};
     // Shown 表示动画的目标状态；收起过程中再次按下应重新显示。
     internal static bool ShouldHide(bool shown,bool foreground)=>shown&&foreground;
     internal static (uint Launcher,uint Clipboard) DoubleTapKeys(Hotkey launcher,Hotkey clipboard,bool enabled,bool suspended,bool launcherEnabled=true)

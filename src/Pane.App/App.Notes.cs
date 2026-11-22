@@ -31,6 +31,7 @@ public sealed partial class App
     void ShowNotes(Guid? id = null)
     {
         if (closing || !AllowModule(ModuleIds.Notes)) return;
+        HideCardDesktop();
         foreach (var panel in panels.Values) panel.Hide();
         if (notesWindow == null)
         {
@@ -181,7 +182,7 @@ public sealed partial class App
         return view;
     }
 
-    sealed class DesktopNoteHost(App app) : IDesktopNoteHost
+    sealed class DesktopNoteHost(App app, string? workspaceKey = null) : IDesktopNoteHost
     {
         public void SaveSurface(Guid id, bool pad) => app.Store.Update(settings => settings with
             { DesktopNoteSurfaces = SetEntry(settings.DesktopNoteSurfaces, id, pad ? 1 : 0) });
@@ -190,11 +191,18 @@ public sealed partial class App
             && pair[0] >= DesktopNoteView.MinCardWidth && pair[1] >= DesktopNoteView.MinCardHeight ? new(pair[0], pair[1]) : null;
         public void ToggleTopmost(Guid id)
         {
+            if (workspaceKey != null && app.Store.Current.CardDesktopLayout?.GetValueOrDefault(workspaceKey) is { } placement)
+            {
+                app.SaveCardDesktopPlacement(workspaceKey, placement with { Topmost = !placement.Topmost });
+                return;
+            }
             app.Store.Update(settings => settings with { DesktopNoteTopmost = SetEntry(settings.DesktopNoteTopmost, id, !IsTopmost(id)) });
             app.ApplyDesktopNoteTopmost(id);
             app.RefreshCapsules();
         }
-        public bool IsTopmost(Guid id) => app.Store.Current.DesktopNoteTopmost?.GetValueOrDefault(id) == true;
+        public bool IsTopmost(Guid id) => workspaceKey == null
+            ? app.Store.Current.DesktopNoteTopmost?.GetValueOrDefault(id) == true
+            : app.Store.Current.CardDesktopLayout?.GetValueOrDefault(workspaceKey)?.Topmost == true;
         public void SetReminder(Guid id, DateTimeOffset? due) => app.SetNoteReminder(id, due);
         public DateTimeOffset? GetReminder(Guid id) => app.GetNoteReminder(id);
         public void DeleteNote(Guid id)

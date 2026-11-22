@@ -34,17 +34,26 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     readonly NoteSessions.Session session;
     readonly IDesktopNoteHost host;
     readonly Guid id;
+    readonly bool inCardDesktop;
     DesktopNoteWindow? window;
     bool pad;
     bool restoring;
     bool disposed;
 
-    internal DesktopNoteView(NoteSessions hub, Guid id, IDesktopNoteHost host)
+    internal DesktopNoteView(NoteSessions hub, Guid id, IDesktopNoteHost host, bool inCardDesktop = false)
     {
         this.hub = hub;
         this.host = host;
+        this.inCardDesktop = inCardDesktop;
         this.id = id;
         InitializeComponent();
+        if (inCardDesktop)
+            AddHandler(DoubleTappedEvent, new DoubleTappedEventHandler((_, args) =>
+            {
+                if (pad || !CanStartWorkspaceDrag(args.OriginalSource as DependencyObject)) return;
+                args.Handled = true;
+                FocusBody();
+            }), true);
         RegisterFoldShortcuts();
         session = hub.Open(id);
         hub.Attach(session);
@@ -62,6 +71,31 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
 
     public Size PreferredSize => new(TileWidth, TileHeight);
     public UIElement DragRegion => pad ? TitleArea : TilePane;
+    internal string DisplayTitle => string.IsNullOrWhiteSpace(session.Title) ? Strings.Notes_Untitled : session.Title;
+    internal bool CanStartWorkspaceDrag(DependencyObject? source)
+    {
+        if (pad) return GlassPanel.CanDragFrom(DragRegion, source);
+        for (var node = source; node != null; node = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(node))
+        {
+            if (node == TilePane) return true;
+            if (node is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar or Microsoft.UI.Xaml.Controls.Primitives.Thumb or Microsoft.UI.Xaml.Controls.Primitives.ButtonBase) return false;
+        }
+        return false;
+    }
+    internal void RefreshWorkspaceTopmost() => ApplyTopmost(host.IsTopmost(id));
+    internal bool FinishEditing()
+    {
+        if (!pad) return false;
+        SetPad(false);
+        return true;
+    }
+    internal bool PrepareWorkspaceFold()
+    {
+        if (pad) { SetPad(false); return !pad; }
+        if (hub.Flush(session)) return true;
+        ReportSaveFailed();
+        return false;
+    }
     internal Guid NoteId => id;
     event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
     event EventHandler? IPanelView.CloseRequested { add { } remove { } }
@@ -75,7 +109,7 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
         fold.Invoked += (_, args) => { args.Handled = true; FoldRequested?.Invoke(this, id); };
         KeyboardAccelerators.Add(fold);
         var done = new KeyboardAccelerator { Key = VirtualKey.Escape };
-        done.Invoked += (_, args) => { if (pad) { SetPad(false); args.Handled = true; } };
+        done.Invoked += (_, args) => args.Handled = FinishEditing();
         KeyboardAccelerators.Add(done);
     }
 
@@ -196,7 +230,7 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
             return;
         }
         pad = value;
-        host.SaveSurface(id, value);
+        if (!inCardDesktop) host.SaveSurface(id, value);
         restoring = true;
         try { Apply(session.Title, session.Body); }
         finally { restoring = false; }
