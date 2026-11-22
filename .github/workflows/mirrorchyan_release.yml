@@ -1,6 +1,8 @@
-name: mirrorchyan_release
+name: Pane Windows build and MirrorChyan release
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -15,8 +17,28 @@ permissions:
   contents: read
 
 jobs:
+  build-windows:
+    if: ${{ github.repository == 'bhwa233/Pane' && github.ref == 'refs/heads/main' && github.event_name != 'release' }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '10.0.x' }
+      - name: Build Pane and native screenshot tool
+        run: |
+          ./src/Pane.App/scripts/build.ps1 -Mode aot -OutputRoot "$env:RUNNER_TEMP/pane"
+          ./src/Pane.Capture/build.ps1 -OutputRoot "$env:RUNNER_TEMP/capture" -StageDirectory "$env:RUNNER_TEMP/pane/aot/NativeCapture"
+          Copy-Item LICENSE,LICENSE-EXCEPTION.md,THIRD_PARTY_NOTICES.md,src/Pane.App/ThirdParty -Destination "$env:RUNNER_TEMP/pane/aot" -Recurse
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pane-Windows-x64-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/pane/aot/
+            !${{ runner.temp }}/pane/aot/**/*.pdb
+          if-no-files-found: error
   mirrorchyan:
-    if: ${{ github.repository_owner == 'LBEILC' }}
+    if: ${{ github.repository_owner == 'LBEILC' && github.event_name != 'push' }}
     runs-on: macos-latest
     strategy:
       fail-fast: false
