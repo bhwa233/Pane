@@ -70,11 +70,10 @@ public sealed partial class SettingsView
 
         RenderAiActions(a);
 
-        // 超级面板自动翻译：没配 AI 时开关灰掉（2026-10-30）
-        bool configured = app.Ai.Status != AiStatus.NotConfigured;
+        bool canAutoTranslate = OnlineTranslator.IsOnline(a.TranslateEngine) || app.Ai.Status != AiStatus.NotConfigured;
         var autoSwitch = Switch(a.AutoTranslateSelection, v => SaveAi(x => x with { AutoTranslateSelection = v }));
-        autoSwitch.IsEnabled = configured;
-        autoSwitch.Opacity = configured ? 1 : 0.4;
+        autoSwitch.IsEnabled = canAutoTranslate;
+        autoSwitch.Opacity = canAutoTranslate ? 1 : 0.4;
         Group(Strings.Settings_Ai_Translation,
             Row(Strings.Settings_Ai_TranslateEngine, Strings.Settings_Ai_TranslateEngineDescription,
                 Seg([("ai", Strings.Translate_EngineAi), (OnlineTranslator.Youdao, Strings.Translate_EngineYoudao),
@@ -84,7 +83,7 @@ public sealed partial class SettingsView
                 Seg([("auto", Strings.Common_Auto), ("zh", Strings.Translate_LanguageChinese), ("en", Strings.Translate_LanguageEnglish), ("ja", Strings.Translate_LanguageJapanese)], a.TranslateTarget,
                     v => SaveAi(x => x with { TranslateTarget = v }))),
             TranslationModelRow(a),
-            Row(Strings.Settings_Ai_AutoTranslate, configured ? Strings.Settings_Ai_AutoTranslateDescription : Strings.Settings_Ai_ConfigureFirst, autoSwitch));
+            Row(Strings.Settings_Ai_AutoTranslate, canAutoTranslate ? Strings.Settings_Ai_AutoTranslateDescription : Strings.Settings_Ai_ConfigureFirst, autoSwitch));
         // 代理（042）：跟随系统 / 不走代理 / 自定义（http、socks5）；选「自定义」后填了地址才算数
         var mode = proxyCustomPending ? AiProxyMode.Custom : a.Proxy;
         var network = new List<FrameworkElement>

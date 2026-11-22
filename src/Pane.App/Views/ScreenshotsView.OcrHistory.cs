@@ -27,6 +27,7 @@ public sealed partial class ScreenshotsView
             if (mode == OcrHistoryMode)
             {
                 viewingOcrHistory = true;
+                recognition?.Cancel();
                 History.Visibility = ScreenshotTools.Visibility = Visibility.Collapsed;
                 OcrHistoryList.Visibility = Visibility.Visible;
                 BindOcrHistory();
@@ -89,7 +90,7 @@ public sealed partial class ScreenshotsView
         });
     }
 
-    void PresentOcr(BitmapImage bitmap, OcrRecognition geometry, string text)
+    void PresentOcr(BitmapImage bitmap, OcrRecognition geometry, string text, bool focus = true)
     {
         ImageActions.Visibility = PreviewFrame.Visibility = Visibility.Collapsed;
         ResetOcrImageSelection();
@@ -101,7 +102,7 @@ public sealed partial class ScreenshotsView
         LayoutOcrViewport();
         Status.Text = string.IsNullOrWhiteSpace(text) ? Strings.Screenshots_OcrEmpty : "";
         RefreshOcrHistoryActions();
-        OcrResult.Focus(FocusState.Programmatic);
+        if (focus) OcrResult.Focus(FocusState.Programmatic);
     }
 
     void RefreshOcrHistoryActions()

@@ -18,11 +18,13 @@ internal sealed class NativeScreenshotOcr(ScreenshotStore store, Func<byte[], (u
 
     async Task<OcrImageResult> RecognizeAsync(Func<byte[]> load, CancellationToken token)
     {
-        if (active is { IsCompleted: false }) throw new InvalidOperationException("A recognition session is already active.");
+        var previous = active;
         var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         active = drained.Task;
         try
         {
+            if (previous != null) await previous.ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
             var image = await Task.Run(load, token).ConfigureAwait(false);
             using var input = new MemoryStream(image, writable: false);
             var size = ScreenshotStore.ReadSize(input);

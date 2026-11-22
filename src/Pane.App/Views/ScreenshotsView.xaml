@@ -102,8 +102,7 @@
                             <c:PaneIcon Glyph="pencil" Width="16" Height="16"/>
                         </Button>
                         <Button x:Name="OcrButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="OcrClicked"
-                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Ocr}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_Ocr}"
-                                Visibility="Collapsed">
+                                AutomationProperties.Name="{x:Bind loc:Strings.Screenshots_Ocr}" ToolTipService.ToolTip="{x:Bind loc:Strings.Screenshots_Ocr}">
                             <c:PaneIcon Glyph="words" Width="16" Height="16"/>
                         </Button>
                         <Button x:Name="CopyButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="CopyClicked"

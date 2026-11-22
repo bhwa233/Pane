@@ -227,9 +227,8 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
         ShowAction(MessageAction.CancelTranslation);
         try
         {
-            var result = await OnlineTranslator.TranslateAsync(text, target, Engine, cts.Token).ConfigureAwait(false);
+            var result = await OnlineTranslator.TranslateAsync(text, target, Engine, cts.Token);
             if (cts != running) return;
-            running = null;
             if (!result.Ok)
             {
                 ShowMessage(Strings.Translate_Failed, MessageAction.Retry);
@@ -243,7 +242,7 @@ public sealed partial class TranslateView : UserControl, ISecondaryView, IDispos
             StateText.Text = result.Engine != Engine ? OnlineTranslator.NameOf(result.Engine) : "";
             OnTranslationCompleted(text, result.Text);
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
         finally
         {
             if (cts == running)

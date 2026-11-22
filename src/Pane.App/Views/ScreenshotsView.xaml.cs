@@ -30,6 +30,7 @@ public sealed partial class ScreenshotsView : UserControl, IDisposable
     readonly Func<string, string, bool> saveNote;
     readonly CancellationTokenSource lifetime = new();
     CancellationTokenSource? recognition;
+    Task? automaticRecognition;
     bool busy, disposed, previewReady, loadingHistory;
     Guid? selected;
 
@@ -108,6 +109,7 @@ public sealed partial class ScreenshotsView : UserControl, IDisposable
             DecodePixelWidth = 960, DecodePixelType = DecodePixelType.Physical, UriSource = new Uri(store.PathFor(id))
         } : null;
         RefreshPin();
+        automaticRecognition = selected is { } imageId ? RecognizeImageAsync(imageId, lifetime.Token, automatic: true) : null;
     }
 
     internal void RefreshPin()
@@ -156,7 +158,7 @@ public sealed partial class ScreenshotsView : UserControl, IDisposable
     async Task ShowCapturedAsync(Guid id, bool recognize, CancellationToken token)
     {
         var historyTrimmed = LoadNewScreenshot(id);
-        if (recognize && selected == id) await RecognizeImageAsync(id, token);
+        if (recognize && selected == id && automaticRecognition is { } pending) await pending;
         if (!disposed && !historyTrimmed && string.IsNullOrEmpty(Status.Text)) Status.Text = Strings.Screenshots_ClearHistoryFailed;
     }
 
@@ -231,10 +233,12 @@ public sealed partial class ScreenshotsView : UserControl, IDisposable
         return png == null ? null : await ocr.RecognizeAsync(png, request);
     }, token));
 
-    Task RecognizeImageAsync(Guid id, CancellationToken token) => RecognizeAsync(id, async request => await ocr.RecognizeAsync(id, request), token);
+    Task RecognizeImageAsync(Guid id, CancellationToken token, bool automatic = false) =>
+        RecognizeAsync(id, async request => await ocr.RecognizeAsync(id, request), token, automatic);
 
-    async Task RecognizeAsync(Guid? id, Func<CancellationToken, Task<OcrImageResult?>> recognize, CancellationToken token)
+    async Task RecognizeAsync(Guid? id, Func<CancellationToken, Task<OcrImageResult?>> recognize, CancellationToken token, bool automatic = false)
     {
+        recognition?.Cancel();
         ShowImage();
         using var request = CancellationTokenSource.CreateLinkedTokenSource(token);
         recognition = request;
@@ -243,40 +247,50 @@ public sealed partial class ScreenshotsView : UserControl, IDisposable
         OcrProgressActions.Visibility = Visibility.Visible;
         OcrSpinner.IsActive = true;
         CancelOcrButton.IsEnabled = true;
-        CancelOcrButton.Focus(FocusState.Programmatic);
+        if (!automatic) CancelOcrButton.Focus(FocusState.Programmatic);
+        bool IsCurrent() => !disposed && !viewingOcrHistory && recognition == request && selected == id;
         try
         {
             var result = await recognize(request.Token);
-            if (disposed || selected != id || request.IsCancellationRequested) return;
+            if (!IsCurrent() || request.IsCancellationRequested) return;
             if (result == null)
             {
                 Status.Text = Strings.Screenshots_ClipboardNoImage;
                 return;
             }
+            if (automatic && string.IsNullOrWhiteSpace(result.Recognition.Text))
+            {
+                Status.Text = Strings.Screenshots_OcrEmpty;
+                return;
+            }
             var bitmap = await DecodeOcrPreviewAsync(result.Image, result.Recognition);
-            if (disposed || selected != id || request.IsCancellationRequested) return;
+            if (!IsCurrent() || request.IsCancellationRequested) return;
             pendingOcr = result;
-            PresentOcr(bitmap, result.Recognition, result.Recognition.Text);
+            PresentOcr(bitmap, result.Recognition, result.Recognition.Text, focus: !automatic);
         }
         catch (OperationCanceledException) when (request.IsCancellationRequested)
         {
-            if (!disposed && selected == id) Status.Text = "";
+            if (IsCurrent()) Status.Text = "";
         }
         catch (Exception error) when (ScreenshotStore.IsStorageError(error) || error is System.ComponentModel.Win32Exception or
             System.Text.Json.JsonException or TimeoutException or InvalidOperationException or KeyNotFoundException or FormatException or
             System.Runtime.InteropServices.COMException)
         {
-            if (!disposed && selected == id) Status.Text = error is InvalidOperationException
+            if (IsCurrent() && !request.IsCancellationRequested) Status.Text = error is InvalidOperationException
                 ? error.Message : Strings.Screenshots_OcrFailed;
         }
         finally
         {
-            recognition = null;
-            if (!disposed)
+            if (recognition == request)
             {
-                OcrSpinner.IsActive = false;
-                OcrProgressActions.Visibility = Visibility.Collapsed;
-                if (OcrWorkspace.Visibility != Visibility.Visible) ImageActions.Visibility = Visibility.Visible;
+                recognition = null;
+                if (!disposed)
+                {
+                    OcrSpinner.IsActive = false;
+                    OcrProgressActions.Visibility = Visibility.Collapsed;
+                    if (OcrWorkspace.Visibility != Visibility.Visible) ImageActions.Visibility = PreviewFrame.Visibility;
+                    RefreshPin();
+                }
             }
         }
     }

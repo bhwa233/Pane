@@ -14,6 +14,7 @@ using Microsoft.UI.Xaml.Media;
 using Pane.Contracts;
 using Pane.DesignData;
 using Pane.Hosting;
+using Pane.Services.Translate;
 using Pane.Views.Controls;
 using Windows.Foundation;
 using Windows.System;
@@ -220,7 +221,9 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
         AutoBox.Visibility = LongBox.Visibility = Visibility.Collapsed;
         // 设计预览：PANE_DESIGN_AUTO=1 不管设置都当打开
         bool on = AiOptions.Enabled && AiOptions.AutoTranslateSelection || Environment.GetEnvironmentVariable("PANE_DESIGN_AUTO") == "1";
-        autoMode = on && text is not null && ai.Status == AiStatus.Ready && !Languages.IsChinese(text) && text.Trim().Length > 0;
+        var engine = AiOptions.TranslateEngine;
+        bool online = OnlineTranslator.IsOnline(engine);
+        autoMode = on && text is not null && (online || ai.Status == AiStatus.Ready) && !Languages.IsChinese(text) && text.Trim().Length > 0;
         if (autoMode && text!.Length > AutoLimit)
         {
             autoMode = false;
@@ -230,17 +233,30 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
         SetItems(autoMode ? auto : normal);
         if (!autoMode) return;
         var target = Languages.AutoTarget(text!, AiOptions.TranslateTarget);
-        AutoDirection.Text = $"{Languages.Detect(text!)} → {Languages.NameOf(target)}" + (ai.TranslationModelName is { } m ? $" · {m}" : "");
+        var direction = $"{Languages.Detect(text!)} → {Languages.NameOf(target)}";
+        var model = online ? OnlineTranslator.NameOf(engine) : ai.TranslationModelName;
+        AutoDirection.Text = model is null ? direction : $"{direction} · {model}";
         AutoOut.Text = "…";
         AutoOut.Opacity = 0.6;
         AutoBox.Visibility = Visibility.Visible;
-        _ = RunAuto(text!, target, autoRun = new CancellationTokenSource());
+        _ = RunAuto(text!, target, online ? engine : null, direction, autoRun = new CancellationTokenSource());
     }
 
-    async Task RunAuto(string text, string target, CancellationTokenSource cts)
+    async Task RunAuto(string text, string target, string? engine, string direction, CancellationTokenSource cts)
     {
         try
         {
+            if (engine != null)
+            {
+                var reply = await OnlineTranslator.TranslateAsync(text, target, engine, cts.Token);
+                if (cts.IsCancellationRequested) return;
+                if (!reply.Ok) throw new AiNetworkException(Strings.Translate_Failed);
+                AutoDirection.Text = $"{direction} · {OnlineTranslator.NameOf(reply.Engine)}";
+                AutoOut.Text = autoResult = reply.Text;
+                AutoOut.Opacity = 1;
+                RequestHeight();
+                return;
+            }
             var first = true;
             await foreach (var piece in ai.RunAsync(new AiRequest("translate", text, target, null), cts.Token))
             {
@@ -325,7 +341,8 @@ public sealed partial class SuperView : UserControl, IPanelView, IDisposable
         Card.Start(ai, new AiRequest(a.Id, text, null, null), a.Name, a.Glyph, source: null, compact: true,
             a.Id == "translate"
                 ? [(["Enter"], Strings.SuperPanel_PasteReplace), (["Ctrl", "+", "C"], Strings.Common_Copy), (["Tab"], Strings.SuperPanel_TranslateWindow), (["Esc"], Strings.Common_Close)]
-                : [(["Enter"], Strings.SuperPanel_PasteReplaceSelection), (["Ctrl", "+", "C"], Strings.Common_Copy), (["Ctrl", "+", "R"], Strings.Common_Regenerate), (["Esc"], Strings.Common_Close)]);
+                : [(["Enter"], Strings.SuperPanel_PasteReplaceSelection), (["Ctrl", "+", "C"], Strings.Common_Copy), (["Ctrl", "+", "R"], Strings.Common_Regenerate), (["Esc"], Strings.Common_Close)],
+            translation: a.Id == "translate" ? AiOptions : null);
         RequestHeight();
     }
 

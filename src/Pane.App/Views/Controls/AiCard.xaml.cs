@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Pane.Contracts;
+using Pane.Services.Translate;
 
 namespace Pane.Views.Controls;
 
@@ -27,6 +28,7 @@ public sealed partial class AiCard : UserControl
     CancellationTokenSource? running;
     IAiService? ai;
     AiRequest? request;
+    Settings.AiSettings? translation;
     Action? openSettings;
     MarkdownStyle? style;
     string result = "";
@@ -72,11 +74,12 @@ public sealed partial class AiCard : UserControl
     /// <param name="compact">超级面板用小号：结果 14px、没有最小高度；启动器用 16px、最小两行。</param>
     /// <param name="openSettings">「去设置」按钮做什么（未配置时）。</param>
     public void Start(IAiService service, AiRequest req, string title, string glyph, string? source, bool compact,
-        IEnumerable<(string[] keys, string label)> hints, Action? openSettings = null)
+        IEnumerable<(string[] keys, string label)> hints, Action? openSettings = null, Settings.AiSettings? translation = null)
     {
         Cancel();
         ai = service;
         request = req;
+        this.translation = translation;
         this.openSettings = openSettings;
         HeadIcon.Glyph = glyph;
         HeadTitle.Text = title;
@@ -224,7 +227,8 @@ public sealed partial class AiCard : UserControl
         RenderOut();
         ProblemBox.Visibility = Visibility.Collapsed;
         OutScroll.Visibility = Visibility.Visible;
-        if (ai!.Status != AiStatus.Ready)
+        var engine = translation is { } options && OnlineTranslator.IsOnline(options.TranslateEngine) ? options.TranslateEngine : null;
+        if (engine is null && ai!.Status != AiStatus.Ready)
         {
             ShowProblem(ai.Status == AiStatus.NeedsSignIn ? Strings.Ai_Card_LoginExpired : Strings.Ai_Card_NotConfigured, ai.Status == AiStatus.NeedsSignIn ? Strings.Ai_Card_LoginAgain : Strings.Common_GoToSettings, settings: true);
             return;
@@ -232,7 +236,17 @@ public sealed partial class AiCard : UserControl
         ShowWaiting(true);
         try
         {
-            await foreach (var chunk in ai.RunAsync(request!, cts.Token))
+            if (engine != null)
+            {
+                HeadModel.Text = OnlineTranslator.NameOf(engine);
+                var target = Languages.AutoTarget(request!.Text, translation!.TranslateTarget);
+                var reply = await OnlineTranslator.TranslateAsync(request.Text, target, engine, cts.Token);
+                if (running != cts) return;
+                if (reply.Ok) { HeadModel.Text = OnlineTranslator.NameOf(reply.Engine); result = reply.Text; IsDone = true; }
+                else ShowProblem(Strings.Translate_Failed, Strings.Common_Retry, settings: false);
+                return;
+            }
+            await foreach (var chunk in ai!.RunAsync(request!, cts.Token))
             {
                 if (cts.IsCancellationRequested) return;
                 if (waiting && chunk.Length > 0)

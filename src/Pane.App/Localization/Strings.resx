@@ -429,6 +429,9 @@
   <data name="Launcher_Group_Applications" xml:space="preserve"><value>应用</value></data>
   <data name="Launcher_Group_Calculation" xml:space="preserve"><value>计算</value></data>
   <data name="Launcher_Group_Commands" xml:space="preserve"><value>命令</value></data>
+  <data name="Launcher_Group_Tools" xml:space="preserve"><value>Pane 工具</value></data>
+  <data name="Launcher_ToolTraffic" xml:space="preserve"><value>流量详情</value></data>
+  <data name="Launcher_ToolCardDesktop" xml:space="preserve"><value>卡片桌面</value></data>
   <data name="Launcher_Group_Completion" xml:space="preserve"><value>补全</value></data>
   <data name="Launcher_Group_Favorites" xml:space="preserve"><value>常用</value></data>
   <data name="Launcher_Group_Files" xml:space="preserve"><value>文件</value></data>

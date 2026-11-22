@@ -177,6 +177,7 @@ public static class LauncherGroups
     public const string Images = "images";
     public const string Other = "other";
     public const string Actions = "actions";
+    public const string Tools = "tools";
     public const string Timer = "timer";   // 定时关机（058）：「30 分钟后关机」这类说法的结果，排在最前，列表样式
     // 直达（098，issue 52）：输入本身是网址或路径时的「打开网址 / 打开文件夹 / 打开文件」，排在最前（定时之后），列表样式
     public const string Direct = "direct";

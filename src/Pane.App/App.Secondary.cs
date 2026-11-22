@@ -32,6 +32,7 @@ public sealed partial class App
         launcher.OpenFiles+=(q,focus)=>ShowFiles(q,focus);
         launcher.OpenTranslate+=text=>ShowTranslate(text);
         launcher.OpenChat+=(q,history)=>ShowChat(q,history);
+        launcher.OpenTool+=TrayInvoked;
         launcher.OpenTimer+=ShowTimer;   /* 058：「定时关机…」 */
     }
 

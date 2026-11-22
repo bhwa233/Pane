@@ -93,6 +93,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
     public event Action<string>? OpenTranslate;
     /// <summary>「定时关机…」（058）：打开定时窗口。</summary>
     public event Action? OpenTimer;
+    internal event Action<string>? OpenTool;
     /// <summary>AI 对话窗口：要直接发出的问题，或带过去的一问一答（「继续对话」）。</summary>
     public event Action<string?, IReadOnlyList<AiChatMessage>?>? OpenChat;
     /// <summary>文件格 Ctrl+Enter「打开所在文件夹」用；宿主设置（021 之前演示模式用假服务）。</summary>
@@ -396,6 +397,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
     async Task Refresh(string query)
     {
         pending?.Cancel();
+        if (IsToolList(query.Trim())) { Render(new LauncherResult([], false), query, attachmentMode: false); return; }
         if (attachment is { } a) { Render(new LauncherResult(AttachmentItems(a, query), false), query, attachmentMode: true); return; }
         var cts = pending = new CancellationTokenSource();
         bool partialShown = false;
@@ -593,6 +595,27 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
         catch (Exception) { /* 建议取不到就不显示，不打扰 */ }
     }
 
+    static bool IsToolList(string query) => query is "工具" or "Pane 工具";
+
+    static (LauncherItem Item, bool Exact)[] ToolItems(string query, bool showAll)
+    {
+        (string Id, string? Module, string Title, string Glyph, string[] Aliases)[] tools =
+        [
+            ("screenshots", ModuleIds.Screenshots, Strings.Module_Screenshots_Name, "scissors", ["截图", "截图历史", "截圖", "截圖歷史"]),
+            ("clipboard", ModuleIds.Clipboard, Strings.Common_Clipboard, "clipboard", ["剪贴板", "剪切板", "剪贴板历史", "剪貼簿", "剪貼簿歷史"]),
+            ("notes", ModuleIds.Notes, Strings.Module_Notes_Name, "pencil", ["便签", "便箋"]),
+            ("traffic", ModuleIds.Traffic, Strings.Launcher_ToolTraffic, "globe", ["流量", "网速", "網速"]),
+            ("translate", ModuleIds.Ai, Strings.Launcher_TranslateWindow, "translate", ["翻译窗口", "翻譯視窗"]),
+            ("desktop-cards", null, Strings.Launcher_ToolCardDesktop, "pin", ["卡片", "桌面卡片"]),
+        ];
+        return tools.Where(tool => tool.Module is null || ModuleGate.On(tool.Module))
+            .Select(tool => (Tool: tool, Terms: tool.Aliases.Prepend(tool.Title)))
+            .Where(tool => showAll || tool.Terms.Any(term => term.StartsWith(query, StringComparison.OrdinalIgnoreCase)))
+            .Select(tool => (Item: new LauncherItem(tool.Tool.Id, LauncherItemKind.Command, LauncherGroups.Tools,
+                tool.Tool.Title, null, new(tool.Tool.Glyph)), Exact: tool.Terms.Contains(query, StringComparer.OrdinalIgnoreCase)))
+            .OrderByDescending(tool => tool.Exact).ToArray();
+    }
+
     void Render(LauncherResult result, string query, bool attachmentMode, bool keepSelection = false)
     {
         if (quickLinkItem is not null) return;
@@ -608,8 +631,18 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
         webEngine = null;
         LauncherSection Section(string label, LauncherSectionKind kind) { var s = new LauncherSection(label, kind, []); sections.Add(s); return s; }
         void Add(LauncherSection s, LauncherItem item, LauncherCell cell, string? number = null) { var r = new LauncherRow(item, rows.Count, cell, number); rows.Add(r); s.Rows.Add(r); }
+        var showAllTools = IsToolList(q);
+        var tools = q.Length == 0 ? [] : ToolItems(q, showAllTools);
+        bool exactTool = tools.Any(tool => tool.Exact);
+        void AddTools()
+        {
+            if (tools.Length == 0) return;
+            var s = Section(Strings.Launcher_Group_Tools, LauncherSectionKind.List);
+            foreach (var tool in tools) Add(s, tool.Item, LauncherCell.Command);
+        }
 
-        if (result.IsHome)
+        if (showAllTools) AddTools();
+        else if (result.IsHome)
         {
             // 设置 → 启动器 →「未输入时显示」：只显示固定 / 只显示最近时去掉另一组，什么都不显示时只剩搜索栏
             var home = Options.Home;
@@ -636,6 +669,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
         }
         else if (attachmentMode)
         {
+            AddTools();
             foreach (var item in result.Items)
             {
                 if (sections.Count == 0 || sections[^1].GroupId != item.Group) sections.Add(new LauncherSection(LauncherGroupLabels.Get(item.Group), LauncherSectionKind.List, []) { GroupId = item.Group });
@@ -687,6 +721,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
         }
         else if (q.Length > 0)
         {
+            if (exactTool) AddTools();
             // 直达（098，issue 52）：输入本身是网址或路径，「打开网址 / 打开文件夹 / 打开文件」排在最前、列表样式，默认选中
             var opens = result.Items.Where(i => i.Group == LauncherGroups.Direct).ToList();
             if (opens.Count > 0)
@@ -710,7 +745,9 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
             // 服务给的 AI / 网页两组不用了（动作行代替）
             foreach (var item in result.Items.Where(i => i.Kind == LauncherItemKind.Calculation).Take(1))
                 Add(Section("", LauncherSectionKind.Calc), item, LauncherCell.Calc);
-            var apps = result.Items.Where(i => i.Kind is LauncherItemKind.App or LauncherItemKind.Command && i.Group is not (LauncherGroups.Settings or LauncherGroups.Timer)).Take(MaxApps).ToList();
+            var showToolClipboard = tools.Any(tool => tool.Item.Id == "clipboard");
+            var apps = result.Items.Where(i => i.Kind is LauncherItemKind.App or LauncherItemKind.Command && i.Group is not (LauncherGroups.Settings or LauncherGroups.Timer)
+                && (!showToolClipboard || i.Id != "command:clipboard")).Take(MaxApps).ToList();
             if (apps.Count > 0)
             {
                 var s = Section(Strings.Launcher_Group_Applications, LauncherSectionKind.Tiles);
@@ -723,6 +760,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
                 var s = Section(Strings.Launcher_Group_Settings, LauncherSectionKind.List);
                 foreach (var item in settings) Add(s, item, LauncherCell.Command);
             }
+            if (!exactTool) AddTools();
             var actions = ActionItems();
             if (actions.Count > 0)
             {
@@ -805,7 +843,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
                 row.HistoryText is null ? [(["Enter"], Strings.Common_Search), (["Tab"], Strings.Launcher_FillInput)] : [(["Enter"], Strings.Common_Search), (["Tab"], Strings.Launcher_FillInput), (["Shift", "+", "Delete"], Strings.Common_Delete)]),
             LauncherCell.Command when item.Kind == LauncherItemKind.Web => (item.Hotkey is null ? string.Format(Strings.Launcher_SearchTarget, (object?)(item.Title)) : item.Title, [(["Enter"], Strings.Common_Search), (["Tab"], Strings.Launcher_FillInput)]),
             LauncherCell.Command when item.Group == LauncherGroups.Timer => (item.Title.TrimEnd('…'), [(["Enter"], item.Id == "power:panel" ? Strings.Common_Open : item.Id == "power:cancel" ? Strings.Common_Execute : Strings.Timer_Go)]),
-            LauncherCell.Command when item.Group == LauncherGroups.Settings => (string.Format(Strings.Launcher_OpenTarget, (object?)(item.Title)), [(["Enter"], Strings.Common_Open)]),
+            LauncherCell.Command when item.Group is LauncherGroups.Settings or LauncherGroups.Tools => (string.Format(Strings.Launcher_OpenTarget, (object?)(item.Title)), [(["Enter"], Strings.Common_Open)]),
             LauncherCell.Command => (item.Title, [(["Enter"], Strings.Common_Execute)]),
             LauncherCell.File => (string.Format(Strings.Launcher_OpenTarget, (object?)(item.Title)), [(["Enter"], Strings.Common_Open), (["Tab"], Strings.Launcher_ViewInFiles), (["Ctrl", "+", "K"], Strings.Launcher_MoreActions)]),
             LauncherCell.More => (string.Format(Strings.Launcher_SearchInFiles, (object?)(q)), [(["Enter"], Strings.Launcher_OpenFiles)]),
@@ -815,7 +853,7 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
         };
         // Tab 兜底的行，提示放得下（不到三个）时加「Tab 搜文件」；应用行已有三个，不加
         if (TabFallback && keys.Length < 3 && !keys.Any(k => k.Item1 is ["Tab"]) && row.Cell is LauncherCell.Calc or LauncherCell.Command or LauncherCell.Action
-            && item.Id != "terminal:hint" && !IsKeywordDirect(item) && item.Group is not (LauncherGroups.Terminal or LauncherGroups.Completion or LauncherGroups.Timer or LauncherGroups.Direct)
+            && item.Id != "terminal:hint" && !IsKeywordDirect(item) && item.Group is not (LauncherGroups.Terminal or LauncherGroups.Completion or LauncherGroups.Timer or LauncherGroups.Direct or LauncherGroups.Tools)
             && !(row.Cell == LauncherCell.Action && ActionId(item) == "files"))
             keys = [.. keys, (["Tab"], Strings.Launcher_SearchFiles)];
         FootWhat.Text = what;
@@ -863,7 +901,8 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
         Card.Start(ai, request, title, glyph, source, compact: false,
             [(["Enter"], Strings.Common_Paste), (["Ctrl", "+", "C"], Strings.Common_Copy), (["Ctrl", "+", "R"], Strings.Common_Regenerate),
              (["Tab"], actionId == "translate" ? Strings.Launcher_TranslateWindow : Strings.Launcher_ContinueChat), (["Esc"], Strings.Common_Back)],
-            openSettings: () => { CloseRequested?.Invoke(this, EventArgs.Empty); ((App)Application.Current).OpenSettings("ai"); });
+            openSettings: () => { CloseRequested?.Invoke(this, EventArgs.Empty); ((App)Application.Current).OpenSettings("ai"); },
+            translation: actionId == "translate" ? ((App)Application.Current).Store.Current.Ai : null);
         RequestHeight();
     }
 
@@ -1187,6 +1226,11 @@ public sealed partial class LauncherView : UserControl, IPanelView, IPanelOpenin
         var item = row.Item;
         var q = shownQuery;
         if (row.Cell == LauncherCell.Menu) { if (!tab) await RunMenu(row); return; }
+        if (item.Group == LauncherGroups.Tools)
+        {
+            if (!tab) { CloseRequested?.Invoke(this, EventArgs.Empty); OpenTool?.Invoke(item.Id); }
+            return;
+        }
 
         // 关键字直达（052）：和动作行同样的动作，只是内容去掉了关键字；Tab 照动作行展开成翻译 / 对话窗口
         if (IsKeywordDirect(item))

@@ -46,34 +46,46 @@ internal static class OnlineTranslator
         foreach (var engine in chain)
         {
             token.ThrowIfCancellationRequested();
-            var result = engine switch
+            try
             {
-                Youdao => await YoudaoAsync(text, token).ConfigureAwait(false),
-                Bing => await BingAsync(text, target, token).ConfigureAwait(false),
-                _ => await GoogleAsync(text, target, token).ConfigureAwait(false),
-            };
-            if (result.Ok) return result with { Engine = engine };
-            last = result;
+                last = engine switch
+                {
+                    Youdao => await YoudaoAsync(text, target, token).ConfigureAwait(false),
+                    Bing => await BingAsync(text, target, token).ConfigureAwait(false),
+                    _ => await GoogleAsync(text, target, token).ConfigureAwait(false),
+                };
+                if (last.Ok) return last;
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested)
+            {
+                last = new(false, "", null, engine, Strings.Ai_ConnectionTimeout);
+            }
         }
         return last;
     }
 
-    // ---------------- 有道：官网 AI 演示接口，自动语言对，免密钥 ----------------
+    // ---------------- 有道：官网 AI 演示接口，自动检测源语言，免密钥 ----------------
 
-    static async Task<OnlineTranslation> YoudaoAsync(string text, CancellationToken token)
+    static async Task<OnlineTranslation> YoudaoAsync(string text, string target, CancellationToken token)
     {
         try
         {
+            var language = target == "zh" ? "zh-CHS" : target;
             using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["q"] = text,
                 ["from"] = "Auto",
-                ["to"] = "Auto",
+                ["to"] = language,
             });
             using var response = await client.PostAsync("https://aidemo.youdao.com/trans", content, token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(token).ConfigureAwait(false));
-            if (json.RootElement.TryGetProperty("translation", out var translation) &&
+            var root = json.RootElement;
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("l", out var pair) && pair.ValueKind == JsonValueKind.String &&
+                pair.GetString()!.Split('2') is [_, var actualTarget] &&
+                string.Equals(actualTarget, language, StringComparison.OrdinalIgnoreCase) &&
+                root.TryGetProperty("translation", out var translation) &&
                 translation.ValueKind == JsonValueKind.Array && translation.GetArrayLength() > 0 &&
                 translation[0].ValueKind == JsonValueKind.String)
             {
@@ -82,7 +94,6 @@ internal static class OnlineTranslator
             }
             return new(false, "", null, Youdao, Strings.Translate_Failed);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception error) when (error is HttpRequestException or JsonException or IOException)
         {
             return new(false, "", null, Youdao, error.Message);
@@ -118,7 +129,6 @@ internal static class OnlineTranslator
 
             OnlineTranslation Fail() => new(false, "", null, Google, Strings.Translate_Failed);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception error) when (error is HttpRequestException or JsonException or IOException)
         {
             return new(false, "", null, Google, error.Message);
@@ -179,7 +189,6 @@ internal static class OnlineTranslator
             if (ig == null || iid == null) return null;
             return new BingCredentials(host, pair.Key, pair.Token, ig, iid);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception error) when (error is HttpRequestException or IOException)
         {
             return null;
@@ -226,7 +235,6 @@ internal static class OnlineTranslator
             }
             return new(false, "", null, Bing, Strings.Translate_Failed);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch (Exception error) when (error is HttpRequestException or JsonException or IOException)
         {
             return new(false, "", null, Bing, error.Message);
