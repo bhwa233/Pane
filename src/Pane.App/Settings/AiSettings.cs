@@ -48,6 +48,9 @@ public sealed record AiSettings
     public string? ApiModel { get; init; }
     public string? ChatGptModel { get; init; }
     public string TranslateTarget { get; init; }="auto";
+    /// <summary>翻译引擎（2026-11-22）："ai" = 已配置的翻译模型（默认，流式、不参与回退）；
+    /// "youdao" / "bing" / "google" 为免密钥在线引擎，失败按 有道→必应→谷歌 回退。原文会发送到所选在线服务。</summary>
+    public string TranslateEngine { get; init; }="ai";
     /// <summary>
     /// ChatGPT 账号方式的翻译模型 Id（设计加，2026-10-29）：单独指定一个快模型；null = 和主模型相同。
     /// 065 起第三方 API 的翻译模型存在各自的 <see cref="AiEndpoint.TranslationModel"/>，这个字段只给 ChatGPT 用（迁移时 API 方式的值复制进服务商）。

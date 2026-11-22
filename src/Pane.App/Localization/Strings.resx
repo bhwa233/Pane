@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -771,6 +771,8 @@
   <data name="Settings_Ai_SubscriptionUnknown" xml:space="preserve"><value>已登录 · 使用套餐额度（套餐名称未知）</value></data>
   <data name="Settings_Ai_SystemProxyDescription" xml:space="preserve"><value>与浏览器相同，使用系统设置中的代理</value></data>
   <data name="Settings_Ai_TargetLanguage" xml:space="preserve"><value>目标语言</value></data>
+  <data name="Settings_Ai_TranslateEngine" xml:space="preserve"><value>翻译引擎</value></data>
+  <data name="Settings_Ai_TranslateEngineDescription" xml:space="preserve"><value>在线引擎免密钥：原文将发送到所选服务（有道 / 必应 / 谷歌，非官方接口可能失效），失败时按 有道 → 必应 → 谷歌 回退。AI 模型使用已配置的翻译模型，按量计费、不参与回退。</value></data>
   <data name="Settings_Ai_TestConnection" xml:space="preserve"><value>测试连接</value></data>
   <data name="Settings_Ai_TestConnectionDescription" xml:space="preserve"><value>使用当前设置发送一个很小的测试请求</value></data>
   <data name="Settings_Ai_Testing" xml:space="preserve"><value>测试中…</value></data>
@@ -1372,21 +1374,8 @@
   <data name="Translate_ConfigureHint" xml:space="preserve"><value>尚未配置 AI 服务，配置后即可翻译</value></data>
   <data name="Translate_Copied" xml:space="preserve"><value>已复制译文</value></data>
   <data name="Translate_DetectedLanguage" xml:space="preserve"><value>自动识别：{0}</value></data>
-  <data name="Translate_Dictionary" xml:space="preserve"><value>查词</value></data>
-  <data name="Translate_DictionaryCopied" xml:space="preserve"><value>已复制释义</value></data>
-  <data name="Translate_DictionaryInput" xml:space="preserve"><value>英文单词或短语</value></data>
-  <data name="Translate_DictionaryNoMatch" xml:space="preserve"><value>未找到匹配词条</value></data>
-  <data name="Translate_DictionaryPlaceholder" xml:space="preserve"><value>暂无释义</value></data>
-  <data name="Translate_DictionarySource" xml:space="preserve"><value>ECDICT · 离线词典</value></data>
-  <data name="Translate_DictionarySelection" xml:space="preserve"><value>划词查词</value></data>
-  <data name="Translate_DictionaryUnavailable" xml:space="preserve"><value>离线词库未安装或无法读取</value></data>
-  <data name="Translate_InstallDictionary" xml:space="preserve"><value>导入词库</value></data>
-  <data name="Translate_InstallingDictionary" xml:space="preserve"><value>正在校验并导入词库…</value></data>
-  <data name="Translate_DictionaryInstalled" xml:space="preserve"><value>离线词库已导入</value></data>
-  <data name="Translate_DictionaryInstallFailed" xml:space="preserve"><value>无法导入词库。请检查是否为有效的 Pane ECDICT 词库包。</value></data>
   <data name="Translate_History" xml:space="preserve"><value>打开历史</value></data>
   <data name="Translate_CloseHistory" xml:space="preserve"><value>关闭历史</value></data>
-  <data name="Translate_DictionaryHistory" xml:space="preserve"><value>查词历史</value></data>
   <data name="Translate_TranslationHistory" xml:space="preserve"><value>翻译历史</value></data>
   <data name="Translate_RememberHistory" xml:space="preserve"><value>在本机保存翻译历史</value></data>
   <data name="Translate_ClearHistoryConfirm" xml:space="preserve"><value>确认清空此历史</value></data>
@@ -1405,9 +1394,11 @@
   <data name="Translate_LanguageKorean" xml:space="preserve"><value>韩文</value></data>
   <data name="Translate_LanguageRussian" xml:space="preserve"><value>俄文</value></data>
   <data name="Translate_LanguageSpanish" xml:space="preserve"><value>西班牙文</value></data>
-  <data name="Translate_LookupSelection" xml:space="preserve"><value>离线查词：选中的结果</value></data>
   <data name="Translate_ModelHint" xml:space="preserve"><value>翻译模型：{0}（可在 设置 → AI 中更换）</value></data>
-  <data name="Translate_Mode" xml:space="preserve"><value>翻译或查词</value></data>
+  <data name="Translate_EngineAi" xml:space="preserve"><value>AI 模型</value></data>
+  <data name="Translate_EngineYoudao" xml:space="preserve"><value>有道（在线）</value></data>
+  <data name="Translate_EngineBing" xml:space="preserve"><value>必应（在线）</value></data>
+  <data name="Translate_EngineGoogle" xml:space="preserve"><value>谷歌（在线）</value></data>
   <data name="Translate_NoResult" xml:space="preserve"><value>暂无译文</value></data>
   <data name="Translate_NotConfigured" xml:space="preserve"><value>尚未配置 AI 服务（设置 → AI）</value></data>
   <data name="Translate_ResultPlaceholder" xml:space="preserve"><value>译文将显示在此处</value></data>
@@ -1925,7 +1916,6 @@
   <data name="Screenshots_OcrCopy" xml:space="preserve"><value>复制全部识别文字</value></data>
   <data name="Screenshots_OcrCopySelection" xml:space="preserve"><value>复制所选文字</value></data>
   <data name="Screenshots_OcrTextActions" xml:space="preserve"><value>识别文字操作</value></data>
-  <data name="Screenshots_OcrLookup" xml:space="preserve"><value>离线查词</value></data>
   <data name="Screenshots_OcrTranslate" xml:space="preserve"><value>AI 翻译</value></data>
   <data name="Screenshots_OcrWorking" xml:space="preserve"><value>正在识别…</value></data>
   <data name="Screenshots_OcrEmpty" xml:space="preserve"><value>未识别到文字</value></data>

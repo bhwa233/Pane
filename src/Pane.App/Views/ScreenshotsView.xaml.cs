@@ -26,7 +26,7 @@ public sealed partial class ScreenshotsView : UserControl, IDisposable
     readonly Action<Guid> edited;
     readonly Func<bool> limitHistory;
     readonly Action<bool> setLimitHistory;
-    readonly Action<string, bool> openTranslation;
+    readonly Action<string> openTranslation;
     readonly Func<string, string, bool> saveNote;
     readonly CancellationTokenSource lifetime = new();
     CancellationTokenSource? recognition;
@@ -35,7 +35,7 @@ public sealed partial class ScreenshotsView : UserControl, IDisposable
 
     internal ScreenshotsView(ScreenshotStore store, NativeScreenshotCapture capture, NativeScreenshotOcr ocr, OcrHistoryStore ocrHistory, Func<Guid, bool> isPinned,
         Action<Guid> togglePin, Action<Guid> edited, Func<bool> limitHistory, Action<bool> setLimitHistory,
-        Action<string, bool> openTranslation, Func<string, string, bool> saveNote)
+        Action<string> openTranslation, Func<string, string, bool> saveNote)
     {
         this.store = store;
         this.capture = capture;
@@ -292,14 +292,9 @@ public sealed partial class ScreenshotsView : UserControl, IDisposable
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
-    void LookupOcrClicked(object sender, RoutedEventArgs args)
-    {
-        if (OcrActionText() is { } text) openTranslation(text, true);
-    }
-
     void TranslateOcrClicked(object sender, RoutedEventArgs args)
     {
-        if (OcrActionText() is { } text) openTranslation(text, false);
+        if (OcrActionText() is { } text) openTranslation(text);
     }
 
     void SaveOcrNoteClicked(object sender, RoutedEventArgs args)

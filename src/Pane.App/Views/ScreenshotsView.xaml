@@ -157,7 +157,6 @@
                                 <MenuFlyout>
                                     <MenuFlyoutItem x:Name="CopyOcrSelectionItem" Text="{x:Bind loc:Strings.Screenshots_OcrCopySelection}" Click="CopyOcrSelectionClicked" IsEnabled="False"/>
                                     <MenuFlyoutSeparator/>
-                                    <MenuFlyoutItem Text="{x:Bind loc:Strings.Screenshots_OcrLookup}" Click="LookupOcrClicked"/>
                                     <MenuFlyoutItem Text="{x:Bind loc:Strings.Screenshots_OcrTranslate}" Click="TranslateOcrClicked"/>
                                     <MenuFlyoutItem Text="{x:Bind loc:Strings.Notes_SaveFromResult}" Click="SaveOcrNoteClicked"/>
                                 </MenuFlyout>

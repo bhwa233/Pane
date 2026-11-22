@@ -102,10 +102,10 @@
                 <c:PaneIcon Glyph="scissors" Style="{StaticResource ItemIcon}"/>
                 <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Module_Screenshots_Name}" Style="{StaticResource ItemText}"/>
             </Grid>
-            <Grid x:Name="DictionaryItem" Tag="dictionary" Style="{StaticResource ItemRow}" Visibility="Collapsed">
+            <Grid x:Name="TranslateItem" Tag="translate" Style="{StaticResource ItemRow}" Visibility="Collapsed">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <c:PaneIcon Glyph="search" Style="{StaticResource ItemIcon}"/>
-                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Translate_Dictionary}" Style="{StaticResource ItemText}"/>
+                <c:PaneIcon Glyph="translate" Style="{StaticResource ItemIcon}"/>
+                <TextBlock Grid.Column="1" Text="{x:Bind loc:Strings.Common_Translate}" Style="{StaticResource ItemText}"/>
             </Grid>
             <Grid x:Name="TrafficItem" Tag="traffic" Style="{StaticResource ItemRow}" Visibility="Collapsed">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>

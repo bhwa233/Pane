@@ -30,7 +30,6 @@ public sealed record PaneSettings(int Version, GeneralSettings General, Launcher
     public Dictionary<Guid,bool>? DesktopScreenshotTopmost { get; init; }
     public bool LimitScreenshotHistory { get; init; }
     public bool RememberTranslations { get; init; }
-    public bool LookupTranslationSelection { get; init; }
     // 能力模块的启用状态（设计加，2026-11-04，055）：键是 Pane.Contracts.ModuleIds，没写的用 ModuleInfo.DefaultEnabled。
     // 旧设置文件没有这项时，按旧的总开关迁移（Clipboard / SuperPanel / FolderJump 的 Enabled），见 docs/design.md「能力模块」
     Dictionary<string,bool>? modules; public Dictionary<string,bool>? Modules { get=>modules; init=>modules=value; } }

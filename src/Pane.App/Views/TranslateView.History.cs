@@ -11,17 +11,15 @@ namespace Pane.Views;
 
 public sealed partial class TranslateView
 {
-    readonly SettingsStore historySettings;
-    readonly TranslationHistory dictionaryHistory, translationHistory;
+    readonly TranslationHistory history;
     IReadOnlyList<TranslationHistoryEntry> historyEntries = [];
-    TranslationHistory CurrentHistory => IsDictionary ? dictionaryHistory : translationHistory;
     bool HistoryVisible => HistoryPanel.Visibility == Visibility.Visible;
     TranslationHistoryEntry? SelectedHistory => HistoryList.SelectedIndex is var index && index >= 0 && index < historyEntries.Count
         ? historyEntries[index] : null;
 
     void RecordHistory(TranslationHistoryEntry entry)
     {
-        try { if (!CurrentHistory.Record(entry)) StateText.Text = Strings.Translate_HistorySaveFailed; }
+        try { if (!history.Record(entry)) StateText.Text = Strings.Translate_HistorySaveFailed; }
         catch (Exception error) when (TranslationHistory.IsStorageError(error)) { StateText.Text = Strings.Translate_HistorySaveFailed; }
     }
 
@@ -33,35 +31,27 @@ public sealed partial class TranslateView
         {
             if (running != null) { last = ""; StateText.Text = ""; }
             CancelPending();
-            ClearSelectionLookup();
         }
         HistoryPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         Workspace.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
-        LanguagesBar.Visibility = visible || IsDictionary ? Visibility.Collapsed : Visibility.Visible;
+        LanguagesBar.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
         Hints.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
-        RefreshSelectionDictionaryVisibility();
         HistoryIcon.IsFilled = visible;
         var label = visible ? Strings.Translate_CloseHistory : Strings.Translate_History;
         AutomationProperties.SetName(HistoryButton, label);
         ToolTipService.SetToolTip(HistoryButton, label);
-        if (!visible)
-        {
-            if (IsDictionary && ActionButton.Visibility == Visibility.Visible && messageAction == MessageAction.InstallDictionary)
-                _ = Lookup(force: true);
-            return;
-        }
+        if (!visible) return;
         RefreshHistory();
         if (historyEntries.Count > 0) HistoryList.Focus(FocusState.Programmatic);
     }
 
     void RefreshHistory()
     {
-        HistoryTitle.Text = IsDictionary ? Strings.Translate_DictionaryHistory : Strings.Translate_TranslationHistory;
-        AutomationProperties.SetName(HistoryList, HistoryTitle.Text);
-        RememberHistory.Visibility = IsDictionary ? Visibility.Collapsed : Visibility.Visible;
-        RememberHistory.IsChecked = historySettings.Current.RememberTranslations;
+        HistoryTitle.Text = Strings.Translate_TranslationHistory;
+        AutomationProperties.SetName(HistoryList, Strings.Translate_TranslationHistory);
+        RememberHistory.IsChecked = settings.Current.RememberTranslations;
         HistoryStatus.Text = "";
-        try { historyEntries = CurrentHistory.Read(); }
+        try { historyEntries = history.Read(); }
         catch (Exception error) when (TranslationHistory.IsStorageError(error))
         {
             historyEntries = [];
@@ -71,7 +61,7 @@ public sealed partial class TranslateView
         {
             var line = entry.Source.Replace('\n', ' ').Replace('\r', ' ');
             if (line.Length > 64) line = line[..(char.IsHighSurrogate(line[63]) ? 63 : 64)] + "…";
-            return entry.Target == null ? line : $"{line}  ·  {NameOf(entry.Target)}";
+            return $"{line}  ·  {NameOf(entry.Target!)}";
         }).ToArray();
         HistoryEmpty.Visibility = historyEntries.Count == 0 && HistoryStatus.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearHistoryButton.IsEnabled = historyEntries.Count != 0;
@@ -82,22 +72,21 @@ public sealed partial class TranslateView
 
     void UpdateHistoryActions()
     {
-        if (OpenHistoryItemButton == null) return;
         OpenHistoryItemButton.IsEnabled = DeleteHistoryButton.IsEnabled = SelectedHistory != null;
     }
 
     void OnRememberHistory(object sender, RoutedEventArgs args)
     {
         if (sender is not CheckBox control || control.IsChecked is not { } enabled ||
-            historySettings.Current.RememberTranslations == enabled || !HistoryVisible || IsDictionary) return;
+            settings.Current.RememberTranslations == enabled || !HistoryVisible) return;
         try
         {
-            historySettings.Update(settings => settings with { RememberTranslations = enabled });
+            settings.Update(value => value with { RememberTranslations = enabled });
             RefreshHistory();
         }
         catch (Exception error) when (TranslationHistory.IsStorageError(error) || error is ArgumentException)
         {
-            RememberHistory.IsChecked = historySettings.Current.RememberTranslations;
+            RememberHistory.IsChecked = settings.Current.RememberTranslations;
             HistoryStatus.Text = Strings.Settings_SaveFailed;
         }
     }
@@ -116,28 +105,23 @@ public sealed partial class TranslateView
         if (SelectedHistory is not { } entry) return;
         ShowHistory(false);
         SetSource(entry.Source);
-        if (IsDictionary) _ = Lookup(force: true);
-        else
-        {
-            manualTarget = entry.Target;
-            last = entry.Source;
-            ResetLanguages(entry.Source);
-            ShowIdle();
-            Out.Foreground = TextProto.Foreground;
-            Out.Text = entry.Result!;
-            SaveNoteButton.IsEnabled = !string.IsNullOrWhiteSpace(Out.Text);
-            OutScroller.ChangeView(null, 0, null, true);
-        }
+        // 恢复历史条目不重新请求：回填保存的目标与译文，正文时间不推进。
+        manualTarget = entry.Target;
+        last = entry.Source;
+        ResetLanguages(entry.Source);
+        Out.Foreground = TextProto.Foreground;
+        Out.Text = entry.Result!;
+        OutScroller.ChangeView(null, 0, null, true);
         Source.Focus(FocusState.Programmatic);
     }
 
     void OnDeleteHistory(object sender, RoutedEventArgs args)
     {
         if (SelectedHistory is not { } entry) return;
-        ChangeHistory(() => CurrentHistory.Remove(entry));
+        ChangeHistory(() => history.Remove(entry));
     }
 
-    void OnClearHistory(object sender, RoutedEventArgs args) => ChangeHistory(() => CurrentHistory.Clear());
+    void OnClearHistory(object sender, RoutedEventArgs args) => ChangeHistory(() => history.Clear());
 
     void ChangeHistory(Action change)
     {

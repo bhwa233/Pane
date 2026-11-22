@@ -10,6 +10,7 @@ using Pane.Contracts;
 using Pane.DesignData;
 using Pane.Hosting;
 using Pane.Settings;
+using Pane.Services.Translate;
 using Pane.Views.Controls;
 using Windows.Foundation;
 using G = Pane.Gestures;
@@ -75,6 +76,10 @@ public sealed partial class SettingsView
         autoSwitch.IsEnabled = configured;
         autoSwitch.Opacity = configured ? 1 : 0.4;
         Group(Strings.Settings_Ai_Translation,
+            Row(Strings.Settings_Ai_TranslateEngine, Strings.Settings_Ai_TranslateEngineDescription,
+                Seg([("ai", Strings.Translate_EngineAi), (OnlineTranslator.Youdao, Strings.Translate_EngineYoudao),
+                     (OnlineTranslator.Bing, Strings.Translate_EngineBing), (OnlineTranslator.Google, Strings.Translate_EngineGoogle)],
+                    a.TranslateEngine, v => SaveAi(x => x with { TranslateEngine = v }))),
             Row(Strings.Settings_Ai_TargetLanguage, a.TranslateTarget == "auto" ? Strings.Settings_Ai_AutoLanguageDescription : null,
                 Seg([("auto", Strings.Common_Auto), ("zh", Strings.Translate_LanguageChinese), ("en", Strings.Translate_LanguageEnglish), ("ja", Strings.Translate_LanguageJapanese)], a.TranslateTarget,
                     v => SaveAi(x => x with { TranslateTarget = v }))),

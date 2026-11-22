@@ -14,7 +14,7 @@ internal static class LocalSettingsFields
         [nameof(PaneSettings.PauseInterfaceTraffic)],
         [nameof(PaneSettings.NoteReminders)],[nameof(PaneSettings.NoteTaskReminders)],
         [nameof(PaneSettings.NoteCapsules)],[nameof(PaneSettings.NoteCapsuleQueues)],
-        [nameof(PaneSettings.LimitScreenshotHistory)],[nameof(PaneSettings.RememberTranslations)],[nameof(PaneSettings.LookupTranslationSelection)]];
+        [nameof(PaneSettings.LimitScreenshotHistory)],[nameof(PaneSettings.RememberTranslations)]];
     internal static void Apply(JsonObject target,JsonObject? local)
     {
         foreach(var path in Paths){

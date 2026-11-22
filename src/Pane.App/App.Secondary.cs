@@ -38,18 +38,17 @@ public sealed partial class App
     public void ShowFiles(string query,string? focus)=>Present(SecondaryId.Files, Strings.Common_Files,()=>new FilesView(Files,secondaryActions!),v=>((FilesView)v).Open(query,focus));
     /// <summary>打开设置并跳到某个分区（各处「去设置」，issue 11）。</summary>
     public void OpenSettings(string? section){Command("show-settings");if(section!=null&&settings?.View is SettingsView v)v.ShowSection(section);}
-    public void ShowTranslate(string? text)=>ShowTranslate(text,false);
     TranslateView CreateTranslateView()
     {
-        var view = new TranslateView(Ai,secondaryActions!,Store,SaveToolResultAsNote);
+        var view = new TranslateView(Ai,secondaryActions!,Store);
         view.OpenSettings += (_,_) => { HideCardDesktop(); OpenSettings("ai"); };
         return view;
     }
-    void ShowTranslate(string? text,bool dictionary)
+    public void ShowTranslate(string? text)
     {
         HideCardDesktop();
         ReturnCardTranslate();
-        Present(SecondaryId.Translate, Strings.Common_Translate, TakeTranslateView, v=>((TranslateView)v).Open(text,dictionary));
+        Present(SecondaryId.Translate, Strings.Common_Translate, TakeTranslateView, v=>((TranslateView)v).Open(text));
     }
     public void ShowChat(string? question,IReadOnlyList<AiChatMessage>? history)=>Present(SecondaryId.Chat, Strings.Common_AiChat,()=>new ChatView(Ai,secondaryActions!),v=>((ChatView)v).Open(question,history));
     public void ShowChatDraft(string draft)=>Present(SecondaryId.Chat, Strings.Common_AiChat,()=>new ChatView(Ai,secondaryActions!),v=>((ChatView)v).SetDraft(draft));
@@ -108,7 +107,6 @@ public sealed partial class App
             case "settings":Command("show-settings");break;   /* 配合 PANE_DESIGN_SETTINGS 选分区 */
             case "launcher":Command("show-launcher");break;   /* 带上 PANE_DESIGN_QUERY 看启动器结果 */
             case "translate":ShowTranslate(q??"Glassmorphism relies on background blur, translucency and a subtle highlight border.");break;
-            case "dictionary":ShowTranslate(q??"run",true);break;
             case "tray":{var m=GlassPanel.MonitorFromPoint(new GlassPanel.Point(),1);var info=new GlassPanel.MonitorInfo{Size=System.Runtime.InteropServices.Marshal.SizeOf<GlassPanel.MonitorInfo>()};GlassPanel.GetMonitorInfoW(m,ref info);ShowTrayMenu($"{info.Monitor.Right-140},{info.Monitor.Bottom-24}");break;}/* 演示：模拟任务栏右下角的托盘图标 */
             case "folder-jump":/* 演示：屏幕中间偏左上，像对话框文件名框的左下角 */
             {
