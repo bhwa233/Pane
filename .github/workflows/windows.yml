@@ -1,0 +1,61 @@
+name: Pane Windows build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    if: ${{ github.repository == 'bhwa233/Pane' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '10.0.x' }
+      - name: Build Pane and native screenshot tool
+        run: |
+          ./src/Pane.App/scripts/build.ps1 -Mode aot -OutputRoot "$env:RUNNER_TEMP/pane"
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = (Get-Item -LiteralPath "$env:RUNNER_TEMP/pane/aot/Pane.App.exe").VersionInfo.ProductVersion.Split('+')[0]
+            if ($env:GITHUB_REF_NAME -cne "v$version") { throw "Tag must match the built version v$version." }
+          }
+          ./src/Pane.Capture/build.ps1 -OutputRoot "$env:RUNNER_TEMP/capture" -StageDirectory "$env:RUNNER_TEMP/pane/aot/NativeCapture"
+          Copy-Item LICENSE,LICENSE-EXCEPTION.md,THIRD_PARTY_NOTICES.md,src/Pane.App/ThirdParty -Destination "$env:RUNNER_TEMP/pane/aot" -Recurse
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pane-Windows-x64-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/pane/aot/
+            !${{ runner.temp }}/pane/aot/**/*.pdb
+          if-no-files-found: error
+  publish-release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Pane-Windows-x64-${{ github.run_number }}
+          path: dist
+      - name: Publish the Windows ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          archive="Pane-Windows-x64-$version.zip"
+          (cd dist && zip -qr "../$archive" .)
+          sha256sum "$archive" > SHA256SUMS.txt
+          printf '下载 `%s`，解压整个目录后运行 `Pane.App.exe`。\n\n' "$archive" > "$RUNNER_TEMP/release-notes.md"
+          cat dist/release-notes.md >> "$RUNNER_TEMP/release-notes.md"
+          gh release create "$RELEASE_TAG" --verify-tag --title "Pane $version" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" "$archive" SHA256SUMS.txt
