@@ -83,8 +83,8 @@ if ($BuildOcr) {
     $ort = Join-Path $work $lock.ocrDependencies.onnxDirectory
     # OpenCV 为锁定 revision、参数固定，产物确定；对象目录跨打包复用，签名不符才重编。不能并行打包。
     $opencvBuild = Join-Path $PSScriptRoot 'bin/opencv-obj'
-    # PythonInterp 默认解析到用户目录下的 WindowsApps，会被 cv::getBuildInformation 编进二进制；固定为系统中性路径。
-    $opencvFlags = @('-DPYTHON_EXECUTABLE=C:/Windows/py.exe',
+    # C++ 模块不需要 Python；跳过探测，避免要求本机安装 Python 或把解释器路径编进二进制。
+    $opencvFlags = @('-DOPENCV_PYTHON_SKIP_DETECTION=ON',
         '-DBUILD_LIST=core,imgproc', '-DBUILD_SHARED_LIBS=OFF', '-DBUILD_WITH_STATIC_CRT=ON',
         '-DBUILD_TESTS=OFF', '-DBUILD_PERF_TESTS=OFF', '-DBUILD_EXAMPLES=OFF', '-DBUILD_opencv_apps=OFF',
         '-DWITH_IPP=OFF', '-DWITH_ITT=OFF', '-DWITH_OPENCL=OFF', '-DWITH_OPENEXR=OFF', '-DWITH_JPEG=OFF',

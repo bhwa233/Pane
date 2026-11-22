@@ -7,10 +7,13 @@
         <Canvas x:Name="Surface" Background="Transparent"/>
         <StackPanel Visibility="Collapsed">
             <!-- 主题画刷原型：代码构建的胶囊条从这里取主题资源 -->
-            <Border x:Name="FillProto" Background="{ThemeResource PaneFillControlBrush}" BorderBrush="{ThemeResource PaneStrokeBrush}"/>
+            <Border x:Name="FillProto">
+                <Border.Background><SolidColorBrush Color="{ThemeResource PaneTintColor}"/></Border.Background>
+            </Border>
             <TextBlock x:Name="TextProto" Foreground="{ThemeResource PaneText1Brush}"/>
             <TextBlock x:Name="Text2Proto" Foreground="{ThemeResource PaneText2Brush}"/>
             <TextBlock x:Name="AccentProto" Foreground="{ThemeResource PaneAccentBrush}"/>
+            <TextBlock x:Name="HoverProto" Foreground="{ThemeResource PaneFillHoverBrush}"/>
         </StackPanel>
     </Grid>
 </UserControl>

@@ -15,7 +15,6 @@ internal interface IDesktopNoteHost
 {
     void SaveSurface(Guid id, bool pad);
     bool GetSurface(Guid id);
-    void SaveSize(Guid id, double width, double height);
     Size? GetSize(Guid id);
     void ToggleTopmost(Guid id);
     bool IsTopmost(Guid id);
@@ -35,16 +34,16 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     readonly NoteSessions.Session session;
     readonly IDesktopNoteHost host;
     readonly Guid id;
-    GlassPanel? panel;
+    DesktopNoteWindow? window;
     bool pad;
     bool restoring;
     bool disposed;
 
-    internal DesktopNoteView(NoteSessions hub, NoteDocument note, IDesktopNoteHost host)
+    internal DesktopNoteView(NoteSessions hub, Guid id, IDesktopNoteHost host)
     {
         this.hub = hub;
         this.host = host;
-        id = note.Id;
+        this.id = id;
         InitializeComponent();
         RegisterFoldShortcuts();
         session = hub.Open(id);
@@ -62,7 +61,8 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     }
 
     public Size PreferredSize => new(TileWidth, TileHeight);
-    public UIElement DragRegion => Header;
+    public UIElement DragRegion => pad ? TitleArea : TilePane;
+    internal Guid NoteId => id;
     event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
     event EventHandler? IPanelView.CloseRequested { add { } remove { } }
     internal event EventHandler? UnpinRequested;
@@ -74,6 +74,9 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
         var fold = new KeyboardAccelerator { Key = VirtualKey.W, Modifiers = VirtualKeyModifiers.Control };
         fold.Invoked += (_, args) => { args.Handled = true; FoldRequested?.Invoke(this, id); };
         KeyboardAccelerators.Add(fold);
+        var done = new KeyboardAccelerator { Key = VirtualKey.Escape };
+        done.Invoked += (_, args) => { if (pad) { SetPad(false); args.Handled = true; } };
+        KeyboardAccelerators.Add(done);
     }
 
     void FoldClicked(object sender, RoutedEventArgs args) => FoldRequested?.Invoke(this, id);
@@ -81,12 +84,23 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     /// <summary>快速新建后的落点：光标进正文（notes-mvp §3）。</summary>
     internal void FocusBody()
     {
-        if (!pad) SetPad(true);
-        PadBody.Focus(FocusState.Programmatic);
+        if (!pad) { SetPad(true); return; }
+        if (PadBody.IsLoaded) PadBody.Focus(FocusState.Programmatic);
+        else PadBody.Loaded += FocusOnLoad;
+
+        void FocusOnLoad(object sender, RoutedEventArgs args)
+        {
+            PadBody.Loaded -= FocusOnLoad;
+            if (pad) PadBody.Focus(FocusState.Programmatic);
+        }
     }
 
     /// <summary>折叠前保存失败：保留编辑窗并提示（notes-mvp §6「失败不关窗」）。</summary>
-    internal void ReportSaveFailed() => PadStatus.Text = Strings.Notes_SaveFailed;
+    internal void ReportSaveFailed()
+    {
+        PadStatus.Text = Strings.Notes_SaveFailed;
+        PadStatus.Visibility = Visibility.Visible;
+    }
 
     public void Dispose()
     {
@@ -98,19 +112,15 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
         hub.Detach(session);
     }
 
-    internal void AttachPanel(GlassPanel cardPanel)
+    internal Size AttachWindow(DesktopNoteWindow noteWindow)
     {
-        panel = cardPanel;
-        // 应用持久化：形态 → 尺寸 → 置顶。
+        window = noteWindow;
+        window.AppWindow.Title = string.IsNullOrWhiteSpace(session.Title) ? Strings.Notes_Untitled : session.Title;
         pad = host.GetSurface(id);
-        var size = host.GetSize(id);
-        if (size is { } current && current.Width > 0) panel.RequestSize(current);
-        else if (pad) panel.RequestSize(new(PadWidth, PadHeight));
-        // 原生四角缩放：边界（220×140 … 720×900）与四角斜向光标。
-        panel.NativeResizeBounds = (MinCardWidth, MinCardHeight, 720, 900);
-        panel.CornerResizeCursors = true;
         ApplySurface();
-        ApplyTopmost(host.IsTopmost(id));
+        var topmost = host.IsTopmost(id);
+        ApplyTopmost(topmost);
+        return host.GetSize(id) ?? (pad ? new(PadWidth, PadHeight) : PreferredSize);
     }
 
     public void OnShowing(PanelShowContext context) { }
@@ -120,7 +130,7 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     /// <summary>共享草稿内容落到界面（贴纸面标题 / 正文，编辑面标题 / 正文）。</summary>
     void Apply(string title, string body)
     {
-        TitleText.Text = string.IsNullOrWhiteSpace(title) ? Strings.Notes_Untitled : title;
+        if (window is { } noteWindow) noteWindow.AppWindow.Title = string.IsNullOrWhiteSpace(title) ? Strings.Notes_Untitled : title;
         BodyText.Text = body;
         BodyText.Visibility = body.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         // 内容一致（自己刚保存的）或不在编辑面才回写，避免打断输入、重置光标（notes-mvp §2）。
@@ -152,66 +162,56 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     void SessionSaved(NoteSessions.Session changed)
     {
         if (disposed || changed.Id != id) return;
-        if (pad && PadStatus.Text == Strings.Common_NotSaved) PadStatus.Text = Strings.Notes_Saved;
+        PadStatus.Visibility = Visibility.Collapsed;
     }
 
     void SessionSaveFailed(NoteSessions.Session changed)
     {
         if (disposed || changed.Id != id) return;
-        PadStatus.Text = Strings.Notes_SaveFailed;
+        ReportSaveFailed();
     }
 
     void PadChanged(object sender, TextChangedEventArgs args)
     {
         if (restoring || !pad || disposed) return;
         hub.Edit(session, PadTitle.Text, PadBody.Text, null, this);
-        PadStatus.Text = Strings.Common_NotSaved;
     }
 
     // ---------------- 形态切换（tile ⇄ pad，galaxy switchSurfaceMode） ----------------
 
     void ApplySurface()
     {
+        if (window is { } noteWindow) noteWindow.AppWindow.IsShownInSwitchers = pad;
+        Header.Visibility = pad ? Visibility.Visible : Visibility.Collapsed;
         TilePane.Visibility = pad ? Visibility.Collapsed : Visibility.Visible;
         PadPane.Visibility = pad ? Visibility.Visible : Visibility.Collapsed;
-        var padLabel = pad ? Strings.Notes_CollapsePad : Strings.Notes_SwitchToPad;
-        AutomationProperties.SetName(PadButton, padLabel);
-        ToolTipService.SetToolTip(PadButton, padLabel);
-        PadIcon.Glyph = pad ? "chev-d" : "pencil";
     }
 
     void SetPad(bool value)
     {
         if (pad == value) return;
+        if (!value && (session.Persisted || !session.IsEmpty) && !hub.Flush(session))
+        {
+            ReportSaveFailed();
+            return;
+        }
         pad = value;
         host.SaveSurface(id, value);
         restoring = true;
         try { Apply(session.Title, session.Body); }
         finally { restoring = false; }
         ApplySurface();
-        // 同窗双形态：请求目标尺寸，GlassPanel 的弹簧动画原地展开 / 收回（galaxy animateCurrentWindowBounds 对齐）。
-        var persisted = host.GetSize(id);
-        if (value)
-        {
-            var size = persisted is { } current ? current : new Size(PadWidth, PadHeight);
-            panel?.RequestSize(size);
-            PadBody.Focus(FocusState.Programmatic);
-        }
-        else
-        {
-            var size = persisted is { } current ? current : new Size(TileWidth, TileHeight);
-            panel?.RequestSize(size);
-        }
+        window?.Resize(host.GetSize(id) ?? (value ? new(PadWidth, PadHeight) : PreferredSize));
+        if (value) FocusBody();
     }
 
-    void PadClicked(object sender, RoutedEventArgs args) => SetPad(!pad);
     void CollapseClicked(object sender, RoutedEventArgs args) => SetPad(false);
 
     // ---------------- 置顶 ----------------
 
     void ApplyTopmost(bool on)
     {
-        TopmostIcon.Glyph = on ? "pin-off" : "pin";
+        TopmostIcon.IsFilled = on;
         var label = on ? Strings.Notes_UnTopmost : Strings.Notes_Topmost;
         AutomationProperties.SetName(TopmostButton, label);
         ToolTipService.SetToolTip(TopmostButton, label);
@@ -220,25 +220,18 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     void TopmostClicked(object sender, RoutedEventArgs args)
     {
         host.ToggleTopmost(id);
-        var on = host.IsTopmost(id);
-        panel?.SetTopmost(on);
-        ApplyTopmost(on);
-    }
-
-    // ---------------- 四角原生缩放（galaxy startResizeDragging 对齐） ----------------
-
-    /// <summary>角柄按下：交给系统原生缩放循环（WM_NCLBUTTONDOWN + HT*），Esc 由系统取消；
-    /// WM_SIZING 期间 GlassPanel 夹紧尺寸并让玻璃跟随，尺寸经 DesktopResized 持续落盘。</summary>
-    void CornerPressed(object sender, PointerRoutedEventArgs args)
-    {
-        if (sender is not FrameworkElement { Tag: string tag } || !int.TryParse(tag, out var corner)) return;
-        args.Handled = true;
-        panel?.BeginNativeResize(corner);
+        ApplyTopmost(host.IsTopmost(id));
     }
 
     // ---------------- 右键菜单 ----------------
 
     void RootRightTapped(object sender, RightTappedRoutedEventArgs args)
+    {
+        ShowNoteMenu(args.GetPosition(this));
+        args.Handled = true;
+    }
+
+    internal void ShowNoteMenu(Point position)
     {
         var menu = new MenuFlyout();
         var surface = new MenuFlyoutItem { Text = pad ? Strings.Notes_CollapsePad : Strings.Notes_SwitchToPad };
@@ -253,8 +246,7 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
         confirm.Click += (_, _) => host.DeleteNote(id);
         danger.Items.Add(confirm);
         menu.Items.Add(danger);
-        menu.ShowAt(this, args.GetPosition(this));
-        args.Handled = true;
+        menu.ShowAt(this, position);
     }
 
     MenuFlyoutSubItem ReminderMenu()

@@ -20,9 +20,8 @@ public sealed partial class GlassPanel : IDisposable
     internal IPanelView View=>view;
     readonly KeyEventHandler keyHandler;
     readonly GlassParameters parameters;
-    readonly bool settingsWindow, desktopCard, desktopCardResizable;
+    readonly bool settingsWindow, desktopCard;
     public event EventHandler? Hidden;
-    internal event EventHandler<Size>? DesktopResized;
     public bool MaterialAttached=>target.Root==scene.Root && scene.Attached && Native.IsWindowVisible(Visual);
     public PanelPlacement Placement {get;set;}
     public Func<bool>? HideOnBlur {get;set;}
@@ -55,21 +54,21 @@ public sealed partial class GlassPanel : IDisposable
     bool disposing,focusing,pendingFocus,animating;
     /// <summary>Esc 是否收起窗口（视图没处理时）。二级窗口（文件、翻译、AI 对话）设成 false：Esc 永远不关窗口。</summary>
     public bool EscapeHides {get;set;}=true;
-    public GlassPanel(string name, UIElement content, IPanelView view, GlassParameters parameters, bool settingsWindow=false, bool interactive=true, Size? minSize=null, bool desktopCard=false)
+    public GlassPanel(string name, UIElement content, IPanelView view, GlassParameters parameters, bool settingsWindow=false, bool interactive=true, Size? minSize=null, bool desktopCard=false, bool contentOnly=false)
     {
-        this.view=view;this.parameters=parameters;this.settingsWindow=settingsWindow;this.desktopCard=desktopCard;desktopCardResizable=desktopCard && view is Pane.Views.DesktopNoteView;
+        this.view=view;this.parameters=parameters;this.settingsWindow=settingsWindow;this.desktopCard=desktopCard;
         keyHandler=(_,e)=>{if(e.Key==Windows.System.VirtualKey.Escape&&EscapeHides){e.Handled=true;Hide();}};
         Width=view.PreferredSize.Width;Height=view.PreferredSize.Height;
         // 设计改（2026-10-29）：有任务栏按钮的窗口里，设置窗口最小 760 × 520 可拖边框改大小；安装 / 卸载窗口（520 × 480）比这小，就固定大小。
         // 原来一律按 760 × 520，系统把安装窗撑到 760 宽，内容仍按 520 居中，关闭按钮缩在里面。二级窗口给出自己的最小尺寸（minSize），可改大小
-        resizable=desktopCardResizable||settingsWindow&&(minSize!=null||Width>=760&&Height>=520);
-        minWidth=desktopCardResizable?Pane.Views.DesktopNoteView.MinCardWidth:settingsWindow?minSize?.Width??Math.Min(760,Width):1;
-        minHeight=desktopCardResizable?Pane.Views.DesktopNoteView.MinCardHeight:settingsWindow?minSize?.Height??Math.Min(520,Height):1;
+        resizable=settingsWindow&&(minSize!=null||Width>=760&&Height>=520);
+        minWidth=settingsWindow?minSize?.Width??Math.Min(760,Width):1;
+        minHeight=settingsWindow?minSize?.Height??Math.Min(520,Height):1;
         this.interactive=interactive;proc=WndProc;childProc=ChildWndProc;className="Pane011"+Guid.NewGuid().ToString("N");
         var wc=new Native.WndClass{size=(uint)Marshal.SizeOf<Native.WndClass>(),proc=proc,name=className,instance=Native.GetModuleHandleW(null)};
         Native.RegisterClassExW(ref wc);
         Visual=Native.CreateWindowExW(0x82800A0,wc.name!,name,0x80000000,0,0,688,464,0,0,wc.instance,0);
-        Input=Native.CreateWindowExW(desktopCard?0x8200080u:settingsWindow?(demo?0x8240000u:0x240000u):interactive?(demo?0x8200080u:0x200080u):0x82800A0u,wc.name!,name,desktopCardResizable?0x80040000u:settingsWindow?0x800E0000u:0x80000000u,48,48,592,352,settingsWindow||desktopCard?0:Visual,0,wc.instance,0);
+        Input=Native.CreateWindowExW(desktopCard?0x8200080u:settingsWindow?(demo?0x8240000u:0x240000u):interactive?(demo?0x8200080u:0x200080u):0x82800A0u,wc.name!,name,settingsWindow?0x800E0000u:0x80000000u,48,48,592,352,settingsWindow||desktopCard?0:Visual,0,wc.instance,0);
         if(Visual==0||Input==0)throw new System.ComponentModel.Win32Exception();
         if(!settingsWindow&&!desktopCard)transient.Add(this);
         if(settingsWindow)AppIcon.Apply(Input);   // 设置窗口在任务栏上有按钮：给它 Pane 的图标，不然是系统默认的程序图标
@@ -84,7 +83,7 @@ public sealed partial class GlassPanel : IDisposable
         dpi=Native.GetDpiForWindow(Input)/96f;target=Native.Target(compositor,Visual);
         bool dark=parameters.Dark;
         if(demo){var theme=Environment.GetEnvironmentVariable("PANE_THEME");if(theme is "Light" or "Dark")dark=theme=="Dark";}
-        scene=new SceneB(compositor,dark,parameters.Solid);target.Root=scene.Root;
+        scene=new SceneB(compositor,dark,parameters.Solid);if(!contentOnly)target.Root=scene.Root;
         island.Initialize(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(Input));
         // 设计改：贴左上角。宿主窗按 Ceiling 取整总比 root 大一点，默认居中会让整片内容随高度动画在 0 / 1 像素之间跳
         root=new Grid{Background=new SolidColorBrush(Microsoft.UI.Colors.Transparent),RequestedTheme=dark?ElementTheme.Dark:ElementTheme.Light,TabFocusNavigation=KeyboardNavigationMode.Cycle,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
@@ -254,26 +253,6 @@ public sealed partial class GlassPanel : IDisposable
     /// <summary>直接把内容窗原点挪到物理坐标（notes-mvp §7 全局拖动胶囊的跟手路径）。
     /// 不改锚点语义，仅同时移动双 HWND；高频调用只发生在拖动期间。</summary>
     internal void MoveTo(int x,int y){if(disposing)return;Layout(x-(int)(48*dpi),y-(int)(48*dpi));}
-    /// <summary>允许系统原生四角缩放（galaxy startResizeDragging 对齐）：true 时 WM_SIZING 夹紧尺寸并让玻璃跟随，
-    /// 角柄通过 <see cref="BeginNativeResize"/> 进入系统缩放循环。</summary>
-    internal bool NativeResize {get;set;}
-    /// <summary>原生缩放的尺寸边界（DIP）。null 时不夹紧。</summary>
-    internal (double MinWidth,double MinHeight,double MaxWidth,double MaxHeight)? NativeResizeBounds {get;set;}
-    /// <summary>四角显示系统缩放光标（角柄区域 16 物理像素）。</summary>
-    internal bool CornerResizeCursors {get;set;}
-    /// <summary>系统缩放循环结束（尺寸已提交）。视图据此落盘。</summary>
-    internal event EventHandler? NativeResized;
-    /// <summary>进入系统原生缩放循环（WM_NCLBUTTONDOWN + 角命中测试；Esc 由系统取消）。
-    /// corner：0 左上 / 1 右上 / 2 左下 / 3 右下。调用返回即循环已结束。</summary>
-    internal void BeginNativeResize(int corner)
-    {
-        if(disposing||!Shown)return;
-        Native.GetCursorPos(out var point);
-        var hit=corner switch{0=>13,1=>14,2=>16,_=>17};   // HTTOPLEFT/HTTOPRIGHT/HTBOTTOMLEFT/HTBOTTOMRIGHT
-        var position=((nint)(short)point.Y<<16)|(nint)(ushort)point.X;
-        Native.SendMessageW(Input,0xA1,(nuint)hit,position);
-        NativeResized?.Invoke(this,EventArgs.Empty);
-    }
     internal string WindowDiagnostics()
     {
         Native.GetWindowRect(Visual,out var v);Native.GetWindowRect(Input,out var i);
@@ -404,23 +383,9 @@ public sealed partial class GlassPanel : IDisposable
         island.SiteBridge.MoveAndResize(new RectInt32(0,0,w,h));
     }
     nint ChildWndProc(nint h,uint m,nuint w,nint l,nuint id,nuint data) {
-        if(m==0x84 && (settingsWindow||desktopCardResizable)){var hit=HitTest(l);if(hit!=1)return -1;}
+        if(m==0x84 && settingsWindow){var hit=HitTest(l);if(hit!=1)return -1;}
         if(m==0x21 && (Passive||desktopCard))return 3;   // WM_MOUSEACTIVATE → MA_NOACTIVATE
-        if(m==0x20 && CornerResizeCursors && ResizeCursor(h, out var cursor)){Native.SetCursor(cursor);return 1;}
         return Native.DefSubclassProc(h,m,w,l);
-    }
-    /// <summary>四角（16 物理像素）命中时换成系统斜向缩放光标（galaxy 四角 resize handle 的光标语义）。</summary>
-    static bool ResizeCursor(nint window,out nint cursor)
-    {
-        cursor=0;
-        if(!Native.GetCursorPos(out var point)||!Native.GetWindowRect(window,out var rect))return false;
-        const int edge=16;
-        var x=point.X-rect.Left;var y=point.Y-rect.Top;
-        bool left=x<edge;bool right=x>=rect.Right-rect.Left-edge;bool top=y<edge;bool bottom=y>=rect.Bottom-rect.Top-edge;
-        if(left&&top||right&&bottom)cursor=Native.LoadCursorW(0,32642);        // IDC_SIZENWSE
-        else if(left&&bottom||right&&top)cursor=Native.LoadCursorW(0,32643);  // IDC_SIZENESW
-        else return false;
-        return cursor!=0;
     }
     nint HitTest(nint l){
         int sx=(short)((long)l&65535),sy=(short)(((long)l>>16)&65535);Native.GetWindowRect(Input,out var rect);int edge=(int)(8*dpi);
@@ -432,10 +397,14 @@ public sealed partial class GlassPanel : IDisposable
     }
     nint WndProc(nint h,uint m,nuint w,nint l)
     {
+        if(settingsWindow&&h==Input){
+            if(m==0x231)inSystemMoveSize=true;        // WM_ENTERSIZEMOVE
+            if(m==0x232)inSystemMoveSize=false;       // WM_EXITSIZEMOVE
+        }
         if(desktopCard&&h==Input&&m==0x21)return 3;
         if(desktopCard&&h==Input&&Shown&&(m==0x7e||(m==0x1a&&w==0x2f)||(m==0x02E0&&!movingWindows)))
             DesktopWorkAreaChanged?.Invoke();
-        if((settingsWindow||desktopCardResizable) && h==Input && m==0x84)return HitTest(l);
+        if(settingsWindow && h==Input && m==0x84)return HitTest(l);
         if(settingsWindow && m==0x83)return 0;
         if(h==Input && m==0x02E0){if(movingWindows)return 0;dpi=(w&0xffff)/96f;var rect=Marshal.PtrToStructure<Native.Rect>(l);Layout(rect.Left-(int)(48*dpi),rect.Top-(int)(48*dpi));return 0;}
         // 设计改（2026-10-30，用户提：设置窗口最小化没有动效）：系统要最小化（任务栏点击、Win+↓）时先播收起动画（同关闭：玻璃缩小、整体淡出），播完再真的最小化；
@@ -450,27 +419,18 @@ public sealed partial class GlassPanel : IDisposable
         // 这时两扇窗口一起收掉，不等动画
         if(!settingsWindow && h==Input && m==6 && (w&0xffff)==0 && !Shown && animating)
             root.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.High,()=>{if(Shown||!animating)return;animating=false;StopAnimations();Layout(positionX,positionY);Gone();});
-        if((settingsWindow||desktopCardResizable) && h==Input && m==0x24){var info=Marshal.PtrToStructure<Native.MinMaxInfo>(l);info.MinTrack.X=(int)Math.Ceiling(minWidth*dpi);info.MinTrack.Y=(int)Math.Ceiling(minHeight*dpi);if(desktopCardResizable&&NativeResizeBounds is {} b){info.MaxTrack.X=(int)Math.Ceiling(b.MaxWidth*dpi);info.MaxTrack.Y=(int)Math.Ceiling(b.MaxHeight*dpi);}Marshal.StructureToPtr(info,l,false);return 0;}
-        // 原生缩放循环（WM_SIZING）：夹紧 + 玻璃即时跟随；尺寸变化经 DesktopResized 落盘。
-        if((settingsWindow||desktopCardResizable) && h==Input && (m==0x216||m==0x214))
+        if(settingsWindow && h==Input && m==0x24){var info=Marshal.PtrToStructure<Native.MinMaxInfo>(l);info.MinTrack.X=(int)Math.Ceiling(minWidth*dpi);info.MinTrack.Y=(int)Math.Ceiling(minHeight*dpi);Marshal.StructureToPtr(info,l,false);return 0;}
+        if(settingsWindow && h==Input && (m==0x216||m==0x214))
         {
             var rect=Marshal.PtrToStructure<Native.Rect>(l);
-            if(desktopCardResizable&&NativeResizeBounds is {} bounds&&m==0x214)
-            {
-                // 按拖动边决定夹紧方向：左边角收左边界、右边角收右边界（上下同理），对齐 Galaxy 的四角语义。
-                int side=(int)w,width=Math.Clamp(rect.Right-rect.Left,(int)Math.Ceiling(bounds.MinWidth*dpi),(int)Math.Ceiling(bounds.MaxWidth*dpi)),height=Math.Clamp(rect.Bottom-rect.Top,(int)Math.Ceiling(bounds.MinHeight*dpi),(int)Math.Ceiling(bounds.MaxHeight*dpi));
-                if((side is 1 or 4 or 5 or 7))rect.Left=rect.Right-width;else rect.Right=rect.Left+width;
-                if((side is 3 or 4 or 5))rect.Top=rect.Bottom-height;else rect.Bottom=rect.Top+height;
-                Marshal.StructureToPtr(rect,l,false);
-            }
-            Width=Math.Max(minWidth,(rect.Right-rect.Left)/dpi);Height=Math.Max(minHeight,(rect.Bottom-rect.Top)/dpi);Layout(rect.Left-(int)(48*dpi),rect.Top-(int)(48*dpi));if(desktopCardResizable)DesktopResized?.Invoke(this,new Size(Width,Height));return 1;
+            Width=Math.Max(minWidth,(rect.Right-rect.Left)/dpi);Height=Math.Max(minHeight,(rect.Bottom-rect.Top)/dpi);Layout(rect.Left-(int)(48*dpi),rect.Top-(int)(48*dpi));return 1;
         }
         // 设计改（2026-10-29）：设置窗口被系统或手势改了位置 / 大小（最大化、还原、贴左右半边）时，玻璃窗跟着走；
         // 原来只处理了用户拖边框，手势「最大化」后只有内容窗变大，玻璃留在原地
         if(settingsWindow && h==Input && m==0x47 && !movingWindows && Shown && !IsIconic(Input))FollowInputWindow();
         // 系统要挪 / 改内容窗（最大化、还原、贴边）：先拦下来，窗口暂时不动、内容透明度设 0；等这一帧画出来（两次 Tick 后）再自己放到新位置、
         // 玻璃开始长、内容淡入。直接让系统挪的话，界面线程忙着按新尺寸重排设置页（全屏时约 100 ms），这段时间新位置上露着旧尺寸的内容、玻璃还在原处
-        if(settingsWindow && resizable && h==Input && m==0x46 && !movingWindows && Shown && !IsIconic(Input) && parameters.Current.MotionSpeed>0.01){
+        if(settingsWindow && resizable && h==Input && m==0x46 && !inSystemMoveSize && !movingWindows && Shown && !IsIconic(Input) && parameters.Current.MotionSpeed>0.01){
             var pos=Marshal.PtrToStructure<WindowPos>(l);
             bool move=(pos.Flags&2)==0&&(pos.X!=inputX||pos.Y!=inputY),size=(pos.Flags&1)==0&&(pos.Cx!=inputW||pos.Cy!=inputH);
             if(move||size){   // 最大化 / 还原的这条带 0x8000（系统的「状态改变」标记），照样拦
@@ -494,6 +454,7 @@ public sealed partial class GlassPanel : IDisposable
         Native.GetWindowRect(Input,out var r);
         FollowTo(r);
     }
+    bool inSystemMoveSize;
     Native.Rect deferredRect;
     int deferFrames;
     void FollowTo(Native.Rect r)

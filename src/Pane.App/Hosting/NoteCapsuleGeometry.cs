@@ -47,6 +47,9 @@ internal static class NoteCapsuleGeometry
     internal static float MasterWidth(int count) =>
         MasterBaseWidth + MathF.Max(0, Digits(count) - 1) * MasterDigitWidth;
 
+    internal static float MasterLength(NoteEdge edge, int count) =>
+        IsVertical(edge) ? MasterHeight : MasterWidth(count);
+
     static int Digits(int count)
     {
         var digits = 0;
@@ -58,7 +61,7 @@ internal static class NoteCapsuleGeometry
 
     /// <summary>队列内容长度（DIP）：主胶囊 + 成员列；空队列只有主胶囊。</summary>
     internal static float QueueLength(NoteEdge edge, int members, int count) =>
-        MasterWidth(count) + (members == 0 ? 0 : Gap + members * Step(edge));
+        MasterLength(edge, count) + (members == 0 ? 0 : Gap + members * Step(edge));
 
     /// <summary>宿主窗口沿边长度：内容超出可用跨度时截断（溢出成员在窗内裁切，主胶囊始终完整）。</summary>
     internal static float HostLength(RectangleF work, NoteEdge edge, double start, int members, int count)
@@ -96,7 +99,7 @@ internal static class NoteCapsuleGeometry
     /// <summary>成员矩形（index 是按 Order 排列后的位次）：主胶囊之后沿边排开，滚动只移动成员。</summary>
     internal static RectangleF MemberRect(RectangleF work, NoteEdge edge, double start, double scroll, int index, int count)
     {
-        var along = (float)(start + MasterWidth(count) + Gap + index * Step(edge) - scroll);
+        var along = (float)(start + MasterLength(edge, count) + Gap + index * Step(edge) - scroll);
         return edge switch
         {
             NoteEdge.Left => new(work.Left, work.Top + along, CapsuleWidth, CapsuleHeight),
@@ -124,14 +127,14 @@ internal static class NoteCapsuleGeometry
     {
         if (members <= 0) return 0;
         var host = HostLength(work, edge, start, members, count);
-        var available = host - MasterWidth(count) - Gap + (float)scroll;
+        var available = host - MasterLength(edge, count) - Gap + (float)scroll;
         return Math.Clamp((int)MathF.Floor(available / Step(edge) + 1e-4f), 0, members);
     }
 
     /// <summary>拖动重排的插入位置：沿边坐标落到哪个成员间隙（最近者）。</summary>
     internal static int InsertIndex(NoteEdge edge, double start, double scroll, double position, int count)
     {
-        var relative = position - start - MasterWidth(count) - Gap + scroll;
+        var relative = position - start - MasterLength(edge, count) - Gap + scroll;
         return Math.Clamp((int)MathF.Floor((float)relative / Step(edge) + 0.5f), 0, count);
     }
 

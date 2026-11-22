@@ -12,7 +12,7 @@ using Windows.Foundation;
 namespace Pane.Views;
 
 /// <summary>胶囊成员的渲染模型：协调层按设置推导后交给视图。</summary>
-internal sealed record CapsuleMember(Guid Id, string Title, bool Reminder, bool Highlighted);
+internal sealed record CapsuleMember(Guid Id, string Title, bool Reminder, bool Highlighted, bool Topmost, bool DesktopPinned);
 
 /// <summary>一条贴边队列的渲染状态（notes-mvp §6）。Start/Scroll 与持久化模型一致用 double。</summary>
 internal sealed record CapsuleQueueState(string QueueKey, NoteEdge Edge, bool Collapsed,
@@ -21,34 +21,31 @@ internal sealed record CapsuleQueueState(string QueueKey, NoteEdge Edge, bool Co
 /// <summary>拖动松手结果：协调层把本地 DIP 坐标换算到工作区后决定重排 / 换边 / 悬浮 / 整队迁移。</summary>
 internal sealed record CapsuleDragResult(Guid Id, bool Master, double LocalX, double LocalY, double ScreenX, double ScreenY);
 
-/// <summary>超过阈值的全局拖动（notes-mvp §7「独立的临时拖动胶囊」）：队列视图就此交出控制权，
-/// 协调层用幽灵胶囊 + GetCursorPos 轮询接管，跨屏拖动不丢捕获。</summary>
-internal sealed record CapsuleDragStart(Guid Id, bool Master);
 
 /// <summary>贴边胶囊队列（notes-mvp §6–7）：主胶囊 + 成员条。点击展开、×隐藏、右键换边与悬浮、
 /// 拖动重排（5px 阈值，松手才提交，取消 / 丢捕获恢复原布局）、滚轮滚动溢出、悬停请求只读预览。
 /// 视图只管交互与摆放；几何、持久化和窗口层级都在协调层。</summary>
 public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
 {
-    readonly Dictionary<Guid, Border> strips = [];
+    readonly Dictionary<Guid, (Border Strip, TextBlock Title)> strips = [];
     CapsuleQueueState? state;
-    bool dragging, dragMaster, externalDrag;
-    Guid dragId;
+    Border? pressedStrip;
+    uint pressedPointer;
+    bool dragging;
     double pressX, pressY;
 
     public event Action<Guid>? ExpandRequested;
+    internal event Action<Guid>? EditRequested;
     public event Action<Guid>? HideRequested;
-    internal event Action<Guid, NoteEdge>? MoveEdgeRequested;
-    public event Action<Guid>? FloatRequested;
     public event Action<Guid>? DeleteRequested;
     public event Action? MasterToggleRequested;
     internal event Action<CapsuleDragResult>? DragCompleted;
-    internal event Action<CapsuleDragStart>? DragStartedExternal;
+    internal event Action<CapsuleDragResult>? DragMoved;
+    internal event Action? DragCancelled;
     public event Action<double>? ScrollDelta;
     public event Action<Guid, int?>? HoverChanged;
-    public event Action? OpenManagerRequested;
     public event Action? NewNoteRequested;
-    public event Action? ShowAllRequested;
+    internal event Action? OpenManagerRequested, ShowAllRequested;
 
     public NoteCapsuleQueueView()
     {
@@ -68,28 +65,80 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
     internal void Apply(CapsuleQueueState next)
     {
         state = next;
-        externalDrag = false;
-        dragging = false;
-        dragId = Guid.Empty;
+        CancelActiveDrag();
         Surface.Children.Clear();
         strips.Clear();
-        Surface.Children.Add(BuildMaster(next));
+        var master = BuildMaster(next);
+        Canvas.SetLeft(master, next.Edge == NoteEdge.Right ? NoteCapsuleGeometry.CapsuleWidth - master.Width : 0);
+        Canvas.SetTop(master, 0);
+        Canvas.SetZIndex(master, 1);
+        Surface.Children.Add(master);
         if (next.Collapsed) return;
+        var memberStart = NoteCapsuleGeometry.MasterLength(next.Edge, next.Members.Count) + NoteCapsuleGeometry.Gap;
         var index = 0;
         foreach (var member in next.Members)
         {
-            var strip = BuildMember(member);
-            var along = NoteCapsuleGeometry.MasterWidth(next.Members.Count) + NoteCapsuleGeometry.Gap +
+            var strip = BuildMember(member, next.Edge);
+            var along = memberStart +
                 index * NoteCapsuleGeometry.Step(next.Edge) - next.Scroll;
             Canvas.SetLeft(strip, next.Edge == NoteEdge.Top ? along : 0);
             Canvas.SetTop(strip, next.Edge == NoteEdge.Top ? 0 : along);
-            strips[member.Id] = strip;
+            var clipped = Math.Max(0, memberStart - along);
+            if (clipped >= (next.Edge == NoteEdge.Top ? strip.Width : strip.Height)) strip.Visibility = Visibility.Collapsed;
+            else if (clipped > 0)
+                strip.Clip = new RectangleGeometry { Rect = next.Edge == NoteEdge.Top
+                    ? new Rect(clipped, 0, strip.Width - clipped, strip.Height)
+                    : new Rect(0, clipped, strip.Width, strip.Height - clipped) };
             Surface.Children.Add(strip);
             index++;
         }
     }
 
     // ---------------- 主胶囊 ----------------
+
+    internal nint BuildHitRegion(float scale, double width, double height)
+    {
+        int Px(double value) => (int)Math.Round(value * scale);
+        var region = Native.CreateRectRgn(0, 0, 0, 0);
+        foreach (var pill in Surface.Children.OfType<Border>())
+        {
+            if (pill.Visibility == Visibility.Collapsed) continue;
+            var x = Canvas.GetLeft(pill);
+            var y = Canvas.GetTop(pill);
+            var left = Px(x);
+            var top = Px(y);
+            var right = Px(x + pill.Width);
+            var bottom = Px(y + pill.Height);
+            // The binary GDI region must enclose XAML's antialiased curve, but stay inside the strip bounds.
+            var shape = RoundedRegion(left - 1, top - 1, right + 1, bottom + 1, Px(EdgeRadius), pill.CornerRadius);
+            var visible = pill.Clip is RectangleGeometry clip
+                ? Native.CreateRectRgn(Px(x + clip.Rect.Left), Px(y + clip.Rect.Top), Px(x + clip.Rect.Right), Px(y + clip.Rect.Bottom))
+                : Native.CreateRectRgn(left, top, right, bottom);
+            Native.CombineRgn(shape, shape, visible, 1);
+            Native.DeleteObject(visible);
+            Native.CombineRgn(region, region, shape, 2);
+            Native.DeleteObject(shape);
+        }
+        var bounds = Native.CreateRectRgn(0, 0, Px(width), Px(height));
+        Native.CombineRgn(region, region, bounds, 1);
+        Native.DeleteObject(bounds);
+        return region;
+    }
+
+    const double EdgeRadius = NoteCapsuleGeometry.CapsuleHeight / 2;
+    internal static CornerRadius EdgeCorners(NoteEdge edge) => new(edge == NoteEdge.Right ? EdgeRadius : 0,
+        edge == NoteEdge.Left ? EdgeRadius : 0, edge != NoteEdge.Right ? EdgeRadius : 0, edge != NoteEdge.Left ? EdgeRadius : 0);
+
+    internal static nint RoundedRegion(int left, int top, int right, int bottom, int radius, CornerRadius corners)
+    {
+        var shape = Native.CreateRoundRectRgn(left, top, right, bottom, radius * 2, radius * 2);
+        var flat = corners.BottomLeft == 0 ? Native.CreateRectRgn(left, top, left + radius, bottom)
+            : corners.BottomRight == 0 ? Native.CreateRectRgn(right - radius, top, right, bottom)
+            : Native.CreateRectRgn(left, top, right, top + radius);
+        Native.CombineRgn(shape, shape, flat, 2);
+        Native.DeleteObject(flat);
+        return shape;
+    }
 
     Border BuildMaster(CapsuleQueueState queue)
     {
@@ -98,28 +147,52 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
         {
             Width = width,
             Height = NoteCapsuleGeometry.MasterHeight,
-            CornerRadius = new CornerRadius(14),
-            Background = FillProto.Background,
-            BorderBrush = FillProto.BorderBrush,
-            BorderThickness = new Thickness(1),
+            Background = AccentProto.Foreground,
+            CornerRadius = EdgeCorners(queue.Edge),
+            Padding = new Thickness(10, 0, 10, 0),
         };
-        var content = new Grid();
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
+        var content = new Grid { ColumnSpacing = 6 };
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+        content.Children.Add(new PaneIcon { Glyph = "note", Width = 14, Height = 14,
+            VerticalAlignment = VerticalAlignment.Center, Foreground = foreground });
         var chevron = new PaneIcon { Glyph = "chev-r", Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Text2Proto.Foreground, RenderTransform = MasterChevronRotation(queue.Edge, queue.Collapsed) };
+            Foreground = foreground, RenderTransformOrigin = new Point(.5, .5),
+            RenderTransform = MasterChevronRotation(queue.Edge, queue.Collapsed) };
+        Grid.SetColumn(chevron, 2);
         content.Children.Add(chevron);
         var count = new TextBlock { Text = queue.Members.Count.ToString(), VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center, FontFamily = (FontFamily)Application.Current.Resources["PaneFontMono"],
-            FontSize = 12, Foreground = TextProto.Foreground };
+            FontSize = 12, Foreground = foreground };
         Grid.SetColumn(count, 1);
         content.Children.Add(count);
         pill.Child = content;
+        pill.PointerEntered += (_, _) => content.Opacity = .82;
+        pill.PointerExited += (_, _) => content.Opacity = 1;
         var toggleLabel = queue.Collapsed ? Strings.Notes_CapsulesExpand : Strings.Notes_CapsulesCollapse;
         AutomationProperties.SetName(pill, string.Format(Strings.Notes_CapsuleCount, (object?)queue.Members.Count) + "；" + toggleLabel);
         ToolTipService.SetToolTip(pill, toggleLabel);
         HookStrip(pill, Guid.Empty, master: true);
-        pill.RightTapped += (_, args) => { ShowMasterMenu(pill, args); args.Handled = true; };
+        pill.RightTapped += (_, args) =>
+        {
+            args.Handled = true;
+            var menu = new MenuFlyout();
+            Action? selectedAction = null;
+            menu.Closed += (_, _) =>
+            {
+                if (selectedAction is { } action) DispatcherQueue.TryEnqueue(action.Invoke);
+            };
+            foreach (var (label, action) in new[] { (Strings.Notes_New, NewNoteRequested),
+                (Strings.Notes_OpenManager, OpenManagerRequested), (Strings.Notes_ShowDesktopNotes, ShowAllRequested) })
+            {
+                var item = new MenuFlyoutItem { Text = label };
+                item.Click += (_, _) => selectedAction = action;
+                menu.Items.Add(item);
+            }
+            menu.ShowAt(pill, args.GetPosition(pill));
+        };
         return pill;
     }
 
@@ -132,28 +205,32 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
 
     // ---------------- 成员胶囊 ----------------
 
-    Border BuildMember(CapsuleMember member)
+    Border BuildMember(CapsuleMember member, NoteEdge edge)
     {
         var pill = new Border
         {
             Width = NoteCapsuleGeometry.CapsuleWidth,
             Height = NoteCapsuleGeometry.CapsuleHeight,
-            CornerRadius = new CornerRadius(14),
             Background = FillProto.Background,
-            BorderBrush = member.Highlighted ? AccentProto.Foreground : FillProto.BorderBrush,
-            BorderThickness = new Thickness(member.Highlighted ? 1.6 : 1),
+            CornerRadius = EdgeCorners(edge),
+            BorderBrush = AccentProto.Foreground,
+            BorderThickness = new Thickness(member.Highlighted ? 2.5 : 2),
         };
-        var content = new Grid { ColumnSpacing = 6 };
+        var content = new Grid { ColumnSpacing = 6, Margin = new Thickness(8, 0, 4, 0) };
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        if (member.Reminder)
+        var badges = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var (enabled, glyph, label) in new[] { (member.Topmost, "pin", Strings.Notes_Topmost),
+            (member.DesktopPinned, "monitor", Strings.Notes_PinnedDesktop), (member.Reminder, "timer", Strings.Notes_Reminder) })
         {
-            var badge = new PaneIcon { Glyph = "timer", Width = 11, Height = 11, VerticalAlignment = VerticalAlignment.Center,
-                Foreground = member.Highlighted ? AccentProto.Foreground : Text2Proto.Foreground };
-            AutomationProperties.SetAccessibilityView(badge, AccessibilityView.Raw);
-            content.Children.Add(badge);
+            if (!enabled) continue;
+            var badge = new PaneIcon { Glyph = glyph, Width = 12, Height = 12, IsFilled = glyph == "pin", Foreground = AccentProto.Foreground };
+            AutomationProperties.SetName(badge, label);
+            ToolTipService.SetToolTip(badge, label);
+            badges.Children.Add(badge);
         }
+        content.Children.Add(badges);
         var title = new TextBlock
         {
             Text = member.Title, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1,
@@ -162,14 +239,26 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
         Grid.SetColumn(title, 1);
         content.Children.Add(title);
         var hide = new Button { Style = (Style)Application.Current.Resources["PaneIconButton"],
-            Width = 20, Height = 20, IsTabStop = false, Content = new PaneIcon { Glyph = "close", Width = 9, Height = 9 } };
+            Width = 24, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(12), IsTabStop = false,
+            Content = new PaneIcon { Glyph = "close", Width = 10, Height = 10 } };
         AutomationProperties.SetName(hide, Strings.Notes_CapsuleHide);
         ToolTipService.SetToolTip(hide, Strings.Notes_CapsuleHide);
         hide.Click += (_, _) => HideRequested?.Invoke(member.Id);
         Grid.SetColumn(hide, 2);
         content.Children.Add(hide);
-        pill.Child = content;
+        var surface = new Grid();
+        var press = new Border { Background = HoverProto.Foreground, CornerRadius = pill.CornerRadius,
+            IsHitTestVisible = false, Opacity = 0 };
+        surface.Children.Add(press);
+        surface.Children.Add(content);
+        pill.Child = surface;
+        pill.PointerPressed += (_, _) => press.Opacity = 1;
+        pill.PointerReleased += (_, _) => press.Opacity = 0;
+        pill.PointerCaptureLost += (_, _) => press.Opacity = 0;
         var name = member.Title.Length == 0 ? Strings.Notes_Untitled : member.Title;
+        title.Text = name;
+        strips[member.Id] = (pill, title);
         AutomationProperties.SetName(pill, name);
         ToolTipService.SetToolTip(pill, name);
         pill.RightTapped += (_, args) => { ShowMemberMenu(pill, member.Id, args); args.Handled = true; };
@@ -181,131 +270,74 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
     {
         var menu = new MenuFlyout();
         var expand = new MenuFlyoutItem { Text = Strings.Notes_OpenEditor };
-        expand.Click += (_, _) => ExpandRequested?.Invoke(id);
+        expand.Click += (_, _) => EditRequested?.Invoke(id);
         menu.Items.Add(expand);
-        menu.Items.Add(EdgeMoveMenu(id, wholeQueue: false));
-        if (state is { } queue)
-        {
-            var floating = new MenuFlyoutItem { Text = Strings.Notes_CapsuleFloat };
-            floating.Click += (_, _) => FloatRequested?.Invoke(id);
-            menu.Items.Add(floating);
-        }
         var hide = new MenuFlyoutItem { Text = Strings.Notes_CapsuleHide };
         hide.Click += (_, _) => HideRequested?.Invoke(id);
         menu.Items.Add(hide);
-        var danger = new MenuFlyoutSubItem { Text = Strings.Notes_DeleteCard };
-        var confirm = new MenuFlyoutItem { Text = Strings.Notes_DeleteRowConfirm };
-        confirm.Click += (_, _) => DeleteRequested?.Invoke(id);
-        danger.Items.Add(confirm);
-        menu.Items.Add(danger);
+        var delete = new MenuFlyoutItem { Text = Strings.Notes_DeleteCard };
+        delete.Click += (_, _) => DeleteRequested?.Invoke(id);
+        menu.Items.Add(delete);
         menu.ShowAt(strip, args.GetPosition(strip));
     }
 
-    void ShowMasterMenu(Border strip, RightTappedRoutedEventArgs args)
-    {
-        var menu = new MenuFlyout();
-        var manager = new MenuFlyoutItem { Text = Strings.Notes_OpenManager };
-        manager.Click += (_, _) => OpenManagerRequested?.Invoke();
-        menu.Items.Add(manager);
-        var create = new MenuFlyoutItem { Text = Strings.Notes_New };
-        create.Click += (_, _) => NewNoteRequested?.Invoke();
-        menu.Items.Add(create);
-        var showAll = new MenuFlyoutItem { Text = Strings.Notes_ShowDesktopNotes };
-        showAll.Click += (_, _) => ShowAllRequested?.Invoke();
-        menu.Items.Add(showAll);
-        if (state is { } queue) menu.Items.Add(EdgeMoveMenu(Guid.Empty, wholeQueue: true));
-        menu.ShowAt(strip, args.GetPosition(strip));
-    }
-
-    MenuFlyoutSubItem EdgeMoveMenu(Guid id, bool wholeQueue)
-    {
-        var menu = new MenuFlyoutSubItem { Text = wholeQueue ? Strings.Notes_DesktopCard : Strings.Notes_PinDesktop };
-        void Add(NoteEdge edge, string label)
-        {
-            if (state is { } queue && queue.Edge == edge) return;
-            var item = new MenuFlyoutItem { Text = label };
-            item.Click += (_, _) =>
-            {
-                if (wholeQueue) QueueMoveRequested?.Invoke(edge);
-                else MoveEdgeRequested?.Invoke(id, edge);
-            };
-            menu.Items.Add(item);
-        }
-        Add(NoteEdge.Left, Strings.Notes_MoveEdgeLeft);
-        Add(NoteEdge.Right, Strings.Notes_MoveEdgeRight);
-        Add(NoteEdge.Top, Strings.Notes_MoveEdgeTop);
-        return menu;
-    }
-
-    internal event Action<NoteEdge>? QueueMoveRequested;
 
     // ---------------- 指针交互：点击 / 拖动 / 悬停 / 滚轮 ----------------
 
     void HookStrip(Border pill, Guid id, bool master)
     {
-        pill.PointerPressed += (sender, args) =>
+        CapsuleDragResult Position(Point local, Native.Point screen) =>
+            new(id, master, local.X - pressX, local.Y - pressY, screen.X, screen.Y);
+
+        pill.PointerPressed += (_, args) =>
         {
-            if (state is not { } queue) return;
+            if (pressedStrip != null) return;
             var point = args.GetCurrentPoint(Surface);
-            if (!point.Properties.IsLeftButtonPressed) return;
-            dragId = id;
-            dragMaster = master;
+            if (!point.Properties.IsLeftButtonPressed || !pill.CapturePointer(args.Pointer)) return;
+            pressedStrip = pill;
+            pressedPointer = args.Pointer.PointerId;
             pressX = point.Position.X;
             pressY = point.Position.Y;
-            dragging = false;
-            pill.CapturePointer(args.Pointer);
             args.Handled = true;
         };
-        pill.PointerMoved += (sender, args) =>
+        pill.PointerMoved += (_, args) =>
         {
-            if (state is not { } queue || dragId != id) return;
+            if (!ReferenceEquals(pressedStrip, pill) || pressedPointer != args.Pointer.PointerId) return;
             var point = args.GetCurrentPoint(Surface);
             if (!point.Properties.IsLeftButtonPressed) return;
-            var delta = NoteCapsuleGeometry.IsVertical(queue.Edge) ? point.Position.Y - pressY : point.Position.X - pressX;
-            if (!dragging)
-            {
-                if (Math.Abs(delta) <= 5) return;
-                // 超过阈值即交出控制权（galaxy 独立临时拖动胶囊）：释放捕获，改由协调层的幽灵胶囊全局跟手。
-                dragging = true;
-                externalDrag = true;
-                (sender as UIElement)?.ReleasePointerCapture(args.Pointer);
-                DragStartedExternal?.Invoke(new CapsuleDragStart(id, dragMaster));
-                args.Handled = true;
-                return;
-            }
+            var dx = point.Position.X - pressX;
+            var dy = point.Position.Y - pressY;
+            if (!dragging && dx * dx + dy * dy <= 25) return;
+            dragging = true;
+            if (Native.GetCursorPos(out var screen)) DragMoved?.Invoke(Position(point.Position, screen));
             args.Handled = true;
         };
-        pill.PointerReleased += (sender, args) =>
+        pill.PointerReleased += (_, args) =>
         {
-            if (dragId != id) return;
-            var point = args.GetCurrentPoint(Surface);
-            (sender as UIElement)?.ReleasePointerCapture(args.Pointer);
-            dragId = Guid.Empty;
-            if (externalDrag)
-            {
-                // 外部拖动引擎接管落点：这里只吞掉松手，避免误触展开（notes-mvp §7）。
-                dragging = false;
-                args.Handled = true;
-                return;
-            }
-            if (!dragging)
-            {
-                if (dragMaster) MasterToggleRequested?.Invoke();
-                else if (!master) ExpandRequested?.Invoke(id);
-                return;
-            }
+            if (!ReferenceEquals(pressedStrip, pill) || pressedPointer != args.Pointer.PointerId) return;
+            var point = args.GetCurrentPoint(Surface).Position;
+            var wasDragging = dragging;
+            pressedStrip = null;
             dragging = false;
-            Native.GetCursorPos(out var screen);
-            DragCompleted?.Invoke(new CapsuleDragResult(id, dragMaster, point.Position.X, point.Position.Y, screen.X, screen.Y));
+            pill.ReleasePointerCapture(args.Pointer);
             args.Handled = true;
+            if (!wasDragging)
+            {
+                if (master) MasterToggleRequested?.Invoke();
+                else ExpandRequested?.Invoke(id);
+            }
+            else if (Native.GetCursorPos(out var screen)) DragCompleted?.Invoke(Position(point, screen));
+            else DragCancelled?.Invoke();
         };
-        pill.PointerCaptureLost += (_, _) => CancelDrag();
+        pill.PointerCaptureLost += (_, _) =>
+        {
+            if (ReferenceEquals(pressedStrip, pill)) CancelActiveDrag();
+        };
         if (!master)
         {
             pill.PointerEntered += (_, _) =>
             {
-                if (dragging) return;
-                HoverChanged?.Invoke(id, IndexOf(id));
+                if (pressedStrip == null) HoverChanged?.Invoke(id, IndexOf(id));
             };
             pill.PointerExited += (_, _) => HoverChanged?.Invoke(id, null);
         }
@@ -324,22 +356,30 @@ public sealed partial class NoteCapsuleQueueView : UserControl, IPanelView
 
     /// <summary>成员条的本地 DIP 坐标（悬停预览换算到屏幕用）。</summary>
     public (double X, double Y)? MemberOffset(Guid id) =>
-        strips.TryGetValue(id, out var strip) ? (Canvas.GetLeft(strip), Canvas.GetTop(strip)) : null;
+        strips.TryGetValue(id, out var member) ? (Canvas.GetLeft(member.Strip), Canvas.GetTop(member.Strip)) : null;
 
-    /// <summary>拖动取消 / 丢失捕获：恢复原布局，无意外点击（notes-mvp §7）。
-    /// 外部拖动已由协调层的幽灵胶囊接管时不在此处重置。</summary>
-    void CancelDrag()
+    internal void UpdateMemberTitle(Guid id, string title)
     {
-        if (externalDrag) { dragId = Guid.Empty; return; }
-        var active = dragging;
+        var name = title.Length == 0 ? Strings.Notes_Untitled : title;
+        if (!strips.TryGetValue(id, out var member) || member.Title.Text == name) return;
+        member.Title.Text = name;
+        AutomationProperties.SetName(member.Strip, name);
+        ToolTipService.SetToolTip(member.Strip, name);
+    }
+
+    internal void CancelActiveDrag()
+    {
+        var strip = pressedStrip;
+        if (strip == null) return;
+        pressedStrip = null;
         dragging = false;
-        dragId = Guid.Empty;
-        if (active && state is { } queue) Apply(queue);
+        strip.ReleasePointerCaptures();
+        DragCancelled?.Invoke();
     }
 
     void WheelChanged(object sender, PointerRoutedEventArgs args)
     {
-        if (state is not { } queue || queue.Collapsed) return;
+        if (pressedStrip != null || state is not { } queue || queue.Collapsed) return;
         var delta = args.GetCurrentPoint(Surface).Properties.MouseWheelDelta;
         if (delta == 0) return;
         // 顶部队列：普通滚轮转横向滚动；左右队列天然纵向。

@@ -5,34 +5,32 @@
     xmlns:c="using:Pane.Views.Controls"
     xmlns:loc="using:Pane.Localization">
     <Grid x:Name="NotesRoot">
-        <FlyoutBase.AttachedFlyout>
-            <!-- 分类改名 / 移动到新分类的共用输入 -->
-            <Flyout x:Name="CategoryPromptFlyout" Placement="Right" Closed="CategoryPromptClosed">
-                <StackPanel Width="224" Spacing="8">
-                    <TextBlock x:Name="CategoryPromptTitle" Foreground="{ThemeResource PaneText1Brush}"/>
-                    <TextBox x:Name="CategoryPromptInput" MaxLength="64" Header="{x:Bind loc:Strings.Notes_CategoryNamePlaceholder}" KeyDown="CategoryPromptKeyDown"/>
-                    <TextBlock x:Name="CategoryPromptStatus" Visibility="Collapsed" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"
-                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
-                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                        <Button Style="{StaticResource PaneTextButton}" Content="{x:Bind loc:Strings.Common_Cancel}" Click="CancelCategoryPrompt"/>
-                        <Button Style="{StaticResource PanePrimaryButton}" Content="{x:Bind loc:Strings.Common_Save}" Click="SaveCategoryPrompt"/>
-                    </StackPanel>
-                </StackPanel>
-            </Flyout>
-        </FlyoutBase.AttachedFlyout>
+        <Grid.Background>
+            <SolidColorBrush Color="{ThemeResource PaneTintColor}"/>
+        </Grid.Background>
         <Grid.RowDefinitions>
-            <RowDefinition Height="56"/>
+            <!-- Match the standard Windows caption height. -->
+            <RowDefinition Height="32"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
+        <Border x:Name="LabelFill" Visibility="Collapsed" Background="{ThemeResource PaneFillControlBrush}"/>
         <Grid x:Name="Header" Padding="18,0,10,0" Background="Transparent"
               BorderThickness="0,0,0,1" BorderBrush="{ThemeResource PaneStrokeBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="CaptionLeft" Width="0"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition x:Name="CaptionRight" Width="0"/>
+            </Grid.ColumnDefinitions>
+            <Grid x:Name="TitleArea" Grid.Column="1" Background="Transparent">
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <c:PaneIcon Glyph="pencil" Width="16" Height="16" Foreground="{ThemeResource PaneText2Brush}"/>
                 <TextBlock Text="{x:Bind loc:Strings.Module_Notes_Name}" VerticalAlignment="Center"
                            FontFamily="{StaticResource PaneFontUi}" FontSize="{StaticResource PaneTextSm}"
                            Foreground="{ThemeResource PaneText1Brush}"/>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Center">
+            </Grid>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                 <Button x:Name="FileButton" Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}"
                         IsEnabled="False" AutomationProperties.Name="{x:Bind loc:Strings.Notes_FileActions}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_FileActions}">
                     <Button.Flyout>
@@ -48,89 +46,70 @@
                         ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_RecycleBin}">
                     <c:PaneIcon Glyph="trash" Width="16" Height="16"/>
                 </Button>
-                <Button Style="{StaticResource PaneIconButton}" Width="{StaticResource PaneControlMd}" Height="{StaticResource PaneControlMd}"
-                        Click="CloseClicked" AutomationProperties.Name="{x:Bind loc:Strings.Common_CloseWindowHint}"
-                        ToolTipService.ToolTip="{x:Bind loc:Strings.Common_CloseWindowHint}">
-                    <c:PaneIcon Glyph="close" Width="16" Height="16"/>
-                </Button>
             </StackPanel>
         </Grid>
         <Grid x:Name="NotesWorkspace" Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="176"/>
+                <ColumnDefinition x:Name="SidebarColumn" Width="264"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <Grid Padding="10,10,10,12" RowSpacing="8" BorderThickness="0,0,1,0" BorderBrush="{ThemeResource PaneStrokeBrush}">
+            <Grid x:Name="Sidebar" Padding="12,12,12,10" RowSpacing="10" BorderThickness="0,0,1,0" BorderBrush="{ThemeResource PaneStrokeBrush}" Background="{ThemeResource PaneFillHoverBrush}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel Spacing="8">
+                    <Border BorderBrush="{ThemeResource PaneText3Brush}" BorderThickness="1" CornerRadius="6">
+                        <TextBox x:Name="SearchBox" PlaceholderText="{x:Bind loc:Strings.Common_Search}" Padding="11,5,11,6"
+                                 AutomationProperties.Name="{x:Bind loc:Strings.Common_Search}" TextChanged="SearchChanged"/>
+                    </Border>
+                    <Button x:Name="NewButton" Style="{StaticResource PanePrimaryButton}" HorizontalAlignment="Stretch" Click="NewClicked">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <c:PaneIcon Glyph="plus" Width="14" Height="14"/>
+                            <TextBlock Text="{x:Bind loc:Strings.Notes_New}"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <DropDownButton x:Name="TagFilters" Grid.Row="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="12,5"/>
+                <TextBlock x:Name="ListCount" Grid.Row="2" Margin="12,0" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                <ListView x:Name="NoteList" Grid.Row="3" SelectionChanged="SelectionChanged"
+                          AutomationProperties.Name="{x:Bind loc:Strings.Module_Notes_Name}"/>
+                <TextBlock x:Name="EmptyList" Grid.Row="3" Margin="12,8" IsHitTestVisible="False" TextWrapping="Wrap"
+                           FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
+            </Grid>
+            <Grid x:Name="EditorPane" Grid.Column="1" Padding="18,12,18,12" RowSpacing="12">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBox x:Name="SearchBox" Width="112" PlaceholderText="{x:Bind loc:Strings.Common_Search}"
-                             AutomationProperties.Name="{x:Bind loc:Strings.Common_Search}" TextChanged="SearchChanged"/>
-                    <Button x:Name="NewButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="NewClicked"
-                            ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_New}" AutomationProperties.Name="{x:Bind loc:Strings.Notes_New}">
-                        <c:PaneIcon Glyph="plus" Width="16" Height="16"/>
-                    </Button>
-                    <Button x:Name="HiddenFilterButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="HiddenFilterClicked"
-                            AutomationProperties.Name="{x:Bind loc:Strings.Notes_FilterHidden}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_FilterHidden}">
-                        <c:PaneIcon x:Name="HiddenFilterIcon" Glyph="eye-off" Width="16" Height="16"/>
-                    </Button>
-                </StackPanel>
-                <ComboBox x:Name="CategoryFilter" Grid.Row="1" HorizontalAlignment="Stretch" MinWidth="0"
-                          AutomationProperties.Name="{x:Bind loc:Strings.Notes_CategoryFilter}" SelectionChanged="CategoryFilterChanged"/>
-                <ListView x:Name="NoteList" Grid.Row="2" SelectionChanged="SelectionChanged"
-                          AutomationProperties.Name="{x:Bind loc:Strings.Module_Notes_Name}"/>
-                <TextBlock x:Name="EmptyList" Grid.Row="2" Margin="8" IsHitTestVisible="False" TextWrapping="Wrap"
-                           FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
-            </Grid>
-            <Grid x:Name="EditorPane" Grid.Column="1" Padding="14,12,14,12" RowSpacing="10">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="112"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="TitleBox" PlaceholderText="{x:Bind loc:Strings.Notes_Title}"
-                             AutomationProperties.Name="{x:Bind loc:Strings.Notes_Title}" TextChanged="EditorChanged"/>
-                    <TextBox x:Name="CategoryBox" Grid.Column="1" MaxLength="64" PlaceholderText="{x:Bind loc:Strings.Notes_Category}"
-                             AutomationProperties.Name="{x:Bind loc:Strings.Notes_Category}" TextChanged="EditorChanged"/>
-                </Grid>
-                <TextBox x:Name="BodyBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
-                         PlaceholderText="{x:Bind loc:Strings.Notes_Body}" AutomationProperties.Name="{x:Bind loc:Strings.Notes_Body}"
-                         FontFamily="{StaticResource PaneFontUi}" ScrollViewer.VerticalScrollBarVisibility="Auto" TextChanged="EditorChanged"/>
-                <Grid Grid.Row="2" ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="Status" VerticalAlignment="Center" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"
-                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
-                    <TextBlock x:Name="CharCount" Grid.Column="1" VerticalAlignment="Center" IsHitTestVisible="False"
-                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText3Brush}"/>
-                    <Button x:Name="UndoDeleteButton" Grid.Column="2" Style="{StaticResource PaneTextButton}" MinHeight="28" Padding="10,2"
+                    <Button x:Name="UndoDeleteButton" Style="{StaticResource PaneTextButton}" MinHeight="28" Padding="10,2"
                             Visibility="Collapsed" Click="UndoDeleteClicked"
                             AutomationProperties.Name="{x:Bind loc:Strings.Notes_UndoDelete}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_UndoDelete}"/>
-                    <Button x:Name="PinButton" Grid.Column="3" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="PinClicked">
+                    <Button x:Name="PinButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" Click="PinClicked">
                         <c:PaneIcon x:Name="PinIcon" Glyph="pin" Width="16" Height="16"/>
                     </Button>
-                    <Button x:Name="HistoryButton" Grid.Column="4" Style="{StaticResource PaneIconButton}" Width="32" Height="32"
+                    <Button x:Name="UndoButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" AllowFocusOnInteraction="False"
+                            x:DataType="TextBox" IsEnabled="{Binding CanUndo}" Click="UndoEditClicked"
+                            AutomationProperties.Name="{x:Bind loc:Strings.Notes_Undo}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_Undo}">
+                        <c:PaneIcon Glyph="undo" Width="16" Height="16"/>
+                    </Button>
+                    <Button x:Name="RedoButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" AllowFocusOnInteraction="False"
+                            x:DataType="TextBox" IsEnabled="{Binding CanRedo}" Click="RedoEditClicked"
+                            AutomationProperties.Name="{x:Bind loc:Strings.Notes_Redo}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_Redo}">
+                        <c:PaneIcon Glyph="undo" Width="16" Height="16" RenderTransformOrigin="0.5,0.5">
+                            <c:PaneIcon.RenderTransform><ScaleTransform ScaleX="-1"/></c:PaneIcon.RenderTransform>
+                        </c:PaneIcon>
+                    </Button>
+                    <Button x:Name="HistoryButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32"
                             AutomationProperties.Name="{x:Bind loc:Strings.Notes_History}" ToolTipService.ToolTip="{x:Bind loc:Strings.Notes_History}"
                             Click="HistoryClicked" IsEnabled="False">
                         <c:PaneIcon Glyph="history" Width="16" Height="16"/>
                     </Button>
-                    <Button x:Name="ReminderButton" Grid.Column="5" Style="{StaticResource PaneIconButton}" Width="32" Height="32" IsEnabled="False"
+                    <Button x:Name="ReminderButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32" IsEnabled="False"
                             AutomationProperties.Name="{x:Bind loc:Strings.Notes_Reminder}">
                         <Button.Flyout>
                             <MenuFlyout Opening="ReminderMenuOpening"/>
@@ -150,7 +129,7 @@
                         </FlyoutBase.AttachedFlyout>
                         <c:PaneIcon Glyph="timer" Width="16" Height="16"/>
                     </Button>
-                    <Button x:Name="DeleteButton" Grid.Column="6" Style="{StaticResource PaneIconButton}" Width="32" Height="32"
+                    <Button x:Name="DeleteButton" Style="{StaticResource PaneIconButton}" Width="32" Height="32"
                             AutomationProperties.Name="{x:Bind loc:Strings.Common_Delete}" ToolTipService.ToolTip="{x:Bind loc:Strings.Common_Delete}">
                         <Button.Flyout>
                             <MenuFlyout>
@@ -159,9 +138,27 @@
                         </Button.Flyout>
                         <c:PaneIcon Glyph="trash" Width="16" Height="16"/>
                     </Button>
-                    <Button x:Name="SaveButton" Grid.Column="7" Style="{StaticResource PanePrimaryButton}" Click="SaveClicked"
+                    <Button x:Name="SaveButton" Style="{StaticResource PanePrimaryButton}" Click="SaveClicked"
                             Content="{x:Bind loc:Strings.Common_Save}"/>
-                </Grid>
+
+                </StackPanel>
+                <StackPanel Grid.Row="1" Spacing="8">
+                    <TextBox x:Name="TitleBox" PlaceholderText="{x:Bind loc:Strings.Notes_Title}" FontSize="22" FontWeight="SemiBold"
+                             Background="Transparent" BorderThickness="0" Padding="0,4"
+                             AutomationProperties.Name="{x:Bind loc:Strings.Notes_Title}" TextChanged="EditorChanged" GotFocus="EditorFocused"/>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock x:Name="UpdatedLabel" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                        <TextBlock x:Name="CharCount" FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                    </StackPanel>
+                    <TextBlock x:Name="Status" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"
+                               FontSize="{StaticResource PaneTextXs}" Foreground="{ThemeResource PaneText2Brush}"/>
+                    <TextBox x:Name="TagBox" PlaceholderText="{x:Bind loc:Strings.Notes_TagInput}"
+                             AutomationProperties.Name="{x:Bind loc:Strings.Notes_Tags}" TextChanged="EditorChanged" GotFocus="EditorFocused"/>
+                </StackPanel>
+                <TextBox x:Name="BodyBox" Grid.Row="2" AcceptsReturn="True" TextWrapping="Wrap" Background="Transparent"
+                         BorderThickness="0" Padding="0,8" FontSize="15"
+                         PlaceholderText="{x:Bind loc:Strings.Notes_Body}" AutomationProperties.Name="{x:Bind loc:Strings.Notes_Body}"
+                         FontFamily="{StaticResource PaneFontUi}" ScrollViewer.VerticalScrollBarVisibility="Auto" TextChanged="EditorChanged" GotFocus="EditorFocused"/>
             </Grid>
             <Grid x:Name="HistoryPane" Grid.Column="1" Padding="14,12,14,12" RowSpacing="10" Visibility="Collapsed">
                 <Grid.RowDefinitions>
@@ -200,6 +197,8 @@
                             Content="{x:Bind loc:Strings.Common_Restore}" Click="RestoreVersionClicked"/>
                 </Grid>
             </Grid>
+            <Border x:Name="SidebarDivider" Width="{StaticResource PaneSpace2}" HorizontalAlignment="Right" Background="Transparent"
+                    ManipulationMode="TranslateX"/>
         </Grid>
         <Grid x:Name="RecyclePane" Grid.Row="1" Padding="14,12,14,12" RowSpacing="10" ColumnSpacing="12" Visibility="Collapsed">
             <Grid.RowDefinitions>

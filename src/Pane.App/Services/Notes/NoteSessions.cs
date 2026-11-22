@@ -22,6 +22,8 @@ internal sealed class NoteSessions : IDisposable
     {
         public required Guid Id { get; init; }
         public string Title = "", Body = "", Category = "";
+        public string[]? Tags;
+        public string[] EffectiveTags => Tags ?? (Category.Length == 0 ? [] : [Category]);
         /// <summary>每次接受的输入 +1。</summary>
         public long Revision;
         /// <summary>最近成功写盘对应的修订号。</summary>
@@ -47,7 +49,7 @@ internal sealed class NoteSessions : IDisposable
         public bool IsEmpty => string.IsNullOrWhiteSpace(Title) && string.IsNullOrWhiteSpace(Body);
     }
 
-    sealed record WriteJob(Session Session, string Title, string Body, string Category, long Revision, long Epoch, bool WithHistory);
+    sealed record WriteJob(Session Session, string Title, string Body, string Category, string[]? Tags, long Revision, long Epoch, bool WithHistory);
 
     readonly NoteStore store;
     readonly Action<Action> marshal;
@@ -96,7 +98,7 @@ internal sealed class NoteSessions : IDisposable
             if (sessions.TryGetValue(id, out var existing)) return existing;
             var note = store.Find(id) ?? throw new KeyNotFoundException();
             var session = new Session { Id = id, Title = note.Title, Body = note.Body, SavedBody = note.Body,
-                Category = note.Category, Persisted = true };
+                Category = note.Category, Tags = note.Tags, Persisted = true };
             sessions.Add(id, session);
             return session;
         }
@@ -159,7 +161,7 @@ internal sealed class NoteSessions : IDisposable
 
     /// <summary>用户输入：在 UI 线程更新共享草稿并广播；source 视图不回发。
     /// 同一窗口的程序赋值由视图自身的 updating 保护，不经过这里。</summary>
-    public void Edit(Session session, string title, string body, string? category, object? source)
+    public void Edit(Session session, string title, string body, string? category, object? source, string[]? tags = null)
     {
         var normalized = body.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
         lock (gate)
@@ -169,6 +171,7 @@ internal sealed class NoteSessions : IDisposable
             session.Title = title ?? "";
             session.Body = normalized;
             session.Category = category?.Trim() ?? session.Category;
+            if (tags != null) session.Tags = tags;
             session.Revision++;
             // 首次正文修改置位一次；基线建立后由停顿窗口决定是否再记（notes-mvp §4）。
             if (touched && !session.HistoryRecorded) session.BodyTouched = true;
@@ -281,8 +284,8 @@ internal sealed class NoteSessions : IDisposable
             var withHistory = session.Persisted && session.Body != session.SavedBody;
             var wasPersisted = session.Persisted;
             var saved = !wasPersisted
-                ? store.Create(session.Title, session.Body, session.Category, session.Id)
-                : store.Save(new(session.Id, session.Title, session.Body, default) { Category = session.Category }, withHistory);
+                ? store.Create(session.Title, session.Body, session.Category, session.Id, session.Tags)
+                : store.Save(new(session.Id, session.Title, session.Body, default) { Category = session.Category, Tags = session.Tags }, withHistory);
             session.Persisted = true;
             session.SavedBody = session.Body;
             session.SavedRevision = session.Revision;
@@ -307,7 +310,7 @@ internal sealed class NoteSessions : IDisposable
         // 历史时机（notes-mvp §4）：本次会话第一次修改正文，或停止输入超过数分钟后的下一次写盘。
         var withHistory = session.BodyTouched || session.LastHistoryAt is not { } last || DateTimeOffset.UtcNow - last >= HistoryIdle;
         if (withHistory) { session.BodyTouched = false; session.LastHistoryAt = DateTimeOffset.UtcNow; }
-        var job = new WriteJob(session, session.Title, session.Body, session.Category, session.Revision, session.Epoch, withHistory);
+        var job = new WriteJob(session, session.Title, session.Body, session.Category, session.Tags, session.Revision, session.Epoch, withHistory);
         lock (gate)
         {
             if (disposed) return;
@@ -329,8 +332,8 @@ internal sealed class NoteSessions : IDisposable
                 try
                 {
                     var saved = !job.Session.Persisted
-                        ? store.Create(job.Title, job.Body, job.Category, job.Session.Id)
-                        : store.Save(new(job.Session.Id, job.Title, job.Body, default) { Category = job.Category }, job.WithHistory);
+                        ? store.Create(job.Title, job.Body, job.Category, job.Session.Id, job.Tags)
+                        : store.Save(new(job.Session.Id, job.Title, job.Body, default) { Category = job.Category, Tags = job.Tags }, job.WithHistory);
                     marshal(() =>
                     {
                         lock (gate)

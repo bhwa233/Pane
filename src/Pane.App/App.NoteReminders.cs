@@ -48,8 +48,7 @@ public sealed partial class App
 
     void RefreshNoteReminder(Guid id)
     {
-        if (secondaries.TryGetValue(SecondaryId.Notes, out var panel) && panel.View is NotesView view)
-            view.RefreshReminder(id);
+        notesView?.RefreshReminder(id);
     }
 
     void ScheduleNoteReminders()

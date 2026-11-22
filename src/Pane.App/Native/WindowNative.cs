@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 internal static partial class Native {
+    [DllImport("Pane.Native.dll", ExactSpelling = true, CharSet = CharSet.Unicode)]
+    internal static extern int PaneSetWindowTaskbarId(nint window, string? id);
     internal delegate nint SubclassProc(nint h,uint m,nuint w,nint l,nuint id,nuint data);
     [DllImport("comctl32.dll")] internal static extern bool SetWindowSubclass(nint h,SubclassProc proc,nuint id,nuint data);
     [DllImport("comctl32.dll")] internal static extern bool RemoveWindowSubclass(nint h,SubclassProc proc,nuint id);
@@ -8,5 +10,6 @@ internal static partial class Native {
     [StructLayout(LayoutKind.Sequential)] internal struct Point {public int X,Y;}
     [StructLayout(LayoutKind.Sequential)] internal struct MinMaxInfo {public Point Reserved,MaxSize,MaxPosition,MinTrack,MaxTrack;}
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] internal static extern bool ScreenToClient(nint window, ref Point point);
     [DllImport("user32.dll")] internal static extern bool IsWindowVisible(nint h);
 }

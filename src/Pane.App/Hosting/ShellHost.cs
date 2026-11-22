@@ -114,6 +114,8 @@ internal sealed class ShellHost : IDisposable, Pane.Services.WinV.IWinVHotkey
         var super = settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.SuperPanel) == true ? Override("super-panel", settings.SuperPanel.Hotkey) : null;
         bool active=ShellHotkeyBindings.Rebind(registered,id=>Native.UnregisterHotKey(shellWindow,id),Register,a,b,settings.Modules?.GetValueOrDefault("clipboard",settings.Clipboard.Enabled)??settings.Clipboard.Enabled,suspended,settings.Modules?.GetValueOrDefault("launcher",true)??true,settings.Clipboard.KeepHotkeyWithWinV,ApplyWinV,words,wordsEnabled,screenshot,super);
         OriginalClipboardHotkeySuppressed=active&&!settings.Clipboard.KeepHotkeyWithWinV;
+        if(!suspended&&(settings.Modules?.GetValueOrDefault(Pane.Contracts.ModuleIds.Notes,true)??true))
+            Register(7,"notes",new Hotkey(KeyModifiers.Ctrl|KeyModifiers.Alt,'N'));
         var keys=ShellHotkeyBindings.DoubleTapKeys(a,b,!OriginalClipboardHotkeySuppressed&&(settings.Modules?.GetValueOrDefault("clipboard",settings.Clipboard.Enabled)??settings.Clipboard.Enabled),suspended,settings.Modules?.GetValueOrDefault("launcher",true)??true);
         uint wordsKey=wordsEnabled&&!suspended&&words?.IsValidDoubleTap==true?words.VirtualKey:0u;
         if(wordsKey!=0&&(wordsKey==keys.Launcher||wordsKey==keys.Clipboard)){RegistrationResult("words",words!,false,1409);wordsKey=0;}

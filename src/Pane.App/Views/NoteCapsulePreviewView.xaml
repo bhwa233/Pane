@@ -3,8 +3,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     IsTabStop="False">
-    <!-- Background=Transparent：保证根区域可命中，胶囊 → 预览卡之间的走廊悬停能被感知（notes-mvp §7）。 -->
-    <Grid Padding="12,10,12,10" RowSpacing="6" Background="Transparent">
+    <Border BorderBrush="{ThemeResource PaneStrokeBrush}" BorderThickness="1" CornerRadius="14">
+        <Border.Background><SolidColorBrush Color="{ThemeResource PaneTintColor}"/></Border.Background>
+    <Grid Padding="16,12,16,14" RowSpacing="7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -18,4 +19,5 @@
                        Foreground="{ThemeResource PaneText2Brush}"/>
         </ScrollViewer>
     </Grid>
+    </Border>
 </UserControl>

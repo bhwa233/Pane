@@ -11,9 +11,9 @@ using DispatcherQueueTimer = Microsoft.UI.Dispatching.DispatcherQueueTimer;
 
 namespace Pane.Views;
 
-/// <summary>便签管理器（notes-mvp §3）：列表、搜索、分类、纯文本编辑、历史、回收与提醒。
+/// <summary>便签管理器（notes-mvp §3）：列表、搜索、标签、纯文本编辑、历史、回收与提醒。
 /// 编辑走共享会话（NoteSessions）：桌面便签卡与这里编辑同一条草稿，任一处输入另一处立即更新。</summary>
-public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
+public sealed partial class NotesView : UserControl, IDisposable
 {
     readonly NoteStore store;
     readonly NoteSessions sessions;
@@ -27,7 +27,7 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
     readonly Func<Guid, bool> isHidden;
     readonly Action<Guid> revealNote;
     readonly DispatcherQueueTimer undoWindow;
-    bool filterHidden;
+    readonly HashSet<string> selectedTags = new(StringComparer.OrdinalIgnoreCase);
     NoteSessions.Session? current;
     Guid? historyNoteId;
     long historyRevision;
@@ -53,6 +53,24 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
         this.isHidden = isHidden;
         this.revealNote = revealNote;
         InitializeComponent();
+        // Keep the editor space already provided by the default sidebar at the window's minimum width.
+        var editorMinWidth = MinimumSize.Width - SidebarColumn.Width.Value;
+        NotesWorkspace.SizeChanged += (_, e) => SidebarColumn.MaxWidth = Math.Max(0, e.NewSize.Width - editorMinWidth);
+        var resizeCursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.SizeWestEast);
+        SidebarDivider.PointerEntered += (_, _) => ProtectedCursor = resizeCursor;
+        SidebarDivider.PointerExited += (_, _) => ProtectedCursor = null;
+        double startWidth = 0;
+        SidebarDivider.ManipulationStarting += (_, e) =>
+        {
+            e.Container = NotesWorkspace;
+            startWidth = SidebarColumn.ActualWidth;
+        };
+        SidebarDivider.ManipulationDelta += (_, e) =>
+        {
+            var minWidth = Math.Max(SearchBox.MinWidth + 2, NewButton.DesiredSize.Width) + Sidebar.Padding.Left + Sidebar.Padding.Right + Sidebar.BorderThickness.Right;
+            SidebarColumn.Width = new GridLength(Math.Clamp(startWidth + e.Cumulative.Translation.X, Math.Min(minWidth, SidebarColumn.MaxWidth), SidebarColumn.MaxWidth));
+        };
+        UndoButton.DataContext = RedoButton.DataContext = BodyBox;
         TitleBox.MaxLength = NoteStore.TitleLimit;
         BodyBox.MaxLength = NoteStore.BodyLimit;
         UpdateDocumentActions();
@@ -68,11 +86,14 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
         Shortcut(VirtualKey.W, () => CloseRequested?.Invoke(this, EventArgs.Empty));
     }
 
-    public Size PreferredSize => new(640, 420);
-    public Size MinimumSize => new(470, 315);
-    public UIElement DragRegion => Header;
-    event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
-    event EventHandler<bool>? ISecondaryView.TopmostChanged { add { } remove { } }
+    public Size PreferredSize => new(840, 580);
+    public Size MinimumSize => new(600, 360);
+    internal UIElement TitleDragRegion => TitleArea;
+    internal void SetCaptionInsets(double left, double right)
+    {
+        CaptionLeft.Width = new GridLength(left);
+        CaptionRight.Width = new GridLength(right);
+    }
     public event EventHandler? CloseRequested;
 
     public void OnShowing(PanelShowContext context)
@@ -87,13 +108,12 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
         }
         catch (Exception error) when (NoteStore.IsStorageError(error))
         {
-            SearchBox.IsEnabled = NewButton.IsEnabled = TitleBox.IsEnabled = CategoryBox.IsEnabled = CategoryFilter.IsEnabled = BodyBox.IsEnabled = false;
+            SearchBox.IsEnabled = NewButton.IsEnabled = TitleBox.IsEnabled = TagBox.IsEnabled = TagFilters.IsEnabled = BodyBox.IsEnabled = false;
             SaveButton.IsEnabled = DeleteButton.IsEnabled = PinButton.IsEnabled = false;
             Status.Text = Strings.Notes_LoadFailed;
         }
     }
 
-    public void OnShown() { }
     public void OnHidden()
     {
         fileOperation?.Cancel();
@@ -173,13 +193,16 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
         try
         {
             TitleBox.Text = session.Title;
-            CategoryBox.Text = session.Category;
+            TagBox.Text = string.Join(", ", session.EffectiveTags);
             BodyBox.Text = session.Body;
+            TitleBox.ClearUndoRedoHistory();
+            TagBox.ClearUndoRedoHistory();
+            BodyBox.ClearUndoRedoHistory();
         }
         finally { updating = false; }
-        SearchBox.IsEnabled = NewButton.IsEnabled = TitleBox.IsEnabled = CategoryBox.IsEnabled = CategoryFilter.IsEnabled = BodyBox.IsEnabled = true;
+        SearchBox.IsEnabled = NewButton.IsEnabled = TitleBox.IsEnabled = TagBox.IsEnabled = TagFilters.IsEnabled = BodyBox.IsEnabled = true;
         UpdateButtons();
-        ReloadCategories();
+        ReloadTags();
         ReloadList();
         RefreshStatus();
         RefreshCharCount();
@@ -188,36 +211,36 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
     void RefreshStatus()
     {
         if (current is not { } session) return;
+        UpdatedLabel.Text = store.Find(session.Id)?.Updated.ToLocalTime().ToString("MM-dd HH:mm") ?? "";
         Status.Text = session.Failed ? Strings.Notes_SaveFailed
             : session.Revision != session.SavedRevision ? Strings.Common_NotSaved
             : store.UnreadableCount == 0 ? Strings.Notes_Saved : StorageNotice();
     }
 
-    string? SelectedCategory => (CategoryFilter.SelectedItem as ComboBoxItem)?.Tag as string;
-
-    void ReloadCategories()
+    void ReloadTags()
     {
-        var selected = SelectedCategory;
-        updating = true;
-        try
+        var tags = store.Documents.SelectMany(note => note.EffectiveTags)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.CurrentCultureIgnoreCase).ToArray();
+        selectedTags.IntersectWith(tags);
+        var choices = new ListView { SelectionMode = ListViewSelectionMode.Multiple, ItemsSource = tags };
+        AutomationProperties.SetName(choices, Strings.Notes_Tags);
+        foreach (var tag in tags.Where(selectedTags.Contains)) choices.SelectedItems.Add(tag);
+        choices.SelectionChanged += (_, _) =>
         {
-            CategoryFilter.Items.Clear();
-            CategoryFilter.Items.Add(CategoryItem(null, Strings.Notes_AllCategories));
-            CategoryFilter.Items.Add(CategoryItem("", Strings.Notes_Uncategorized));
-            foreach (var category in store.Documents.Select(note => note.Category).Where(category => category.Length != 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.CurrentCultureIgnoreCase))
-                CategoryFilter.Items.Add(CategoryItem(category, category));
-            CategoryFilter.SelectedItem = CategoryFilter.Items.OfType<ComboBoxItem>().FirstOrDefault(item =>
-                string.Equals(item.Tag as string, selected, StringComparison.OrdinalIgnoreCase)) ?? CategoryFilter.Items[0];
-        }
-        finally { updating = false; }
+            selectedTags.Clear();
+            selectedTags.UnionWith(choices.SelectedItems.Cast<string>());
+            UpdateCaption();
+            ReloadList();
+        };
+        TagFilters.Flyout = new Flyout { Content = choices, Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom };
+        UpdateCaption();
+
+        void UpdateCaption() => TagFilters.Content = $"{Strings.Notes_Tags} · {(selectedTags.Count == 0 ? Strings.Common_All : selectedTags.Count.ToString())}";
     }
 
-    static ComboBoxItem CategoryItem(string? category, string label) => new()
-    {
-        Tag = category,
-        Content = new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 }
-    };
+    static string[] ReadTags(string text) =>
+        text.Split([',', '，'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
     void RefreshCharCount()
     {
@@ -230,7 +253,7 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
     /// <summary>外部（导入 / 桌面保存 / 恢复）后的列表刷新。</summary>
     internal void RefreshSavedNotes()
     {
-        if (ready) ReloadList();
+        if (ready) { ReloadTags(); ReloadList(); }
     }
 
     void UpdateButtons()
@@ -304,7 +327,7 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
             Status.Text = Strings.Notes_SaveFailed;
             return false;
         }
-        ReloadCategories();
+        ReloadTags();
         ReloadList();
         RefreshStatus();
         UpdateButtons();
@@ -332,11 +355,11 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
     void EditorChanged(object sender, TextChangedEventArgs args)
     {
         if (!ready || updating || current is not { } session) return;
-        sessions.Edit(session, TitleBox.Text, BodyBox.Text, CategoryBox.Text, this);
+        sessions.Edit(session, TitleBox.Text, BodyBox.Text, null, this,
+            ReferenceEquals(sender, TagBox) ? ReadTags(TagBox.Text) : null);
         UpdateButtons();
         RefreshStatus();
         RefreshCharCount();
-        RefreshRowTitle(session);
     }
 
     /// <summary>共享草稿被其他窗口更新（notes-mvp §2 实时同步）：程序赋值不回发。</summary>
@@ -349,7 +372,7 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
             try
             {
                 if (TitleBox.Text != session.Title) TitleBox.Text = session.Title;
-                if (CategoryBox.Text != session.Category) CategoryBox.Text = session.Category;
+                if (TagBox.Text != session.Category) TagBox.Text = session.Category;
                 if (BodyBox.Text != session.Body) BodyBox.Text = session.Body;
             }
             finally { updating = false; }
@@ -357,35 +380,23 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
             RefreshCharCount();
             UpdateButtons();
         }
-        RefreshRowTitle(session);
     }
 
     void SessionSaved(NoteSessions.Session session)
     {
         if (disposed) return;
+        if (ready) { ReloadTags(); ReloadList(); }
         if (current?.Id == session.Id)
         {
             RefreshStatus();
             UpdateButtons();
         }
-        RefreshRowTitle(session);
     }
 
     void SessionSaveFailed(NoteSessions.Session session)
     {
         if (disposed) return;
         if (current?.Id == session.Id) Status.Text = Strings.Notes_SaveFailed;
-    }
-
-    /// <summary>只刷新相关行（notes-mvp §3）：编辑当前项期间不重建列表、不重排序。</summary>
-    void RefreshRowTitle(NoteSessions.Session session)
-    {
-        if (historyNoteId != null || !ready) return;
-        var row = NoteList.Items.OfType<ListViewItem>().FirstOrDefault(item => Equals(item.Tag, session.Id));
-        if (row?.Content is not Grid shell || shell.Children.OfType<StackPanel>().FirstOrDefault() is not { } content) return;
-        if (FindRowTitle(content) is not { } title) return;
-        var text = string.IsNullOrWhiteSpace(session.Title) ? Strings.Notes_Untitled : session.Title;
-        if (title.Text != text) title.Text = text;
     }
 
     // ---------------- 删除与撤销（notes-mvp §4） ----------------
@@ -437,7 +448,7 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
         if (pendingUndo is not { } snapshot) { HideUndo(); return; }
         HideUndo();
         undoDelete(snapshot);
-        ReloadCategories();
+        ReloadTags();
         ReloadList();
         try { Switch(sessions.Open(snapshot.Id)); }
         catch (KeyNotFoundException) { SelectFirst(); }
@@ -505,7 +516,7 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
             previewedVersionId = id;
             previewedVersionHash = NoteStore.VersionHash(note);
             HistoryTitle.Text = string.IsNullOrWhiteSpace(note.Title) ? Strings.Notes_Untitled : note.Title;
-            HistoryCategory.Text = note.Category.Length == 0 ? Strings.Notes_Uncategorized : note.Category;
+            HistoryCategory.Text = string.Join("  ", note.EffectiveTags.Select(tag => "#" + tag));
             HistoryBody.Text = note.Body;
             RestoreVersionButton.IsEnabled = true;
         }
@@ -551,17 +562,11 @@ public sealed partial class NotesView : UserControl, ISecondaryView, IDisposable
     }
 
     void SearchChanged(object sender, TextChangedEventArgs args) { if (ready && !updating) ReloadList(); }
-    void CategoryFilterChanged(object sender, SelectionChangedEventArgs args) { if (ready && !updating) ReloadList(); }
 
-    /// <summary>「只看已隐藏」筛选（notes-mvp §3：行上显示「已隐藏」，可按其筛选）。</summary>
-    void HiddenFilterClicked(object sender, RoutedEventArgs args)
-    {
-        filterHidden = !filterHidden;
-        HiddenFilterIcon.Glyph = filterHidden ? "eye" : "eye-off";
-        ReloadList();
-    }
+    void EditorFocused(object sender, RoutedEventArgs args) => UndoButton.DataContext = RedoButton.DataContext = sender;
+    void UndoEditClicked(object sender, RoutedEventArgs args) => ((TextBox)UndoButton.DataContext).Undo();
+    void RedoEditClicked(object sender, RoutedEventArgs args) => ((TextBox)RedoButton.DataContext).Redo();
 
     void SaveClicked(object sender, RoutedEventArgs args) => TrySave();
     void NewClicked(object sender, RoutedEventArgs args) => NewNote();
-    void CloseClicked(object sender, RoutedEventArgs args) => CloseRequested?.Invoke(this, EventArgs.Empty);
 }

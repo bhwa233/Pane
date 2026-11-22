@@ -99,7 +99,7 @@ internal sealed partial class DataStorage
         var count = store.DocumentsInStorage.Count();
         if (store.UnreadableCount != 0 || count != index["count"]!.GetValue<int>() || files.Count - count != index["versions"]!.GetValue<int>() ||
             expectedCount is { } expected && count != expected) throw Invalid();
-        ValidateCardPins(index["pins"]!.AsObject(), id => store.Find(id) != null, NoteStore.DesktopPinLimit);
+        ValidateCardPins(index["pins"]!.AsObject(), id => store.Find(id) != null);
         var versions = new Dictionary<Guid, HashSet<long>>();
         foreach (var name in files.Keys)
         {
@@ -111,9 +111,9 @@ internal sealed partial class DataStorage
         }
     }
 
-    static void ValidateCardPins(JsonObject pins, Func<Guid, bool> contains, int limit)
+    static void ValidateCardPins(JsonObject pins, Func<Guid, bool> contains, int? limit = null)
     {
-        if (pins.Count > limit) throw Invalid();
+        if (limit is { } maximum && pins.Count > maximum) throw Invalid();
         foreach (var pin in pins)
         {
             if (!Guid.TryParseExact(pin.Key, "D", out var id) || pin.Key != id.ToString("D") || !contains(id)) throw Invalid();
@@ -139,7 +139,7 @@ internal sealed partial class DataStorage
             if (OwnerImported(pair.Key)) writes[Path.Combine(data, pair.Key.Replace('/', Path.DirectorySeparatorChar))] = pair.Value;
         var pins = merge ? settings[NoteLayout]?.DeepClone() as JsonObject ?? new JsonObject() : new JsonObject();
         foreach (var pin in ReadObject(Path.Combine(root, NoteIndex))["pins"]!.AsObject())
-            if (pins.Count < NoteStore.DesktopPinLimit && !pins.ContainsKey(pin.Key) && imported.Contains(Guid.Parse(pin.Key))) pins[pin.Key] = pin.Value?.DeepClone();
+            if (!pins.ContainsKey(pin.Key) && imported.Contains(Guid.Parse(pin.Key))) pins[pin.Key] = pin.Value?.DeepClone();
         settings[NoteLayout] = pins.Count == 0 ? null : pins;
 
         bool OwnerImported(string name) => TryNoteName(name, out var id, out _) && imported.Contains(id);

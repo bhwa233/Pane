@@ -1,4 +1,6 @@
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
 using Pane.Contracts;
 using Pane.Hosting;
 using Pane.Localization;
@@ -6,6 +8,7 @@ using Pane.Services.Notes;
 using Pane.Settings;
 using Pane.Views;
 using Windows.Foundation;
+using Windows.Graphics;
 
 namespace Pane;
 
@@ -18,16 +21,84 @@ public sealed partial class App
 {
     NoteStore? notes;
     NoteSessions? noteSessions;
-    readonly Dictionary<Guid, GlassPanel> desktopNotes = [];
+    readonly Dictionary<Guid, DesktopNoteWindow> desktopNotes = [];
     bool desktopNotesEnabled;
+    bool temporaryNoteTopmost;
+    Window? notesWindow;
+    NotesView? notesView;
+    RectInt32? notesWindowBounds;
 
-    void ShowNotes(Guid? id = null) => Present(SecondaryId.Notes, Strings.Module_Notes_Name,
-        () => new NotesView(GetNotes(), GetNoteSessions(), IsNotePinned, ToggleNotePin,
-            CaptureNoteForDelete, RecycleNoteForDelete, UndoNoteDelete, GetNoteReminder, SetNoteReminder,
-            IsNoteHidden, RevealHiddenNote), view =>
+    void ShowNotes(Guid? id = null)
+    {
+        if (closing || !AllowModule(ModuleIds.Notes)) return;
+        foreach (var panel in panels.Values) panel.Hide();
+        if (notesWindow == null)
         {
-            if (id is { } noteId) ((NotesView)view).OpenNote(noteId);
-        });
+            var view = new NotesView(GetNotes(), GetNoteSessions(), IsNotePinned, ToggleNotePin,
+                CaptureNoteForDelete, RecycleNoteForDelete, UndoNoteDelete, GetNoteReminder, SetNoteReminder,
+                IsNoteHidden, RevealHiddenNote);
+            var window = new Window
+            {
+                Title = Strings.Module_Notes_Name,
+                Content = view,
+                ExtendsContentIntoTitleBar = true
+            };
+            window.SetTitleBar(view.TitleDragRegion);
+            var appWindow = window.AppWindow;
+            var presenter = (OverlappedPresenter)appWindow.Presenter;
+            presenter.IsResizable = true;
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+            AppIcon.Apply(hwnd);
+            Native.GetCursorPos(out var cursor);
+            var display = notesWindowBounds is { } saved
+                ? DisplayArea.GetFromRect(saved, DisplayAreaFallback.Nearest)
+                : DisplayArea.GetFromPoint(new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Nearest);
+            var work = display.WorkArea;
+            if (notesWindowBounds is { } bounds) appWindow.MoveAndResize(bounds);
+            else
+            {
+                appWindow.Move(new(work.X, work.Y));
+                var dpi = Native.GetDpiForWindow(hwnd) / 96.0;
+                int width = (int)Math.Round(view.PreferredSize.Width * dpi);
+                int height = (int)Math.Round(view.PreferredSize.Height * dpi);
+                appWindow.MoveAndResize(new(work.X + (work.Width - width) / 2,
+                    work.Y + (work.Height - height) / 4, width, height));
+            }
+            void UpdateWindowLayout()
+            {
+                var dpi = Native.GetDpiForWindow(hwnd) / 96.0;
+                view.SetCaptionInsets(appWindow.TitleBar.LeftInset / dpi, appWindow.TitleBar.RightInset / dpi);
+                presenter.PreferredMinimumWidth = (int)Math.Ceiling(view.MinimumSize.Width * dpi);
+                presenter.PreferredMinimumHeight = (int)Math.Ceiling(view.MinimumSize.Height * dpi);
+            }
+            void ApplyTheme(object? sender, EventArgs args) =>
+                view.RequestedTheme = Glass.Dark ? ElementTheme.Dark : ElementTheme.Light;
+            ApplyTheme(null, EventArgs.Empty);
+            Glass.Changed += ApplyTheme;
+            window.SizeChanged += (_, _) => UpdateWindowLayout();
+            UpdateWindowLayout();
+            view.CloseRequested += (_, _) => window.Close();
+            appWindow.Changed += (_, args) =>
+            {
+                if (presenter.State == OverlappedPresenterState.Restored && (args.DidPositionChange || args.DidSizeChange))
+                    notesWindowBounds = new(appWindow.Position.X, appWindow.Position.Y, appWindow.Size.Width, appWindow.Size.Height);
+            };
+            window.Closed += (_, _) =>
+            {
+                Glass.Changed -= ApplyTheme;
+                notesWindow = null;
+                notesView = null;
+                view.Dispose();
+            };
+            notesWindow = window;
+            notesView = view;
+            view.OnShowing(new(0, null, true));
+        }
+        if (id is { } noteId) notesView!.OpenNote(noteId);
+        if (notesWindow.AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } minimized)
+            minimized.Restore();
+        notesWindow.Activate();
+    }
 
     bool IsNoteHidden(Guid id) => Store.Current.NoteCapsules?.GetValueOrDefault(id) is { Hidden: true };
 
@@ -50,6 +121,11 @@ public sealed partial class App
     {
         if (noteSessions != null) return noteSessions;
         noteSessions = new NoteSessions(GetNotes(), action => queue.TryEnqueue(action.Invoke), NewNoteTimer);
+        noteSessions.Changed += (session, _) =>
+        {
+            foreach (var panel in capsuleQueues.Values)
+                ((NoteCapsuleQueueView)panel.View).UpdateMemberTitle(session.Id, session.Title.Trim());
+        };
         return noteSessions;
     }
 
@@ -91,16 +167,16 @@ public sealed partial class App
         if (closing || !Modules.IsActive(ModuleIds.Notes)) return false;
         try { GetNotes().Create(title, body); }
         catch (Exception error) when (NoteStore.IsStorageError(error)) { return false; }
-        if (secondaries.TryGetValue(SecondaryId.Notes, out var editor)) ((NotesView)editor.View).RefreshSavedNotes();
+        notesView?.RefreshSavedNotes();
         return true;
     }
 
     bool IsNotePinned(Guid id) => Store.Current.DesktopNotes?.ContainsKey(id) == true;
 
-    DesktopNoteView CreateNoteCardView(NoteDocument note)
+    DesktopNoteView CreateNoteCardView(Guid id)
     {
-        var view = new DesktopNoteView(GetNoteSessions(), note, new DesktopNoteHost(this));
-        view.UnpinRequested += (_, _) => RemoveNotePin(note.Id);
+        var view = new DesktopNoteView(GetNoteSessions(), id, new DesktopNoteHost(this));
+        view.UnpinRequested += (_, _) => RemoveNotePin(id);
         view.FoldRequested += (_, id) => FoldNote(id);
         return view;
     }
@@ -110,12 +186,14 @@ public sealed partial class App
         public void SaveSurface(Guid id, bool pad) => app.Store.Update(settings => settings with
             { DesktopNoteSurfaces = SetEntry(settings.DesktopNoteSurfaces, id, pad ? 1 : 0) });
         public bool GetSurface(Guid id) => app.Store.Current.DesktopNoteSurfaces?.GetValueOrDefault(id) == 1;
-        public void SaveSize(Guid id, double width, double height) => app.Store.Update(settings => settings with
-            { DesktopNoteSizes = SetEntry(settings.DesktopNoteSizes, id, [Math.Round(width, 1), Math.Round(height, 1)]) });
         public Size? GetSize(Guid id) => app.Store.Current.DesktopNoteSizes?.GetValueOrDefault(id) is { Length: 2 } pair
             && pair[0] >= DesktopNoteView.MinCardWidth && pair[1] >= DesktopNoteView.MinCardHeight ? new(pair[0], pair[1]) : null;
-        public void ToggleTopmost(Guid id) => app.Store.Update(settings => settings with
-            { DesktopNoteTopmost = SetEntry(settings.DesktopNoteTopmost, id, !(settings.DesktopNoteTopmost?.GetValueOrDefault(id) == true)) });
+        public void ToggleTopmost(Guid id)
+        {
+            app.Store.Update(settings => settings with { DesktopNoteTopmost = SetEntry(settings.DesktopNoteTopmost, id, !IsTopmost(id)) });
+            app.ApplyDesktopNoteTopmost(id);
+            app.RefreshCapsules();
+        }
         public bool IsTopmost(Guid id) => app.Store.Current.DesktopNoteTopmost?.GetValueOrDefault(id) == true;
         public void SetReminder(Guid id, DateTimeOffset? due) => app.SetNoteReminder(id, due);
         public DateTimeOffset? GetReminder(Guid id) => app.GetNoteReminder(id);
@@ -195,8 +273,6 @@ public sealed partial class App
     void ToggleNotePin(Guid id)
     {
         var pinned = IsNotePinned(id);
-        if (!pinned && (Store.Current.DesktopNotes?.Count ?? 0) >= NoteStore.DesktopPinLimit)
-            throw new InvalidOperationException(Strings.Notes_PinLimit);
         SaveNoteLayout(id, !pinned, null);
         RefreshDesktopNotes();
     }
@@ -226,41 +302,60 @@ public sealed partial class App
         {
             // 折叠或隐藏的便签不留正文窗口（notes-mvp §6）；胶囊由协调层承载。
             var capsule = Store.Current.NoteCapsules?.GetValueOrDefault(id);
-            if (layout?.ContainsKey(id) == true && notes?.Find(id) != null &&
+            if (layout?.ContainsKey(id) == true && HasDesktopNote(id) &&
                 capsule is not { Folded: true } and not { Hidden: true }) continue;
-            if (desktopNotes.Remove(id, out var removed))
-            {
-                (removed.View as IDisposable)?.Dispose();
-                removed.Dispose();
-            }
+            if (desktopNotes.Remove(id, out var removed)) removed.Dispose();
         }
         if (layout != null)
         {
-            foreach (var (id, position) in layout.Take(NoteStore.DesktopPinLimit))
+            foreach (var (id, position) in layout)
             {
-                if (notes?.Find(id) is not { } note) continue;
+                if (!HasDesktopNote(id)) continue;
                 // 折叠 / 隐藏的便签只保留胶囊入口，不展开正文窗口（notes-mvp §6）。
                 var capsule = Store.Current.NoteCapsules?.GetValueOrDefault(id);
                 if (capsule is { Folded: true } or { Hidden: true }) continue;
-                if (desktopNotes.TryGetValue(id, out var existing)) continue;
-                var view = CreateNoteCardView(note);
-                if (CreateDesktopCard(Strings.Notes_DesktopCard, view, view, position,
-                    anchor => SaveNoteLayout(id, true, anchor)) is { } panel)
-                {
-                    // 形态 / 尺寸 / 置顶在卡挂到窗口之后应用（galaxy surface_state 的恢复路径）。
-                    view.AttachPanel(panel);
-                    panel.DesktopResized += (_, size) =>
-                    {
-                        if (desktopNotes.TryGetValue(id, out var current) && ReferenceEquals(current, panel))
-                            Store.Update(settings => settings with
-                            { DesktopNoteSizes = new(settings.DesktopNoteSizes ?? []) { [id] = [Math.Round(size.Width, 1), Math.Round(size.Height, 1)] } });
-                    };
-                    desktopNotes.Add(id,panel);
-                }
+                if (desktopNotes.ContainsKey(id)) continue;
+                Native.GetCursorPos(out var screen);
+                var card = new DesktopNoteWindow(CreateNoteCardView(id), Glass, position, screen, DesktopCardObstacles(),
+                    () => SaveDesktopNoteBounds(id), () => FoldNote(id), QueueDesktopReflow, () => ApplyDesktopNoteTopmost(id));
+                desktopNotes.Add(id, card);
+                ApplyDesktopNoteTopmost(id);
+                if (!desktopCardsHidden) card.Show();
+                if (position == null && card.Position is { } placed)
+                    HandleNoteLayout(() => SaveNoteLayout(id, true, placed));
             }
         }
-        if (secondaries.TryGetValue(SecondaryId.Notes,out var editor)) ((NotesView)editor.View).RefreshPin();
+        notesView?.RefreshPin();
         RefreshDesktopCardsOverview();
+
+        bool HasDesktopNote(Guid id) => notes?.Find(id) != null || noteSessions?.Find(id) is { Persisted: false };
+    }
+
+    void ApplyDesktopNoteTopmost(Guid id)
+    {
+        if (desktopNotes.TryGetValue(id, out var card))
+            card.SetTopmost((card.TemporarilyTopmost || temporaryNoteTopmost || Store.Current.DesktopNoteTopmost?.GetValueOrDefault(id) == true) &&
+                (capsuleDemotedMonitors.Count == 0 || card.Monitor is not { } screen || !capsuleDemotedMonitors.Contains(screen.Id)));
+    }
+
+    void SaveDesktopNoteBounds(Guid id)
+    {
+        if (desktopArrangement != null || !desktopNotes.TryGetValue(id, out var card)) return;
+        HandleNoteLayout(() => Store.Update(settings =>
+        {
+            var positions = new Dictionary<Guid, LauncherPosition?>(settings.DesktopNotes ?? []);
+            var sizes = new Dictionary<Guid, double[]>(settings.DesktopNoteSizes ?? []);
+            RecordDesktopNoteBounds(id, card, positions, sizes);
+            return settings with { DesktopNotes = positions, DesktopNoteSizes = sizes };
+        }));
+    }
+
+    static void RecordDesktopNoteBounds(Guid id, DesktopNoteWindow card, Dictionary<Guid, LauncherPosition?> positions,
+        Dictionary<Guid, double[]> sizes)
+    {
+        positions[id] = card.Position;
+        var size = card.Size;
+        sizes[id] = [Math.Round(size.Width, 1), Math.Round(size.Height, 1)];
     }
 
     void HandleNoteLayout(Action operation)
@@ -293,11 +388,8 @@ public sealed partial class App
     void ClearDesktopNotes()
     {
         desktopNotesEnabled = false;
-        foreach (var card in desktopNotes.Values)
-        {
-            (card.View as IDisposable)?.Dispose();
-            card.Dispose();
-        }
+        temporaryNoteTopmost = false;
+        foreach (var card in desktopNotes.Values) card.Dispose();
         desktopNotes.Clear();
         ClearCapsuleHosts();
         RefreshDesktopCardsOverview();
@@ -320,7 +412,7 @@ public sealed partial class App
         {
             // 停用前结清全部会话（notes-mvp §6「模块停用」）：释放窗口和事件并保留本机布局。
             App.GetNoteSessions().FlushAll();
-            App.RemoveSecondary(SecondaryId.Notes);
+            App.notesWindow?.Close();
             App.StopNoteReminders();
             App.StopCapsuleFullscreenWatch();
             App.ClearDesktopNotes();

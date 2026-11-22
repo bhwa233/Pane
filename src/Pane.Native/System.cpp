@@ -7,6 +7,8 @@
 #include <exdisp.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <propkey.h>
+#include <propvarutil.h>
 #include <wrl/client.h>
 #include <vector>
 #include <string>
@@ -134,3 +136,17 @@ API int PaneSelection(HWND target,wchar_t* output,int capacity){
 API void PaneCancelCommands(){commandEpoch++;}
 API int PaneBeginInput(){return inputMutex.try_lock_for(std::chrono::milliseconds(500));}
 API void PaneEndInput(){inputMutex.unlock();}
+API HRESULT PaneSetWindowTaskbarId(HWND window,const wchar_t* id){
+ ComPtr<IPropertyStore> store;
+ HRESULT hr=SHGetPropertyStoreForWindow(window,IID_PPV_ARGS(&store));
+ if(FAILED(hr))return hr;
+ PROPVARIANT pin{};
+ if(id){pin.vt=VT_BOOL;pin.boolVal=VARIANT_TRUE;}
+ hr=store->SetValue(PKEY_AppUserModel_PreventPinning,pin);
+ if(FAILED(hr))return hr;
+ PROPVARIANT value{};
+ if(id){hr=InitPropVariantFromString(id,&value);if(FAILED(hr))return hr;}
+ hr=store->SetValue(PKEY_AppUserModel_ID,value);
+ PropVariantClear(&value);
+ return hr;
+}

@@ -7,7 +7,8 @@ namespace Pane.Hosting;
 internal static class SingleInstance
 {
     static Mutex? mutex;
-    static readonly string key="Pane-"+Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.UserName+"|"+(RuntimeMode.Current.IsProduction?"production":"development")+"|"+Environment.GetEnvironmentVariable("PANE_INSTANCE"))))[..24];
+    // Keep the existing default name for each mode; preview identifiers do not create more instances.
+    static readonly string key="Pane-"+Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.UserName+"|"+(RuntimeMode.Current.IsProduction?"production":"development")+"|")))[..24];
     public static bool Enter(LaunchCommand command) {
         mutex=new Mutex(true,"Local\\"+key,out bool first);
         if(first){if(command==LaunchCommand.Exit){Release();return false;}return true;}

@@ -1749,6 +1749,9 @@
   <data name="Module_Notes_Name" xml:space="preserve"><value>便签</value></data>
   <data name="Module_Notes_Description" xml:space="preserve"><value>在本机编辑、保存和搜索便签</value></data>
   <data name="Notes_New" xml:space="preserve"><value>新建便签</value></data>
+  <data name="Notes_Tags" xml:space="preserve"><value>标签</value></data>
+  <data name="Notes_TagInput" xml:space="preserve"><value>标签，用逗号分隔</value></data>
+  <data name="Notes_ListCount" xml:space="preserve"><value>便签列表 · {0} 张</value></data>
   <data name="Notes_Title" xml:space="preserve"><value>标题</value></data>
   <data name="Notes_Category" xml:space="preserve"><value>分类</value></data>
   <data name="Notes_CategoryFilter" xml:space="preserve"><value>按分类筛选便签</value></data>
@@ -1782,7 +1785,7 @@
   <data name="Notes_RestoreChanged" xml:space="preserve"><value>预览后版本文件有变化，未恢复；请重新选择</value></data>
   <data name="Notes_SwitchToPad" xml:space="preserve"><value>切换到编辑</value></data>
   <data name="Notes_CollapsePad" xml:space="preserve"><value>收起为贴纸</value></data>
-  <data name="Notes_Topmost" xml:space="preserve"><value>置顶</value></data>
+  <data name="Notes_Topmost" xml:space="preserve"><value>始终置顶</value></data>
   <data name="Notes_UnTopmost" xml:space="preserve"><value>取消置顶</value></data>
   <data name="Notes_DeleteCard" xml:space="preserve"><value>删除便签</value></data>
   <data name="Notes_ResizeCard" xml:space="preserve"><value>拖动调整卡片大小</value></data>
@@ -1826,6 +1829,7 @@
   <data name="Notes_LoadFailed" xml:space="preserve"><value>无法打开便签目录</value></data>
   <data name="Notes_Unreadable" xml:space="preserve"><value>{0} 份便签无法读取，源文件未改动</value></data>
   <data name="Notes_PinDesktop" xml:space="preserve"><value>固定到桌面</value></data>
+  <data name="Notes_PinnedDesktop" xml:space="preserve"><value>已贴桌面</value></data>
   <data name="DesktopCards_Title" xml:space="preserve"><value>桌面卡片</value></data>
   <data name="DesktopCards_Hide" xml:space="preserve"><value>隐藏桌面卡片</value></data>
   <data name="DesktopCards_Show" xml:space="preserve"><value>显示桌面卡片</value></data>
@@ -1856,7 +1860,6 @@
   <data name="Notes_UnpinDesktop" xml:space="preserve"><value>取消桌面固定</value></data>
   <data name="Notes_DesktopCard" xml:space="preserve"><value>桌面便签</value></data>
   <data name="Notes_OpenEditor" xml:space="preserve"><value>编辑便签</value></data>
-  <data name="Notes_PinLimit" xml:space="preserve"><value>最多固定 8 张便签</value></data>
   <data name="Notes_LayoutSaveFailed" xml:space="preserve"><value>无法保存桌面布局</value></data>
   <data name="Notes_History" xml:space="preserve"><value>版本历史</value></data>
   <data name="Notes_HistoryEmpty" xml:space="preserve"><value>暂无历史版本</value></data>
@@ -1886,7 +1889,7 @@
   <data name="Notes_FoldToCapsule" xml:space="preserve"><value>收成胶囊</value></data>
   <data name="Notes_CapsulesCollapse" xml:space="preserve"><value>收起胶囊队列</value></data>
   <data name="Notes_CapsulesExpand" xml:space="preserve"><value>展开胶囊队列</value></data>
-  <data name="Notes_CapsuleHide" xml:space="preserve"><value>隐藏便签（可从托盘或便签列表找回）</value></data>
+  <data name="Notes_CapsuleHide" xml:space="preserve"><value>隐藏便签</value></data>
   <data name="Notes_MoveEdgeLeft" xml:space="preserve"><value>移到左侧边缘</value></data>
   <data name="Notes_MoveEdgeRight" xml:space="preserve"><value>移到右侧边缘</value></data>
   <data name="Notes_MoveEdgeTop" xml:space="preserve"><value>移到顶部边缘</value></data>

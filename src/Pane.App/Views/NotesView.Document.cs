@@ -64,7 +64,7 @@ public sealed partial class NotesView
                 failures.Add(Path.GetFileName(file.Path));
             }
         }
-        ReloadCategories();
+        ReloadTags();
         ReloadList();
         if (imported > 0 && failures.Count == 0)
         {

@@ -1749,6 +1749,9 @@
   <data name="Module_Notes_Name" xml:space="preserve"><value>便箋</value></data>
   <data name="Module_Notes_Description" xml:space="preserve"><value>在本機編輯、儲存和搜尋便箋</value></data>
   <data name="Notes_New" xml:space="preserve"><value>新增便箋</value></data>
+  <data name="Notes_Tags" xml:space="preserve"><value>標籤</value></data>
+  <data name="Notes_TagInput" xml:space="preserve"><value>標籤，用逗號分隔</value></data>
+  <data name="Notes_ListCount" xml:space="preserve"><value>便箋清單 · {0} 張</value></data>
   <data name="Notes_Title" xml:space="preserve"><value>標題</value></data>
   <data name="Notes_Category" xml:space="preserve"><value>分類</value></data>
   <data name="Notes_CategoryFilter" xml:space="preserve"><value>依分類篩選便箋</value></data>
@@ -1782,7 +1785,7 @@
   <data name="Notes_RestoreChanged" xml:space="preserve"><value>預覽後版本檔案有變化，未恢復；請重新選擇</value></data>
   <data name="Notes_SwitchToPad" xml:space="preserve"><value>切換到編輯</value></data>
   <data name="Notes_CollapsePad" xml:space="preserve"><value>收合為貼紙</value></data>
-  <data name="Notes_Topmost" xml:space="preserve"><value>置頂</value></data>
+  <data name="Notes_Topmost" xml:space="preserve"><value>一律置頂</value></data>
   <data name="Notes_UnTopmost" xml:space="preserve"><value>取消置頂</value></data>
   <data name="Notes_DeleteCard" xml:space="preserve"><value>刪除便箋</value></data>
   <data name="Notes_ResizeCard" xml:space="preserve"><value>拖曳調整卡片大小</value></data>
@@ -1809,6 +1812,7 @@
   <data name="Notes_LoadFailed" xml:space="preserve"><value>無法開啟便箋資料夾</value></data>
   <data name="Notes_Unreadable" xml:space="preserve"><value>{0} 份便箋無法讀取，原始檔案未變更</value></data>
   <data name="Notes_PinDesktop" xml:space="preserve"><value>釘選到桌面</value></data>
+  <data name="Notes_PinnedDesktop" xml:space="preserve"><value>已釘選到桌面</value></data>
   <data name="DesktopCards_Title" xml:space="preserve"><value>桌面卡片</value></data>
   <data name="DesktopCards_Hide" xml:space="preserve"><value>隱藏桌面卡片</value></data>
   <data name="DesktopCards_Show" xml:space="preserve"><value>顯示桌面卡片</value></data>
@@ -1839,7 +1843,6 @@
   <data name="Notes_UnpinDesktop" xml:space="preserve"><value>取消桌面釘選</value></data>
   <data name="Notes_DesktopCard" xml:space="preserve"><value>桌面便箋</value></data>
   <data name="Notes_OpenEditor" xml:space="preserve"><value>編輯便箋</value></data>
-  <data name="Notes_PinLimit" xml:space="preserve"><value>最多釘選 8 張便箋</value></data>
   <data name="Notes_LayoutSaveFailed" xml:space="preserve"><value>無法儲存桌面配置</value></data>
   <data name="Notes_History" xml:space="preserve"><value>版本記錄</value></data>
   <data name="Notes_HistoryEmpty" xml:space="preserve"><value>尚無歷史版本</value></data>
@@ -1869,7 +1872,7 @@
   <data name="Notes_FoldToCapsule" xml:space="preserve"><value>收成膠囊</value></data>
   <data name="Notes_CapsulesCollapse" xml:space="preserve"><value>收起膠囊佇列</value></data>
   <data name="Notes_CapsulesExpand" xml:space="preserve"><value>展開膠囊佇列</value></data>
-  <data name="Notes_CapsuleHide" xml:space="preserve"><value>隱藏便箋（可從系統匣或便箋列表找回）</value></data>
+  <data name="Notes_CapsuleHide" xml:space="preserve"><value>隱藏便箋</value></data>
   <data name="Notes_MoveEdgeLeft" xml:space="preserve"><value>移到左側邊緣</value></data>
   <data name="Notes_MoveEdgeRight" xml:space="preserve"><value>移到右側邊緣</value></data>
   <data name="Notes_MoveEdgeTop" xml:space="preserve"><value>移到頂部邊緣</value></data>

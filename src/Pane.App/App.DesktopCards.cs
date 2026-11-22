@@ -4,12 +4,14 @@ using Pane.Localization;
 using Pane.Services.Notes;
 using Pane.Settings;
 using Pane.Views;
+using Windows.Graphics;
 
 namespace Pane;
 
 public sealed partial class App
 {
     Dictionary<GlassPanel, LauncherPosition?>? desktopArrangement;
+    Dictionary<Guid, RectInt32>? noteArrangement;
     Native.Point? desktopScreenPoint;
     bool desktopReflowQueued, desktopCardsHidden;
 
@@ -20,7 +22,7 @@ public sealed partial class App
         SelectDesktopCardScreen();
         GlassPanel.RestoreDesktopCards(DesktopCardPanels());
         Present(SecondaryId.DesktopCards, Strings.DesktopCards_Title,
-            () => new DesktopCardsView(Glass, CreateTrafficCardView, CreateNoteCardView, CreateScreenshotCardView,
+            () => new DesktopCardsView(Glass, CreateTrafficCardView, note => CreateNoteCardView(note.Id), CreateScreenshotCardView,
                 ShowTraffic, () => ShowNotes(), () => ShowScreenshots(), ToggleDesktopCards, BeginDesktopArrangement, SaveDesktopArrangement, CancelDesktopArrangement),
             view => ApplyDesktopCards((DesktopCardsView)view));
     }
@@ -34,13 +36,15 @@ public sealed partial class App
     void ApplyDesktopCards(DesktopCardsView overview)
     {
         var panels = DesktopCardPanels().ToArray();
-        if (desktopArrangement is { } editing && (editing.Count != panels.Length || panels.Any(panel => !editing.ContainsKey(panel))))
+        if (desktopArrangement is { } editing && (editing.Count != panels.Length || panels.Any(panel => !editing.ContainsKey(panel)) ||
+            noteArrangement!.Count != desktopNotes.Count || desktopNotes.Keys.Any(id => !noteArrangement.ContainsKey(id))))
             EndDesktopArrangement(restore: true);
-        overview.ApplyDesktopVisibility(panels.Length != 0, desktopCardsHidden);
-        overview.ApplyArrangement(panels.Length != 0 && !desktopCardsHidden, desktopArrangement != null);
+        var hasCards = panels.Length != 0 || desktopNotes.Count != 0;
+        overview.ApplyDesktopVisibility(hasCards, desktopCardsHidden);
+        overview.ApplyArrangement(hasCards && !desktopCardsHidden, desktopArrangement != null);
         var settings = Store.Current;
         var pinnedNotes = desktopNotesEnabled && settings.DesktopNotes != null
-            ? settings.DesktopNotes.Keys.Take(8).Select(id => notes?.Find(id)).OfType<NoteDocument>()
+            ? settings.DesktopNotes.Keys.Select(id => notes?.Find(id)).OfType<NoteDocument>()
             : [];
         var pinnedScreenshots = desktopScreenshotsEnabled && settings.DesktopScreenshots != null
             ? settings.DesktopScreenshots.Keys.Take(8).Where(id => id != Guid.Empty)
@@ -50,7 +54,15 @@ public sealed partial class App
     }
 
     IEnumerable<GlassPanel> DesktopCardPanels() => (desktopTrafficCard is { } traffic ? new[] { traffic } : [])
-        .Concat(desktopNotes.Values).Concat(desktopScreenshots.Values);
+        .Concat(desktopScreenshots.Values);
+
+    System.Drawing.Rectangle[] DesktopCardObstacles(GlassPanel? except = null, DesktopNoteWindow? exceptNote = null) =>
+        DesktopCardPanels().Where(card => card != except && card.Shown).Select(card => card.DesktopBounds)
+        .Concat(desktopNotes.Values.Where(card => card != exceptNote && card.Shown).Select(card =>
+        {
+            var bounds = card.Bounds;
+            return new System.Drawing.Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+        })).ToArray();
 
     void SelectDesktopCardScreen()
     {
@@ -66,11 +78,15 @@ public sealed partial class App
         desktopCardsHidden = !desktopCardsHidden;
         var panels = DesktopCardPanels().ToArray();
         if (desktopCardsHidden)
+        {
             foreach (var panel in panels) panel.Hide();
+            foreach (var note in desktopNotes.Values) note.Hide();
+        }
         else
         {
             SelectDesktopCardScreen();
             GlassPanel.RevealDesktopCards(panels, error => ReportFailure(Strings.DesktopCards_Title, error));
+            foreach (var note in desktopNotes.Values) note.Show();
         }
         RefreshDesktopCardsOverview();
     }
@@ -79,8 +95,9 @@ public sealed partial class App
     {
         if (closing || desktopCardsHidden || desktopArrangement != null) return false;
         var open = DesktopCardPanels().Where(panel => panel.Shown).ToDictionary(panel => panel, panel => panel.DesktopAnchor);
-        if (open.Count == 0) return false;
+        if (open.Count == 0 && desktopNotes.Count == 0) return false;
         desktopArrangement = open;
+        noteArrangement = desktopNotes.ToDictionary(pair => pair.Key, pair => pair.Value.Bounds);
         foreach (var panel in open.Keys) panel.BeginDesktopArrangement();
         if (secondaries.TryGetValue(SecondaryId.DesktopCards, out var overview)) overview.PlacePanelInZOrder(0);
         return true;
@@ -95,12 +112,20 @@ public sealed partial class App
             Store.Update(settings =>
             {
                 var traffic = settings.DesktopTraffic;
-                var notesLayout = UpdatePositions(settings.DesktopNotes, desktopNotes);
+                var notesLayout = settings.DesktopNotes;
+                var noteSizes = settings.DesktopNoteSizes;
+                foreach (var (id, original) in noteArrangement!)
+                {
+                    if (!desktopNotes.TryGetValue(id, out var card) || card.Bounds.Equals(original)) continue;
+                    if (ReferenceEquals(notesLayout, settings.DesktopNotes)) notesLayout = new(notesLayout ?? []);
+                    if (ReferenceEquals(noteSizes, settings.DesktopNoteSizes)) noteSizes = new(noteSizes ?? []);
+                    RecordDesktopNoteBounds(id, card, notesLayout!, noteSizes!);
+                }
                 var screenshotsLayout = UpdatePositions(settings.DesktopScreenshots, desktopScreenshots);
                 if (traffic != null && desktopTrafficCard is { } live && Changed(live)) traffic = traffic with { Position = live.DesktopAnchor };
                 return traffic == settings.DesktopTraffic && ReferenceEquals(notesLayout, settings.DesktopNotes) &&
                     ReferenceEquals(screenshotsLayout, settings.DesktopScreenshots) ? settings : settings with
-                    { DesktopTraffic = traffic, DesktopNotes = notesLayout, DesktopScreenshots = screenshotsLayout };
+                    { DesktopTraffic = traffic, DesktopNotes = notesLayout, DesktopNoteSizes = noteSizes, DesktopScreenshots = screenshotsLayout };
             });
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
@@ -130,6 +155,10 @@ public sealed partial class App
         if (desktopArrangement is not { } editing) return;
         desktopArrangement = null;
         foreach (var (panel, original) in editing) panel.EndDesktopArrangement(original, restore);
+        if (restore)
+            foreach (var (id, bounds) in noteArrangement!)
+                if (desktopNotes.TryGetValue(id, out var card) && !card.Bounds.Equals(bounds)) card.AppWindow.MoveAndResize(bounds);
+        noteArrangement = null;
         if (restore) GlassPanel.RestoreDesktopCards(DesktopCardPanels());
     }
 
@@ -142,6 +171,8 @@ public sealed partial class App
             if (closing) return;
             if (desktopArrangement != null) CancelDesktopArrangement();
             else GlassPanel.RestoreDesktopCards(DesktopCardPanels());
+            foreach (var (id, note) in desktopNotes)
+                note.Reposition(Store.Current.DesktopNotes?.GetValueOrDefault(id), desktopScreenPoint ?? default, note.Size, DesktopCardObstacles(exceptNote: note));
             RefreshDesktopCardsOverview();
         });
     }
@@ -165,7 +196,7 @@ public sealed partial class App
                 DesktopWorkAreaChanged = QueueDesktopReflow
             };
             var card = panel;
-            panel.DesktopObstacles = () => DesktopCardPanels().Where(other => other != card && other.Shown).Select(other => other.DesktopBounds).ToArray();
+            panel.DesktopObstacles = () => DesktopCardObstacles(card);
             WatchFrames(panel);
             if (desktopCardsHidden) return panel;
             panel.Show(activate: false);

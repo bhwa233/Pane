@@ -12,6 +12,10 @@ internal sealed record NoteDocument(Guid Id, string Title, string Body, DateTime
 {
     string category = "";
     public string Category { get => category; init => category = value?.Trim() ?? ""; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? Tags { get; init; }
+    [JsonIgnore]
+    public string[] EffectiveTags => Tags ?? (Category.Length == 0 ? [] : [Category]);
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Recycled { get; init; }
 }
@@ -23,7 +27,6 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
 {
     readonly object storageGate = storageSync ?? new object();
     const int VersionLimit = 30;
-    internal const int DesktopPinLimit = 8;
     internal const int TitleLimit = 180;
     internal const int BodyLimit = 200_000;
     internal const int CategoryLimit = 64;
@@ -63,12 +66,12 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
 
     /// <summary>新建一条独立便签（导入 / 工具结果落盘 / 会话首次落盘）。不依赖任何编辑会话，
     /// 永不因别处未保存而拒绝。id 缺省时生成新 GUID；指定时必须与现有便签不冲突。</summary>
-    public NoteDocument Create(string title, string body, string? category = null, Guid? id = null)
+    public NoteDocument Create(string title, string body, string? category = null, Guid? id = null, string[]? tags = null)
     {
         var normalized = NormalizeNewlines(body ?? "");
         if ((title ?? "").Length > TitleLimit || normalized.Length > BodyLimit || (title ?? "").Contains('\0') || normalized.Contains('\0'))
             throw new InvalidDataException();
-        var saved = new NoteDocument(id ?? Guid.NewGuid(), title ?? "", normalized, default) { Category = category?.Trim() ?? "" };
+        var saved = new NoteDocument(id ?? Guid.NewGuid(), title ?? "", normalized, default) { Category = category?.Trim() ?? "", Tags = tags };
         lock (storageGate)
         {
             if (documents!.ContainsKey(saved.Id)) throw new InvalidDataException();
@@ -120,7 +123,8 @@ internal sealed class NoteStore(string directory, object? storageSync = null)
     }
 
     static bool SameContent(NoteDocument first, NoteDocument second) =>
-        first.Title == second.Title && first.Body == second.Body && first.Category == second.Category;
+        first.Title == second.Title && first.Body == second.Body && first.Category == second.Category &&
+        first.EffectiveTags.SequenceEqual(second.EffectiveTags);
 
     static DateTimeOffset NextStamp(DateTimeOffset previous)
     {

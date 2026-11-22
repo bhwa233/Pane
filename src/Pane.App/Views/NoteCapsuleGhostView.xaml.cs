@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Pane.Hosting;
 using Windows.Foundation;
 
@@ -16,11 +17,18 @@ public sealed partial class NoteCapsuleGhostView : UserControl, IPanelView
 
     public Size PreferredSize => new(NoteCapsuleGeometry.CapsuleWidth, NoteCapsuleGeometry.CapsuleHeight);
     public UIElement DragRegion => Pill;
+    internal CornerRadius Corners { get => Pill.CornerRadius; set => Pill.CornerRadius = value; }
     event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
     event EventHandler? IPanelView.CloseRequested { add { } remove { } }
     public void OnShowing(PanelShowContext context) { }
     public void OnShown() { }
     public void OnHidden() { }
 
-    public void Apply(string title) => Title.Text = title;
+    public void Apply(string title, bool master)
+    {
+        Title.Text = title;
+        if (!master) return;
+        Pill.Background = Pill.BorderBrush;
+        Title.Foreground = Mark.Foreground = new SolidColorBrush(Microsoft.UI.Colors.White);
+    }
 }
