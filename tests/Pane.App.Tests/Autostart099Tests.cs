@@ -80,7 +80,7 @@ internal static class Autostart099Tests
         registry.ThrowRead=true;Logger("read-failed").Manual(true,true,exe,registry);
         Check(!File.Exists(Log("read-failed")),"读取诊断失败不影响启动");
         Check(registry.Writes==0,"所有新增测试不写注册表");
-        var portableRegistry = new FakeRegistry();
+        var portableRegistry = new FakeRegistry(allowWrites: true);
         var portableStore = new SettingsStore(Folder("portable"), defaults);
         const string launcher = @"C:\Pane portable\pane.exe", moved = @"C:\Apps\Renamed.exe";
         new AutostartService(true, launcher, portableStore, portableRegistry, portable: true).Set(true);
@@ -111,14 +111,14 @@ internal static class Autostart099Tests
         return checks;
     }
 
-    sealed class FakeRegistry:IStartupRegistry
+    sealed class FakeRegistry(bool allowWrites = false):IStartupRegistry
     {
         internal string? Value;internal bool ThrowRead;internal int Writes;
         internal Dictionary<string,string?> User=new(StringComparer.OrdinalIgnoreCase),Machine=new(StringComparer.OrdinalIgnoreCase);
         public bool Disabled {get;set;}
         public string? Read()=>ThrowRead?throw new IOException("模拟读取失败"):Value;
         public string? ReadCompatibility(string executable,bool allUsers)=>(allUsers?Machine:User).GetValueOrDefault(executable);
-        public void Write(string command){Writes++;throw new InvalidOperationException("禁止写注册表");}
-        public void Delete(){Writes++;throw new InvalidOperationException("禁止写注册表");}
+        public void Write(string command){Writes++;if(!allowWrites)throw new InvalidOperationException("禁止写注册表");Value=command;}
+        public void Delete(){Writes++;if(!allowWrites)throw new InvalidOperationException("禁止写注册表");Value=null;}
     }
 }

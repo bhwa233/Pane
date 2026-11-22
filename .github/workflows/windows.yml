@@ -28,6 +28,17 @@ jobs:
           ./src/Pane.Capture/build.ps1 -OutputRoot "$env:RUNNER_TEMP/capture" -StageDirectory "$env:RUNNER_TEMP/pane/aot/NativeCapture"
           Copy-Item LICENSE,LICENSE-EXCEPTION.md,THIRD_PARTY_NOTICES.md,src/Pane.App/ThirdParty -Destination "$env:RUNNER_TEMP/pane/aot" -Recurse
           ./scripts/package-portable.ps1 -AppDirectory "$env:RUNNER_TEMP/pane/aot" -OutputDirectory "$env:RUNNER_TEMP/dist"
+      - name: Verify bundled startup
+        run: |
+          $launcher = "$env:RUNNER_TEMP/dist/pane.exe"
+          $env:PANE_DATA_DIR = "$env:RUNNER_TEMP/pane-smoke"
+          $process = Start-Process -FilePath $launcher -ArgumentList '--exit' -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Single-file startup failed: $($process.ExitCode)" }
+          $bundles = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Pane/bundles'
+          $bundle = Get-ChildItem -LiteralPath $bundles -Directory | Where-Object {
+            Test-Path -LiteralPath (Join-Path $_.FullName 'NativeCapture/ScreenCapture.exe') -PathType Leaf
+          } | Select-Object -First 1
+          if (!$bundle) { throw 'The single-file launcher did not extract the native screenshot component.' }
       - uses: actions/upload-artifact@v4
         with:
           name: Pane-Windows-x64-${{ github.run_number }}

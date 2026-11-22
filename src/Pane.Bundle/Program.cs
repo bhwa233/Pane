@@ -51,7 +51,8 @@ internal static class Program
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {
-            MessageBoxW(0, $"无法启动 Pane。\n{error.Message}", "Pane", 0x10);
+            if (args is ["--exit"]) Console.Error.WriteLine(error.Message);
+            else MessageBoxW(0, $"无法启动 Pane。\n{error.Message}", "Pane", 0x10);
             return 1;
         }
     }
