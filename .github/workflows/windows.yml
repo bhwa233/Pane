@@ -30,7 +30,8 @@ jobs:
           ./scripts/package-portable.ps1 -AppDirectory "$env:RUNNER_TEMP/pane/aot" -OutputDirectory "$env:RUNNER_TEMP/dist"
       - name: Verify bundled startup
         run: |
-          $launcher = "$env:RUNNER_TEMP/dist/pane.exe"
+          $version = (Get-Item -LiteralPath "$env:RUNNER_TEMP/pane/aot/Pane.App.exe").VersionInfo.ProductVersion.Split('+')[0]
+          $launcher = "$env:RUNNER_TEMP/dist/pane-$version.exe"
           $env:PANE_DATA_DIR = "$env:RUNNER_TEMP/pane-smoke"
           $process = Start-Process -FilePath $launcher -ArgumentList '--exit' -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Single-file startup failed: $($process.ExitCode)" }
@@ -63,7 +64,7 @@ jobs:
         run: |
           version="${RELEASE_TAG#v}"
           (cd dist && sha256sum --check SHA256SUMS.txt)
-          printf '下载 `pane.exe` 后双击启动。支持 Windows x64，首次运行会自动解包。\n\n' > "$RUNNER_TEMP/release-notes.md"
+          printf '下载 `pane-%s.exe` 后双击启动。支持 Windows x64，首次运行会自动解包。`pane.exe` 为旧版在线更新兼容附件，内容相同。\n\n' "$version" > "$RUNNER_TEMP/release-notes.md"
           cat dist/release-notes.md >> "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" --verify-tag --title "Pane $version" \
-            --notes-file "$RUNNER_TEMP/release-notes.md" dist/pane.exe dist/SHA256SUMS.txt
+            --notes-file "$RUNNER_TEMP/release-notes.md" "dist/pane-$version.exe" dist/pane.exe dist/SHA256SUMS.txt

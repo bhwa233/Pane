@@ -27,10 +27,13 @@ try {
         "-p:Version=$version" "-p:InformationalVersion=$($exe.VersionInfo.ProductVersion)" `
         '-p:IncludeSourceRevisionInInformationalVersion=false' "-p:PayloadPath=$payload" "-p:PayloadSha256=$hash" -o $work.FullName
     if ($LASTEXITCODE -ne 0) { throw 'Pane single-file build failed.' }
-    Copy-Item -LiteralPath (Join-Path $work.FullName 'pane.exe') -Destination $output
+    $assetName = "pane-$version.exe"
+    Copy-Item -LiteralPath (Join-Path $work.FullName 'pane.exe') -Destination (Join-Path $output $assetName)
+    # 1.0.1/1.0.2 更新器固定查找 pane.exe，保留同内容附件供旧版在线更新。
+    Copy-Item -LiteralPath (Join-Path $output $assetName) -Destination (Join-Path $output 'pane.exe')
     Copy-Item -LiteralPath (Join-Path $app 'release-notes.md') -Destination $output
-    $checksum = (Get-FileHash -LiteralPath (Join-Path $output 'pane.exe')).Hash.ToLowerInvariant()
-    "$checksum  pane.exe" | Set-Content -LiteralPath (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
+    $checksum = (Get-FileHash -LiteralPath (Join-Path $output $assetName)).Hash.ToLowerInvariant()
+    @("$checksum  $assetName", "$checksum  pane.exe") | Set-Content -LiteralPath (Join-Path $output 'SHA256SUMS.txt') -Encoding ascii
 }
 finally {
     # The temporary directory was created directly under the selected output root.

@@ -142,11 +142,11 @@
 
 ## 下载和启动
 
-1. 到 [Releases](https://github.com/bhwa233/Pane/releases/latest) 下载 Windows x64 的 `pane.exe`。
+1. 到 [Releases](https://github.com/bhwa233/Pane/releases/latest) 下载 Windows x64 的 `pane-版本号.exe`（例如 `pane-1.0.2.exe`）。`pane.exe` 是供旧版在线更新使用的同内容兼容附件。
 2. 把文件放到固定目录后双击启动。首次运行会自动解包，设置、剪贴板历史和手势配置保存在 `%APPDATA%\Pane`。
 3. 要开机自启，在 **设置 → 通用 → 启动** 打开「开机时启动 Pane」。
 
-在 **设置 → 关于** 可以下载新版并重启更新。也可以退出 Pane 后手动覆盖原位置的 `pane.exe`。
+在 **设置 → 关于** 可以下载新版并重启更新。也可以退出 Pane 后运行新版本的 `pane-版本号.exe`。
 
 **可选的依赖**
 
