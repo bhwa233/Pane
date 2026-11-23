@@ -446,7 +446,7 @@ public sealed partial class GlassPanel : IDisposable
         if(h==Input && m==0x21 && Passive)return 3;   // 不激活方式：点面板不激活（MA_NOACTIVATE）
         if(m==0x10){Hide();return 0;}
         if(m==0x14)return 1;
-        if(h==Input&&m==6&&(w&0xffff)==0&&Shown&&interactive&&!dragging&&!settingsWindow&&!demo&&l!=Input&&l!=Visual&&!Native.IsChild(Input,l)&&(HideOnBlur?.Invoke()??true))Hide();
+        if(h==Input&&m==6&&(w&0xffff)==0&&Shown&&interactive&&!dragging&&!settingsWindow&&!desktopCard&&!demo&&l!=Input&&l!=Visual&&!Native.IsChild(Input,l)&&(HideOnBlur?.Invoke()??true))Hide();
         if(h==Input&&m==7&&island!=null&&!Passive)Focus();
         return Native.DefWindowProcW(h,m,w,l);
     }
