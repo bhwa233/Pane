@@ -86,6 +86,7 @@ public sealed partial class App : Application
             StartBackground();StartReleaseProbe();
             timer=queue.CreateTimer();timer.Interval=TimeSpan.FromMilliseconds(8);timer.Tick+=(_,_)=>{try{Tick();}finally{if(!NeedsFrames)timer.Stop();}};timer.Start();
             StartCardPerformanceProbe();
+            _ = OfferTrafficServiceAsync();
         }catch(Exception e){ReportCrash(e);Shutdown();}
     }
     SetupHost? setupHost;

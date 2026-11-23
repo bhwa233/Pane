@@ -41,6 +41,24 @@ public sealed partial class App
         OpenTrafficWindow(false);
     }
 
+    async Task OfferTrafficServiceAsync()
+    {
+        if (!IsProduction || demo || !RuntimeMode.PortableTraffic || Store.Current.TrafficServiceInstallOffered ||
+            Environment.GetCommandLineArgs().Length != 1 || Environment.GetEnvironmentVariable("PANE_VERIFY") == "1" ||
+            Environment.GetEnvironmentVariable("PANE_OBSERVE") == "1") return;
+        try
+        {
+            if (TrafficServiceIdentity.IsInstalled()) return;
+            Store.Update(settings => settings with { TrafficServiceInstallOffered = true });
+            await TrafficServiceSetup.InstallAsync();
+            processTraffic?.Retry();
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            System.Diagnostics.Trace.TraceWarning("Pane traffic service setup: {0}", error.Message);
+        }
+    }
+
     void ShowTrafficHistory(TrafficProcessIdentity? process = null) => OpenTrafficWindow(true, process);
 
     void OpenTrafficWindow(bool history, TrafficProcessIdentity? process = null, bool activate = true)
@@ -337,7 +355,7 @@ public sealed partial class App
 
     DesktopTrafficView CreateTrafficCardView()
     {
-        var view = new DesktopTrafficView(GetInterfaceTraffic(), processTraffic!);
+        var view = new DesktopTrafficView(GetInterfaceTraffic(), processTraffic!, showResources: true);
         view.OpenRequested += (_, _) => ShowTraffic();
         view.UnpinRequested += (_, _) => SetTrafficPin(false);
         return view;

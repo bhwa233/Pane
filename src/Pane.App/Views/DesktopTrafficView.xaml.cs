@@ -17,6 +17,10 @@ public sealed partial class DesktopTrafficView : UserControl, IPanelView, IDispo
     internal const double RankingWidth = 260;
     readonly InterfaceTrafficMonitor monitor;
     readonly ProcessTrafficMonitor process;
+    readonly bool showResources;
+    DispatcherQueueTimer? resourceTimer;
+    ResourceUsageSampler? resourceSampler;
+    bool resourceSampling;
     bool observing, overHud, overRanking, menuOpen, dragging;
     internal Func<double>? RankingOffset { get; set; }
     internal Func<DesktopTrafficSettings?>? ReadOptions { get; set; }
@@ -25,15 +29,21 @@ public sealed partial class DesktopTrafficView : UserControl, IPanelView, IDispo
     internal Action? PointerLeft { get; set; }
     internal bool PointerInside => overHud || overRanking || menuOpen || dragging;
 
-    internal DesktopTrafficView(InterfaceTrafficMonitor monitor, ProcessTrafficMonitor process)
+    internal DesktopTrafficView(InterfaceTrafficMonitor monitor, ProcessTrafficMonitor process, bool showResources = false)
     {
         this.monitor = monitor;
         this.process = process;
+        this.showResources = showResources;
         InitializeComponent();
+        if (showResources)
+        {
+            ResourceUsage.Visibility = Visibility.Visible;
+            ApplyResources(default);
+        }
         Actions.Closed += (_, _) => { menuOpen = false; PointerLeft?.Invoke(); };
     }
 
-    public Size PreferredSize => new(110, 44);
+    public Size PreferredSize => showResources ? new(228 + (Strings.Traffic_MemoryUsage.Length - 2) * 14, 44) : new(110, 44);
     internal double CardRadius => RateCard.CornerRadius.TopLeft;
     public UIElement DragRegion => Surface;
     event EventHandler<Size>? IPanelView.SizeRequested { add { } remove { } }
@@ -48,6 +58,7 @@ public sealed partial class DesktopTrafficView : UserControl, IPanelView, IDispo
         if (observing) return;
         observing = true;
         monitor.Subscribe(Apply);
+        StartResources();
     }
 
     public void OnHidden()
@@ -58,12 +69,67 @@ public sealed partial class DesktopTrafficView : UserControl, IPanelView, IDispo
         if (!observing) return;
         observing = false;
         monitor.Unsubscribe(Apply);
+        StopResources();
     }
 
     internal void SetEdgeTab(bool visible)
     {
         RateCard.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
         EdgeTab.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (visible) StopResources();
+        else if (observing) StartResources();
+    }
+
+    void StartResources()
+    {
+        if (!showResources || resourceTimer != null || EdgeTab.Visibility == Visibility.Visible) return;
+        resourceTimer = DispatcherQueue.CreateTimer();
+        resourceTimer.Interval = TimeSpan.FromSeconds(1);
+        resourceTimer.Tick += SampleResources;
+        resourceTimer.Start();
+        SampleResources(resourceTimer, null);
+    }
+
+    void StopResources()
+    {
+        if (resourceTimer is not { } timer) return;
+        resourceTimer = null;
+        timer.Stop();
+        timer.Tick -= SampleResources;
+        if (!resourceSampling) resourceSampler?.Dispose();
+        resourceSampler = null;
+        ApplyResources(default);
+    }
+
+    async void SampleResources(DispatcherQueueTimer timer, object? args)
+    {
+        if (resourceSampling) return;
+        resourceSampling = true;
+        var sampler = resourceSampler;
+        try
+        {
+            var reading = await Task.Run(() => (sampler ??= new()).Sample());
+            if (resourceTimer == timer)
+            {
+                resourceSampler = sampler;
+                ApplyResources(reading);
+            }
+        }
+        finally
+        {
+            if (resourceTimer != timer) sampler?.Dispose();
+            resourceSampling = false;
+        }
+    }
+
+    void ApplyResources(ResourceUsageSampler.Reading reading)
+    {
+        CpuUsage.Text = Percent(reading.Cpu);
+        GpuUsage.Text = Percent(reading.Gpu);
+        MemoryUsage.Text = Percent(reading.Memory);
+        DiskUsage.Text = Percent(reading.Disk);
+
+        static string Percent(double? value) => value is { } percent ? (Math.Clamp(percent, 0, 100) / 100).ToString("P0") : "—";
     }
 
     internal void StartDrag()

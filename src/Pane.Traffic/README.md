@@ -38,6 +38,14 @@ build does not sign the executable or change certificate/device trust. The helpe
 is not part of the application installer and does not request elevation itself.
 Run it directly in a terminal to see the failure stage and reason on stderr.
 
+The single-file release embeds the service archive and its manifest directly in
+`pane.exe`. On the first manual launch when the service is absent, Pane
+requests UAC consent once. Canceling leaves the install action available in
+the traffic panel. Elevation must use the current Pane account so the installer
+can verify that account's access. The portable installer validates the embedded
+payload and stages it in the same protected directories as the signed
+standalone preview helper described below.
+
 To exercise the same signature verifier without staging or installing anything,
 provide a PE file with a trusted embedded Authenticode signature and a separate
 unsigned PE file. Set `$signerPin` to the SHA-256 of the signing certificate's

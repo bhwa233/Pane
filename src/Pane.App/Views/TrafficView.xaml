@@ -129,6 +129,8 @@
                         ToolTipService.ToolTip="{x:Bind loc:Strings.Common_Retry}">
                     <c:PaneIcon Glyph="refresh" Width="16" Height="16"/>
                 </Button>
+                <Button x:Name="InstallTrafficService" Grid.Column="2" Visibility="Collapsed"
+                        Content="{x:Bind loc:Strings.Traffic_InstallService}" Click="InstallTrafficServiceClicked"/>
             </Grid>
             <Grid Grid.Row="2">
                 <TextBox x:Name="ProcessFilter" PlaceholderText="{x:Bind loc:Strings.Traffic_RankingFilter}"

@@ -1679,6 +1679,13 @@
   <data name="Traffic_AppRunGap" xml:space="preserve"><value>僅統計已觀測到的流量</value></data>
   <data name="Traffic_ProcessConnecting" xml:space="preserve"><value>正在檢查流量服務…</value></data>
   <data name="Traffic_ProcessNotInstalled" xml:space="preserve"><value>尚未安裝 Pane 流量服務</value></data>
+  <data name="Traffic_DiskUsage" xml:space="preserve"><value>磁碟</value></data>
+  <data name="Traffic_MemoryUsage" xml:space="preserve"><value>記憶體</value></data>
+  <data name="Traffic_InstallService" xml:space="preserve"><value>安裝流量服務</value></data>
+  <data name="Traffic_InstallingService" xml:space="preserve"><value>正在安裝流量服務…</value></data>
+  <data name="Traffic_ServicePackageUnavailable" xml:space="preserve"><value>請從 Pane 單檔發行版安裝流量服務</value></data>
+  <data name="Traffic_ServiceInstallDifferentAccount" xml:space="preserve"><value>請使用目前 Windows 帳戶的系統管理員權限安裝流量服務</value></data>
+  <data name="Traffic_ServiceInstallFailed" xml:space="preserve"><value>流量服務安裝失敗，請重試</value></data>
   <data name="Traffic_ProcessDisabled" xml:space="preserve"><value>處理程序收集已關閉</value></data>
   <data name="Traffic_ProcessUnavailable" xml:space="preserve"><value>處理程序收集無法使用</value></data>
   <data name="Traffic_ProcessAccessDenied" xml:space="preserve"><value>無權存取處理程序流量服務</value></data>

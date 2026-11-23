@@ -22,6 +22,7 @@ public sealed record PaneSettings(int Version, GeneralSettings General, Launcher
     /// <summary>首次折叠的一次性提示已经显示过（notes-mvp §6）。</summary>
     public bool NoteCapsuleHintShown { get; init; }
     public DesktopTrafficSettings? DesktopTraffic { get; init; }
+    public bool TrafficServiceInstallOffered { get; init; }
     public Dictionary<string, CardDesktopPlacement>? CardDesktopLayout { get; init; }
     public bool ShowCardDesktopTrigger { get; init; } = true;
     public bool PauseInterfaceTraffic { get; init; }

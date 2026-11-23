@@ -1679,6 +1679,13 @@
   <data name="Traffic_AppRunGap" xml:space="preserve"><value>仅统计已观测到的流量</value></data>
   <data name="Traffic_ProcessConnecting" xml:space="preserve"><value>正在检查流量服务…</value></data>
   <data name="Traffic_ProcessNotInstalled" xml:space="preserve"><value>未安装 Pane 流量服务</value></data>
+  <data name="Traffic_DiskUsage" xml:space="preserve"><value>磁盘</value></data>
+  <data name="Traffic_MemoryUsage" xml:space="preserve"><value>内存</value></data>
+  <data name="Traffic_InstallService" xml:space="preserve"><value>安装流量服务</value></data>
+  <data name="Traffic_InstallingService" xml:space="preserve"><value>正在安装流量服务…</value></data>
+  <data name="Traffic_ServicePackageUnavailable" xml:space="preserve"><value>请从 Pane 单文件发行版安装流量服务</value></data>
+  <data name="Traffic_ServiceInstallDifferentAccount" xml:space="preserve"><value>请使用当前 Windows 账户的管理员权限安装流量服务</value></data>
+  <data name="Traffic_ServiceInstallFailed" xml:space="preserve"><value>流量服务安装失败，请重试</value></data>
   <data name="Traffic_ProcessDisabled" xml:space="preserve"><value>进程采集已关闭</value></data>
   <data name="Traffic_ProcessUnavailable" xml:space="preserve"><value>进程采集不可用</value></data>
   <data name="Traffic_ProcessAccessDenied" xml:space="preserve"><value>无权访问进程流量服务</value></data>

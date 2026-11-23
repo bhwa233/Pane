@@ -33,6 +33,8 @@ jobs:
           $version = (Get-Item -LiteralPath "$env:RUNNER_TEMP/pane/aot/Pane.App.exe").VersionInfo.ProductVersion.Split('+')[0]
           $launcher = "$env:RUNNER_TEMP/dist/pane-$version.exe"
           $env:PANE_DATA_DIR = "$env:RUNNER_TEMP/pane-smoke"
+          $verification = Start-Process -FilePath $launcher -ArgumentList '--verify-traffic-payload' -WindowStyle Hidden -Wait -PassThru
+          if ($verification.ExitCode -ne 0) { throw "Embedded traffic payload verification failed: $($verification.ExitCode)" }
           $process = Start-Process -FilePath $launcher -ArgumentList '--exit' -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Single-file startup failed: $($process.ExitCode)" }
           $bundles = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Pane/bundles'

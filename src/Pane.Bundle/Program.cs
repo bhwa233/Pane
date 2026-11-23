@@ -8,6 +8,9 @@ internal static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        if (args is ["--verify-traffic-payload"]) return PortableTrafficSetup.Run(null);
+        if (args is ["--install-traffic-service", var sid]) return PortableTrafficSetup.Run(sid);
+
         try
         {
             var assembly = Assembly.GetExecutingAssembly();
@@ -40,6 +43,7 @@ internal static class Program
                 CreateNoWindow = true,
             };
             start.Environment["PANE_PORTABLE_EXE"] = Environment.ProcessPath!;
+            start.Environment["PANE_PORTABLE_TRAFFIC"] = "1";
             foreach (var arg in args) start.ArgumentList.Add(arg == "--portable-autostart" ? "--autostart" : arg);
             using var process = Process.Start(start) ?? throw new IOException("无法启动 Pane");
             if (args is ["--exit"])

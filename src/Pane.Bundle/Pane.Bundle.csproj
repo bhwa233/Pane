@@ -14,5 +14,10 @@
   <ItemGroup>
     <EmbeddedResource Include="$(PayloadPath)" LogicalName="payload.zip" />
     <AssemblyMetadata Include="PanePayloadSha256" Value="$(PayloadSha256)" />
+    <EmbeddedResource Include="$(TrafficPayloadPath)" LogicalName="Pane.TrafficService-x64-preview.zip" />
+    <EmbeddedResource Include="$(TrafficPayloadPath).manifest.json" LogicalName="Pane.TrafficService-x64-preview.zip.manifest.json" />
+    <Compile Include="../Pane.Setup/TrafficPreviewPayload.cs;../Pane.Setup/TrafficServiceStaging.cs;../Pane.Setup/TrafficServiceInstall.cs" />
+    <Compile Include="../Pane.Traffic/Core/DirectoryGuard.cs" />
+    <Compile Include="../Pane.App/Services/Traffic/TrafficServiceIdentity.cs;../Pane.App/Services/Traffic/TrafficPipeProtocol.cs" />
   </ItemGroup>
 </Project>

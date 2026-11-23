@@ -18,17 +18,33 @@
         </Grid.ContextFlyout>
         <Border x:Name="RateCard" CornerRadius="8" BorderThickness="1" BorderBrush="{ThemeResource PaneStrokeBrush}"
                 Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
-        <Grid Margin="5,2" ColumnSpacing="2" VerticalAlignment="Center">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid Margin="4,2" ColumnSpacing="2" VerticalAlignment="Center">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-            <TextBlock Text="&#x2191;" Foreground="{ThemeResource PaneWarningBrush}"
+            <TextBlock Text="&#x2191;" FontSize="{StaticResource PaneTextMd}" Foreground="{ThemeResource PaneWarningBrush}"
                        AutomationProperties.Name="{x:Bind loc:Strings.Traffic_Upload}"/>
-            <TextBlock x:Name="Upload" Grid.Column="1" Text="&#x2014;"
+            <TextBlock x:Name="Upload" Grid.Column="1" Text="&#x2014;" FontSize="{StaticResource PaneTextMd}"
                        Foreground="{ThemeResource PaneWarningBrush}"/>
-            <TextBlock Grid.Row="1" Text="&#x2193;" Foreground="{ThemeResource PaneSuccessBrush}"
+            <TextBlock Grid.Row="1" Text="&#x2193;" FontSize="{StaticResource PaneTextMd}" Foreground="{ThemeResource PaneSuccessBrush}"
                        AutomationProperties.Name="{x:Bind loc:Strings.Traffic_Download}"/>
-            <TextBlock x:Name="Download" Grid.Row="1" Grid.Column="1" Text="&#x2014;"
+            <TextBlock x:Name="Download" Grid.Row="1" Grid.Column="1" Text="&#x2014;" FontSize="{StaticResource PaneTextMd}"
                        Foreground="{ThemeResource PaneSuccessBrush}"/>
+            <Grid x:Name="ResourceUsage" Grid.Column="2" Grid.RowSpan="2" Margin="3,0,0,0" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="36"/>
+                    <ColumnDefinition Width="5"/>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="36"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="CPU" FontSize="{StaticResource PaneTextMd}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="CpuUsage" Grid.Column="1" FontSize="{StaticResource PaneTextMd}" TextAlignment="Right" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="GPU" FontSize="{StaticResource PaneTextMd}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="GpuUsage" Grid.Row="1" Grid.Column="1" FontSize="{StaticResource PaneTextMd}" TextAlignment="Right" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Text="{x:Bind loc:Strings.Traffic_MemoryUsage}" FontSize="{StaticResource PaneTextMd}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="MemoryUsage" Grid.Column="4" FontSize="{StaticResource PaneTextMd}" TextAlignment="Right" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Grid.Column="3" Text="{x:Bind loc:Strings.Traffic_DiskUsage}" FontSize="{StaticResource PaneTextMd}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="DiskUsage" Grid.Row="1" Grid.Column="4" FontSize="{StaticResource PaneTextMd}" TextAlignment="Right" VerticalAlignment="Center"/>
+            </Grid>
         </Grid>
         </Border>
         <Border x:Name="EdgeTab" Background="{ThemeResource PaneSuccessBrush}" Visibility="Collapsed"/>

@@ -12,6 +12,9 @@ $output = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $work = New-Item -ItemType Directory -Path (Join-Path $output ("bundle-" + [Guid]::NewGuid().ToString('N')))
 try {
+    & (Join-Path $repo 'src/Pane.Traffic/build-preview.ps1') -OutputRoot (Join-Path $work.FullName 'traffic')
+    $traffic = Get-ChildItem -LiteralPath (Join-Path $work.FullName 'traffic') -Directory |
+        ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'Pane.TrafficService-x64-preview.zip') }
     $payload = Join-Path $work.FullName 'payload.zip'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::Open($payload, 'Create')
@@ -25,7 +28,8 @@ try {
     $hash = (Get-FileHash -LiteralPath $payload).Hash
     dotnet publish (Join-Path $repo 'src/Pane.Bundle/Pane.Bundle.csproj') -c Release -r win-x64 `
         "-p:Version=$version" "-p:InformationalVersion=$($exe.VersionInfo.ProductVersion)" `
-        '-p:IncludeSourceRevisionInInformationalVersion=false' "-p:PayloadPath=$payload" "-p:PayloadSha256=$hash" -o $work.FullName
+        '-p:IncludeSourceRevisionInInformationalVersion=false' "-p:PayloadPath=$payload" "-p:PayloadSha256=$hash" `
+        "-p:TrafficPayloadPath=$($traffic.FullName)" -o $work.FullName
     if ($LASTEXITCODE -ne 0) { throw 'Pane single-file build failed.' }
     $assetName = "pane-$version.exe"
     Copy-Item -LiteralPath (Join-Path $work.FullName 'pane.exe') -Destination (Join-Path $output $assetName)

@@ -37,6 +37,7 @@ public sealed partial class TrafficView : UserControl, IDisposable
     readonly PaneSwitch processSwitch;
     readonly PaneSegmented processMode;
     bool shown, pointerInRanking, processMenuOpen, endingProcess;
+    string? serviceInstallStatus;
     TrafficSortColumn? sortColumn;
     bool ascending, reorderNextSample;
     int adapterRequest, fileActionRequest;
@@ -97,6 +98,7 @@ public sealed partial class TrafficView : UserControl, IDisposable
         ApplyInterfaceReading(interfaceTraffic.Current);
         ProcessStatus.Text = Strings.Traffic_ProcessConnecting;
         ProcessRetry.Visibility = Visibility.Collapsed;
+        InstallTrafficService.Visibility = Visibility.Collapsed;
         processSwitch.IsEnabled = false;
         processMode.IsEnabled = false;
         pointerInRanking = false;
@@ -225,18 +227,39 @@ public sealed partial class TrafficView : UserControl, IDisposable
         processTraffic.Retry();
     }
 
+    async void InstallTrafficServiceClicked(object sender, RoutedEventArgs args)
+    {
+        InstallTrafficService.IsEnabled = false;
+        ProcessStatus.Text = Strings.Traffic_InstallingService;
+        var result = await TrafficServiceSetup.InstallAsync();
+        serviceInstallStatus = result switch
+        {
+            TrafficServiceSetup.Result.PackageUnavailable => Strings.Traffic_ServicePackageUnavailable,
+            TrafficServiceSetup.Result.DifferentAccount => Strings.Traffic_ServiceInstallDifferentAccount,
+            TrafficServiceSetup.Result.Failed => Strings.Traffic_ServiceInstallFailed,
+            _ => null
+        };
+        if (shown) processTraffic.Retry();
+    }
+
     void ApplyProcessSample(ProcessTrafficSample sample)
     {
         processSwitch.IsOn = sample.Enabled ?? false;
         processSwitch.IsEnabled = sample.Enabled != null;
         rankingState = sample.State;
         var status = ProcessStatusText(sample.State, sample.Rows.Count == 0 && activeRanking?.HasFilter != true);
+        bool missing = sample.State == ProcessTrafficState.NotInstalled;
+        var installing = TrafficServiceSetup.Pending is { IsCompleted: false };
+        if (missing) status = installing ? Strings.Traffic_InstallingService : serviceInstallStatus ?? status;
+        else serviceInstallStatus = null;
         if (sample.SettingsWriteFailed) status += "\n" + Strings.Traffic_ProcessSettingWriteFailed;
         if (ProcessStatus.Text != status) ProcessStatus.Text = status;
         processRows = sample.Rows;
         processMode.IsEnabled = sample.Enabled == true && (sample.State is ProcessTrafficState.Live or ProcessTrafficState.Partial || activeRanking != null);
         ProcessActiveOnly.IsEnabled = sample.Enabled == true;
-        ProcessRetry.Visibility = sample.Enabled == null ? Visibility.Visible : Visibility.Collapsed;
+        InstallTrafficService.Visibility = missing ? Visibility.Visible : Visibility.Collapsed;
+        InstallTrafficService.IsEnabled = !installing;
+        ProcessRetry.Visibility = sample.Enabled == null && !missing ? Visibility.Visible : Visibility.Collapsed;
         ProcessRetry.IsEnabled = sample.Enabled == null;
         RenderProcessRows(preserveOrder: !reorderNextSample && (pointerInRanking || processMenuOpen || HasRankingFocus()));
         reorderNextSample = false;
