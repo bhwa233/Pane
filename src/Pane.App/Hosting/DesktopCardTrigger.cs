@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using Microsoft.UI.Windowing;
 
 namespace Pane.Hosting;
 
@@ -47,14 +46,13 @@ internal sealed class DesktopCardTrigger : IDisposable
                 return desktop == 0;
             }, 0);
         if (desktop == 0) return;
-        foreach (var display in DisplayArea.FindAll())
+        foreach (var screen in GlassPanel.AllMonitors())
         {
-            var area = display.WorkArea;
-            int center = area.X + area.Width / 2;
-            if (GlassPanel.MonitorAt(center, area.Y + area.Height / 2) is not { } screen) continue;
+            var area = screen.Work;
+            int center = area.Left + (area.Right - area.Left) / 2;
             // Galaxy's desktop trigger geometry, measured in DIPs.
             int width = (int)Math.Round(120 * screen.Dpi), height = (int)Math.Round(8 * screen.Dpi);
-            var origin = new Native.Point { X = center - width / 2, Y = area.Y + (int)Math.Round(2 * screen.Dpi) };
+            var origin = new Native.Point { X = center - width / 2, Y = area.Top + (int)Math.Round(2 * screen.Dpi) };
             if (!Native.ScreenToClient(desktop, ref origin)) continue;
             var hwnd = Native.CreateWindowExW(0x08000000, ClassName, "", 0x50000000,
                 origin.X, origin.Y, width, height, desktop, 0, instance, 0);

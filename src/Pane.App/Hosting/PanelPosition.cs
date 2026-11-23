@@ -64,6 +64,16 @@ public sealed partial class GlassPanel
         catch (System.ComponentModel.Win32Exception) { return null; }
     }
 
+    // 复用 Win32 枚举及工作区/DPI 读取，避免 Native AOT 下的 WinRT 集合投影。
+    internal static IReadOnlyList<(string Id, Native.Rect Work, float Dpi)> AllMonitors()
+    {
+        List<nint> handles = [];
+        MonitorCallback callback = (nint h, nint dc, ref Native.Rect rect, nint data) => { handles.Add(h); return true; };
+        EnumDisplayMonitors(0, 0, callback, 0);
+        GC.KeepAlive(callback);
+        return handles.Select(ReadMonitor).Select(monitor => (monitor.Id, monitor.Work, monitor.Dpi)).ToArray();
+    }
+
     /// <summary>按监视器身份取工作区与 DPI；屏幕拔除时返回 null，由调用方回退可用屏幕。</summary>
     internal static (string Id, Native.Rect Work, float Dpi)? MonitorById(string id) =>
         FindMonitor(id) is { } monitor ? (monitor.Id, monitor.Work, monitor.Dpi) : null;
