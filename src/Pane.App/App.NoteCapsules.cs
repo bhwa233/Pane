@@ -1,7 +1,6 @@
 using System.Drawing;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Pane.Contracts;
 using Pane.Hosting;
 using Pane.Localization;
@@ -550,7 +549,6 @@ public sealed partial class App
         if (desktopNotes.Remove(id, out var removed)) removed.Dispose();
         RefreshDesktopNotes();
         RefreshCapsules();
-        ShowCapsuleFoldHint();
     }
 
     void ReportNoteSaveFailure(Guid id)
@@ -584,49 +582,6 @@ public sealed partial class App
         var edge = NoteCapsuleGeometry.NearestEdge(work, local);
         var order = QueueMembers(monitor?.Id ?? "", edge).Count;
         return new(monitor?.Id ?? "", (int)edge, 0, 0, order);
-    }
-
-    /// <summary>首次折叠：一次性提示说明胶囊位置和找回方式（notes-mvp §6）。</summary>
-    void ShowCapsuleFoldHint()
-    {
-        if (Store.Current.NoteCapsuleHintShown) return;
-        Store.Update(settings => settings with { NoteCapsuleHintShown = true });
-        var text = new TextBlock
-        {
-            Text = string.Format(Strings.Notes_CapsuleFirstFoldHint, Strings.Notes_ShowDesktopNotes),
-            TextWrapping = TextWrapping.Wrap, MaxWidth = 320, Margin = new(14, 12, 14, 12),
-            FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["PaneFontUi"],
-            FontSize = 13, Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["PaneText1Brush"],
-        };
-        var host = new GlassPanel(Strings.Notes_DesktopCard, text, new HintPanelView(text, new(340, 68)), Glass, desktopCard: true)
-        { EscapeHides = false };
-        WatchFrames(host);
-        var timer = queue.CreateTimer();
-        timer.Interval = TimeSpan.FromSeconds(6);
-        timer.IsRepeating = false;
-        timer.Tick += (_, _) =>
-        {
-            timer.Stop();
-            (host.View as IDisposable)?.Dispose();
-            host.Dispose();
-        };
-        try { host.Show(activate: false); host.SetTopmost(true); }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or System.Runtime.InteropServices.COMException)
-        {
-            (host.View as IDisposable)?.Dispose();
-            host.Dispose();
-        }
-    }
-
-    sealed class HintPanelView(TextBlock text, Windows.Foundation.Size size) : IPanelView
-    {
-        public Windows.Foundation.Size PreferredSize => size;
-        public UIElement DragRegion => text;
-        public event EventHandler<Windows.Foundation.Size>? SizeRequested { add { } remove { } }
-        public event EventHandler? CloseRequested { add { } remove { } }
-        public void OnShowing(PanelShowContext context) { }
-        public void OnShown() { }
-        public void OnHidden() { }
     }
 
     /// <summary>托盘「显示全部桌面便签」：展开所有已隐藏但仍贴到桌面的便签（notes-mvp §3）。</summary>

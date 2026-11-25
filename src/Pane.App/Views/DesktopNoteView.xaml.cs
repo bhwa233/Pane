@@ -119,13 +119,19 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     internal void FocusBody()
     {
         if (!pad) { SetPad(true); return; }
-        if (PadBody.IsLoaded) PadBody.Focus(FocusState.Programmatic);
+        window?.Activate();
+        if (PadBody.IsLoaded) FocusEditor();
         else PadBody.Loaded += FocusOnLoad;
 
         void FocusOnLoad(object sender, RoutedEventArgs args)
         {
             PadBody.Loaded -= FocusOnLoad;
-            if (pad) PadBody.Focus(FocusState.Programmatic);
+            FocusEditor();
+        }
+
+        void FocusEditor()
+        {
+            if (pad && !disposed) PadBody.Focus(FocusState.Programmatic);
         }
     }
 
@@ -269,7 +275,12 @@ public sealed partial class DesktopNoteView : UserControl, IPanelView, IDisposab
     {
         var menu = new MenuFlyout();
         var surface = new MenuFlyoutItem { Text = pad ? Strings.Notes_CollapsePad : Strings.Notes_SwitchToPad };
-        surface.Click += (_, _) => SetPad(!pad);
+        bool changeSurface = false;
+        surface.Click += (_, _) => changeSurface = true;
+        menu.Closed += (_, _) =>
+        {
+            if (changeSurface) DispatcherQueue.TryEnqueue(() => { if (!disposed) SetPad(!pad); });
+        };
         menu.Items.Add(surface);
         var topmost = new MenuFlyoutItem { Text = host.IsTopmost(id) ? Strings.Notes_UnTopmost : Strings.Notes_Topmost };
         topmost.Click += (_, _) => TopmostClicked(this, new RoutedEventArgs());

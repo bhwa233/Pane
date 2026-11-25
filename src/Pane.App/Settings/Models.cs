@@ -20,7 +20,6 @@ public sealed record PaneSettings(int Version, GeneralSettings General, Launcher
     /// Collapsed = 主胶囊收起成员。重启按屏幕身份恢复，缺失屏幕回退可用屏幕并夹紧。</summary>
     public Dictionary<string,NoteCapsuleQueue>? NoteCapsuleQueues { get; init; }
     /// <summary>首次折叠的一次性提示已经显示过（notes-mvp §6）。</summary>
-    public bool NoteCapsuleHintShown { get; init; }
     public DesktopTrafficSettings? DesktopTraffic { get; init; }
     public bool TrafficServiceInstallOffered { get; init; }
     public Dictionary<string, CardDesktopPlacement>? CardDesktopLayout { get; init; }

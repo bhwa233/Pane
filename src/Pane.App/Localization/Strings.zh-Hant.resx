@@ -1761,6 +1761,7 @@
   <data name="Module_Notes_Name" xml:space="preserve"><value>便箋</value></data>
   <data name="Module_Notes_Description" xml:space="preserve"><value>在本機編輯、儲存和搜尋便箋</value></data>
   <data name="Notes_New" xml:space="preserve"><value>新增便箋</value></data>
+  <data name="Notes_NewDesktop" xml:space="preserve"><value>新增桌面便箋</value></data>
   <data name="Notes_Tags" xml:space="preserve"><value>標籤</value></data>
   <data name="Notes_TagInput" xml:space="preserve"><value>標籤，用逗號分隔</value></data>
   <data name="Notes_ListCount" xml:space="preserve"><value>便箋清單 · {0} 張</value></data>
@@ -1900,7 +1901,6 @@
   <data name="Notes_CapsuleFloat" xml:space="preserve"><value>懸浮到桌面</value></data>
   <data name="Notes_ShowDesktopNotes" xml:space="preserve"><value>顯示全部桌面便箋</value></data>
   <data name="Notes_DesktopNotesPanel" xml:space="preserve"><value>桌面便箋</value></data>
-  <data name="Notes_CapsuleFirstFoldHint" xml:space="preserve"><value>便箋已收成螢幕邊緣的膠囊；可從系統匣「{0}」或便箋列表找回</value></data>
   <data name="Notes_FilterHidden" xml:space="preserve"><value>只看已隱藏</value></data>
   <data name="Notes_CapsuleCount" xml:space="preserve"><value>佇列裡有 {0} 張便箋</value></data>
   <data name="Notes_CapsuleFloatPinned" xml:space="preserve"><value>先摺疊才能拖成懸浮</value></data>

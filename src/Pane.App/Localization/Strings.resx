@@ -1761,6 +1761,7 @@
   <data name="Module_Notes_Name" xml:space="preserve"><value>便签</value></data>
   <data name="Module_Notes_Description" xml:space="preserve"><value>在本机编辑、保存和搜索便签</value></data>
   <data name="Notes_New" xml:space="preserve"><value>新建便签</value></data>
+  <data name="Notes_NewDesktop" xml:space="preserve"><value>新建桌面便签</value></data>
   <data name="Notes_Tags" xml:space="preserve"><value>标签</value></data>
   <data name="Notes_TagInput" xml:space="preserve"><value>标签，用逗号分隔</value></data>
   <data name="Notes_ListCount" xml:space="preserve"><value>便签列表 · {0} 张</value></data>
@@ -1917,7 +1918,6 @@
   <data name="Notes_CapsuleFloat" xml:space="preserve"><value>悬浮到桌面</value></data>
   <data name="Notes_ShowDesktopNotes" xml:space="preserve"><value>显示全部桌面便签</value></data>
   <data name="Notes_DesktopNotesPanel" xml:space="preserve"><value>桌面便签</value></data>
-  <data name="Notes_CapsuleFirstFoldHint" xml:space="preserve"><value>便签已收成屏幕边缘的胶囊；可从托盘「{0}」或便签列表找回</value></data>
   <data name="Notes_FilterHidden" xml:space="preserve"><value>只看已隐藏</value></data>
   <data name="Notes_CapsuleCount" xml:space="preserve"><value>队列里有 {0} 张便签</value></data>
   <data name="Notes_CapsuleFloatPinned" xml:space="preserve"><value>先折叠才能拖成悬浮</value></data>
